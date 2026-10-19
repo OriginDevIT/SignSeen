@@ -22,6 +22,21 @@ export default function Home() {
       <p style={{ fontSize: "0.875rem", opacity: 0.5 }}>
         Early prototype — Phase 0 scaffold. Expect rough edges.
       </p>
+      <a
+        href="/send"
+        style={{
+          marginTop: "1.5rem",
+          padding: "0.8rem 1.6rem",
+          fontSize: "1.05rem",
+          fontWeight: 600,
+          color: "#fff",
+          background: "#111827",
+          borderRadius: 10,
+          textDecoration: "none",
+        }}
+      >
+        Send a document for signature
+      </a>
     </main>
   );
 }
