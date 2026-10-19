@@ -218,3 +218,18 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Node
+node_modules/
+.next/
+out/
+*.local
+
+# Env
+.env
+.env.*
+
+# Editor
+.idea/
+.vscode/*
+!.vscode/extensions.json
