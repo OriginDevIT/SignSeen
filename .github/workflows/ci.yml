@@ -15,6 +15,8 @@ jobs:
           python-version: "3.12"
       - name: Install dependencies
         run: pip install -r backend/requirements.txt
+      - name: Install LibreOffice (DOCX->PDF conversion, mirrors Dockerfile)
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libreoffice-writer
       - name: Run tests
         run: cd backend && python -m pytest
 
