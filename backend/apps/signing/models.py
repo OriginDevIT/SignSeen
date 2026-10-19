@@ -1,0 +1,99 @@
+"""Core signing ceremony models.
+
+A Document is uploaded by a sender. A SigningSession is the per-signer,
+token-addressed ceremony (the QR code / link target). AuditEvents form a
+hash-chained, tamper-evident trail of everything that happened.
+"""
+
+import secrets
+import uuid
+from datetime import timedelta
+
+from django.db import models
+from django.utils import timezone
+
+
+def generate_token() -> str:
+    return secrets.token_urlsafe(32)
+
+
+def default_session_expiry():
+    return timezone.now() + timedelta(days=30)
+
+
+class Document(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        SIGNED = "signed", "Signed"
+        EXPIRED = "expired", "Expired"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    title = models.CharField(max_length=255)
+    original_file = models.FileField(upload_to="originals/")
+    signed_file = models.FileField(upload_to="signed/", null=True, blank=True)
+    sender_email = models.EmailField()
+    status = models.CharField(
+        max_length=16, choices=Status.choices, default=Status.PENDING
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self) -> str:
+        return f"{self.title} ({self.status})"
+
+
+class SigningSession(models.Model):
+    class Status(models.TextChoices):
+        PENDING = "pending", "Pending"
+        SIGNED = "signed", "Signed"
+        EXPIRED = "expired", "Expired"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    document = models.ForeignKey(
+        Document, related_name="sessions", on_delete=models.CASCADE
+    )
+    token = models.CharField(max_length=64, unique=True, default=generate_token)
+    signer_name = models.CharField(max_length=255, blank=True, default="")
+    signer_email = models.EmailField(blank=True, default="")
+    status = models.CharField(
+        max_length=16, choices=Status.choices, default=Status.PENDING
+    )
+    expires_at = models.DateTimeField(default=default_session_expiry)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def is_usable(self) -> bool:
+        """A session can accept a signature iff pending and unexpired."""
+        return (
+            self.status == self.Status.PENDING
+            and timezone.now() < self.expires_at
+        )
+
+    def __str__(self) -> str:
+        return f"session {self.id} for {self.document_id} ({self.status})"
+
+
+class AuditEvent(models.Model):
+    """One link in the hash-chained audit trail.
+
+    `hash` covers (prev_hash, timestamp, event_type, payload): any tampering
+    with an earlier event breaks every later link. Images themselves are
+    stored as files; the payload carries their SHA-256 digests.
+    """
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    session = models.ForeignKey(
+        SigningSession, related_name="events", on_delete=models.CASCADE
+    )
+    event_type = models.CharField(max_length=64)
+    payload = models.JSONField(default=dict)
+    prev_hash = models.CharField(max_length=64)
+    hash = models.CharField(max_length=64)
+    # default= (not auto_now_add) so record_event can set the exact
+    # timestamp that went into the hash.
+    created_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        ordering = ["created_at"]
+
+    def __str__(self) -> str:
+        return f"{self.event_type} @ {self.created_at.isoformat()}"

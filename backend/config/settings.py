@@ -15,6 +15,7 @@ INSTALLED_APPS = [
     "django.contrib.auth",
     "rest_framework",
     "apps.core",
+    "apps.signing",
 ]
 
 MIDDLEWARE = [
@@ -47,3 +48,12 @@ if _db_url:
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {}
+
+# File storage for uploads, evidence images, and sealed PDFs.
+# (Object storage like GCS comes with the hosted deployment; local disk is
+# the self-host default.)
+MEDIA_ROOT = BASE_DIR / "media"
+MEDIA_URL = "/media/"
+
+# Public base URL of the Next.js web app, used to build signing links.
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:3000")
