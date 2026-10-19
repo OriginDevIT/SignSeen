@@ -1,0 +1,53 @@
+# Staging overlay: HTTPS via Caddy, production-ish env, shared media volume.
+#
+# Usage (on the staging VM):
+#   docker compose -f docker-compose.yml -f docker-compose.staging.yml \
+#     --env-file .env.staging up --build -d
+#
+# See docs/staging-deploy.md for the full walkthrough.
+
+services:
+  api:
+    # Keep the migrate-on-startup command from the Dockerfile (the base
+    # file's `command:` override would skip migrations).
+    command: sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
+    environment:
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?set DJANGO_SECRET_KEY in .env.staging}
+      DJANGO_DEBUG: "0"
+      DJANGO_ALLOWED_HOSTS: ${STAGING_DOMAIN:?set STAGING_DOMAIN in .env.staging}
+      DATABASE_URL: postgres://signseen:signseen@db:5432/signseen
+      FRONTEND_URL: https://${STAGING_DOMAIN}
+    volumes:
+      - ./backend:/app
+      - media:/app/media
+    restart: unless-stopped
+
+  web:
+    environment:
+      NEXT_PUBLIC_API_URL: https://${STAGING_DOMAIN}
+    restart: unless-stopped
+
+  db:
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - media:/srv/media:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      STAGING_DOMAIN: ${STAGING_DOMAIN:?set STAGING_DOMAIN in .env.staging}
+    restart: unless-stopped
+    depends_on:
+      - api
+      - web
+
+volumes:
+  media:
+  caddy_data:
+  caddy_config:
