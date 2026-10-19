@@ -154,6 +154,7 @@ export default function SendPage() {
                 (PDF, DOC, DOCX — max 25 MB; Word docs convert to PDF)
               </span>
               <input
+                key="file-input"
                 style={inputStyle}
                 type="file"
                 accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
@@ -168,6 +169,7 @@ export default function SendPage() {
                 (rendered to PDF — e.g. a terms page)
               </span>
               <input
+                key="url-input"
                 style={inputStyle}
                 type="url"
                 value={pageUrl}
