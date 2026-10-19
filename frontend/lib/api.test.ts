@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  createDocumentFromUrl,
   createSession,
   mediaUrl,
   sessionDocumentUrl,
@@ -85,6 +86,25 @@ describe("submitSignature", () => {
     expect(body.signature).toBe("data:image/png;base64,AAA");
     expect(body.photo).toBe("data:image/png;base64,BBB");
     expect(body.device_info).toEqual(deviceInfo);
+  });
+});
+
+describe("createDocumentFromUrl", () => {
+  it("posts the URL payload to /api/documents/from-url/", async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse({ id: "doc-9" }, 201));
+    const result = await createDocumentFromUrl(
+      "https://example.com/terms",
+      "ToS",
+      "s@example.com"
+    );
+    expect(result.id).toBe("doc-9");
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toContain("/api/documents/from-url/");
+    expect(JSON.parse(init?.body as string)).toMatchObject({
+      url: "https://example.com/terms",
+      title: "ToS",
+      sender_email: "s@example.com",
+    });
   });
 });
 

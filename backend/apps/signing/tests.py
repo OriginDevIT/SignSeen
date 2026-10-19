@@ -1,6 +1,9 @@
 """End-to-end tests for the signing ceremony API."""
 
 import base64
+import http.server
+import io
+import threading
 from datetime import timedelta
 
 import pymupdf
@@ -217,3 +220,104 @@ def test_session_document_serves_pdf_to_token_holder():
     response = client.get(f"/api/sessions/{token}/document/")
     assert response.status_code == 200
     assert response["Content-Type"] == "application/pdf"
+
+
+def make_docx_bytes(text="Test Agreement") -> bytes:
+    from docx import Document as DocxDocument
+
+    doc = DocxDocument()
+    doc.add_heading("Test Agreement", 1)
+    doc.add_paragraph(text)
+    buf = io.BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
+@pytest.mark.django_db
+def test_docx_upload_converts_to_pdf():
+    client = APIClient()
+    upload = SimpleUploadedFile(
+        "agreement.docx",
+        make_docx_bytes(),
+        content_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    )
+    response = client.post(
+        "/api/documents/",
+        {"title": "Agreement", "sender_email": "s@example.com", "file": upload},
+        format="multipart",
+    )
+    assert response.status_code == 201
+    body = response.json()
+    assert body["source"] == "upload"
+    assert body["original_filename"] == "agreement.docx"
+
+    doc = Document.objects.get(pk=body["id"])
+    with open(doc.original_file.path, "rb") as f:
+        assert f.read(5) == b"%PDF-"
+
+
+@pytest.mark.django_db
+def test_upload_rejects_unsupported_extension():
+    client = APIClient()
+    upload = SimpleUploadedFile("notes.txt", b"hello", content_type="text/plain")
+    response = client.post(
+        "/api/documents/",
+        {"title": "X", "sender_email": "s@example.com", "file": upload},
+        format="multipart",
+    )
+    assert response.status_code == 400
+    assert "PDF, DOC, or DOCX" in response.json()["error"]
+
+
+@pytest.mark.django_db
+def test_from_url_renders_page_to_pdf():
+    """Real end-to-end: a local HTTP server stands in for the web page."""
+    html = b"<html><body><h1>Terms of Service</h1><p>These are the terms.</p></body></html>"
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.end_headers()
+            self.wfile.write(html)
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    port = server.server_address[1]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        client = APIClient()
+        response = client.post(
+            "/api/documents/from-url/",
+            {
+                "title": "ToS",
+                "sender_email": "s@example.com",
+                "url": f"http://127.0.0.1:{port}/terms",
+            },
+            format="json",
+        )
+    finally:
+        server.shutdown()
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["source"] == "url"
+    assert body["source_url"].endswith("/terms")
+
+    doc = Document.objects.get(pk=body["id"])
+    with open(doc.original_file.path, "rb") as f:
+        assert f.read(5) == b"%PDF-"
+
+
+@pytest.mark.django_db
+def test_from_url_rejects_bad_scheme():
+    client = APIClient()
+    response = client.post(
+        "/api/documents/from-url/",
+        {"title": "X", "sender_email": "s@example.com", "url": "ftp://example.com/x"},
+        format="json",
+    )
+    assert response.status_code == 400
