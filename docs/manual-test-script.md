@@ -27,6 +27,9 @@ This script covers those by hand.
 7. Tap **Start signing**. Draw your signature with a finger.
    - ✅ Lines are smooth; **Clear** wipes the canvas.
    - ✅ **Looks good** is a no-op until you draw something.
+   - ✅ **Rotate the phone mid-signature**: drawing stays 1:1 with your
+     finger (no stretching/doubling), and ink drawn before rotating is
+     still there.
 8. **Take photo** (camera should open). Confirm the preview, or **Skip**.
 9. **Submit** → ✅ **Signed. Seen. Sealed.** screen with an audit seal.
 10. **Download signed PDF** — open it and check the last page:
