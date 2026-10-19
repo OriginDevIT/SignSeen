@@ -184,6 +184,7 @@ def submit_signature(request, token):
     device_info = request.data.get("device_info") or {}
     if not isinstance(device_info, dict):
         return _error("device_info must be an object")
+    signer_email = (request.data.get("signer_email") or "").strip()
 
     doc = session.document
     with transaction.atomic():
@@ -218,6 +219,7 @@ def submit_signature(request, token):
                 "photo_sha256": photo_digest,
                 "photo_file": photo_name,
                 "device_info": device_info,
+                "signer_email": signer_email,
             },
         )
 
@@ -239,7 +241,9 @@ def submit_signature(request, token):
         doc.save(update_fields=["signed_file", "status", "updated_at"])
 
         session.status = SigningSession.Status.SIGNED
-        session.save(update_fields=["status"])
+        if signer_email:
+            session.signer_email = signer_email
+        session.save(update_fields=["status", "signer_email"])
 
         sealed = record_event(
             session,

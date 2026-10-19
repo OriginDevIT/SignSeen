@@ -191,6 +191,23 @@ def test_sign_requires_a_signature_image():
 
 
 @pytest.mark.django_db
+def test_sign_captures_signer_email():
+    client = APIClient()
+    doc_id = upload_document(client).json()["id"]
+    token = client.post(
+        f"/api/documents/{doc_id}/sessions/", {}, format="json"
+    ).json()["token"]
+    response = client.post(
+        f"/api/sessions/{token}/sign/",
+        {"signature": SIG_DATA_URL, "signer_email": "jane@example.com"},
+        format="json",
+    )
+    assert response.status_code == 200
+    session = SigningSession.objects.get(token=token)
+    assert session.signer_email == "jane@example.com"
+
+
+@pytest.mark.django_db
 def test_session_document_serves_pdf_to_token_holder():
     client = APIClient()
     doc_id = upload_document(client).json()["id"]
