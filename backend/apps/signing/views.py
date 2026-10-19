@@ -1,0 +1,261 @@
+"""Signing ceremony API.
+
+Sender flow:
+  POST /api/documents/                       upload PDF + sender email
+  GET  /api/documents/<id>/                  document status (+ signed file)
+  POST /api/documents/<id>/sessions/         create signing session (QR target)
+
+Signer flow (token-addressed, no account):
+  GET  /api/sessions/<token>/                session + document info
+  GET  /api/sessions/<token>/document/       the PDF to review
+  POST /api/sessions/<token>/sign/           submit signature (+photo) -> sealed
+"""
+
+import base64
+import binascii
+import hashlib
+import os
+
+from django.conf import settings
+from django.core.files.base import ContentFile
+from django.db import transaction
+from django.http import FileResponse
+from django.shortcuts import get_object_or_404
+from django.utils import timezone
+from rest_framework import status
+from rest_framework.decorators import api_view, parser_classes
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
+from rest_framework.response import Response
+
+from .hashing import record_event, verify_chain
+from .models import AuditEvent, Document, SigningSession
+from .pdf import build_signed_pdf
+from .serializers import (
+    AuditEventSerializer,
+    DocumentSerializer,
+    SigningSessionSerializer,
+)
+
+MAX_DOCUMENT_BYTES = 25 * 1024 * 1024  # 25 MB free-tier cap (scope §3.6)
+MAX_IMAGE_BYTES = 5 * 1024 * 1024
+
+
+def _error(message: str, code=status.HTTP_400_BAD_REQUEST) -> Response:
+    return Response({"error": message}, status=code)
+
+
+def _decode_data_url(value: str, field: str) -> bytes:
+    """Decode a `data:image/<type>;base64,...` URL, with sanity checks."""
+    if not isinstance(value, str) or not value.startswith("data:image/"):
+        raise ValueError(f"{field} must be an image data URL")
+    try:
+        header, b64 = value.split(",", 1)
+    except ValueError:
+        raise ValueError(f"{field} is not a valid data URL")
+    if "base64" not in header:
+        raise ValueError(f"{field} must be base64-encoded")
+    try:
+        raw = base64.b64decode(b64, validate=True)
+    except binascii.Error:
+        raise ValueError(f"{field} is not valid base64")
+    if len(raw) > MAX_IMAGE_BYTES:
+        raise ValueError(f"{field} exceeds the 5 MB limit")
+    if len(raw) == 0:
+        raise ValueError(f"{field} is empty")
+    return raw
+
+
+def _sha256(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# Sender endpoints
+# ---------------------------------------------------------------------------
+
+
+@api_view(["POST"])
+@parser_classes([MultiPartParser, FormParser])
+def create_document(request):
+    title = (request.data.get("title") or "").strip()
+    sender_email = (request.data.get("sender_email") or "").strip()
+    upload = request.data.get("file")
+
+    if not title:
+        return _error("title is required")
+    if not sender_email or "@" not in sender_email:
+        return _error("a valid sender_email is required")
+    if upload is None:
+        return _error("file is required")
+    if upload.size > MAX_DOCUMENT_BYTES:
+        return _error("file exceeds the 25 MB limit")
+    header = upload.read(5)
+    upload.seek(0)
+    if header != b"%PDF-":
+        return _error("file must be a PDF")
+
+    doc = Document.objects.create(
+        title=title, sender_email=sender_email, original_file=upload
+    )
+    return Response(DocumentSerializer(doc).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(["GET"])
+def get_document(request, doc_id):
+    doc = get_object_or_404(Document, pk=doc_id)
+    return Response(DocumentSerializer(doc).data)
+
+
+@api_view(["POST"])
+@parser_classes([JSONParser, FormParser, MultiPartParser])
+def create_session(request, doc_id):
+    doc = get_object_or_404(Document, pk=doc_id)
+    if doc.status != Document.Status.PENDING:
+        return _error("document is no longer pending signature", 409)
+
+    session = SigningSession.objects.create(
+        document=doc,
+        signer_name=(request.data.get("signer_name") or "").strip(),
+        signer_email=(request.data.get("signer_email") or "").strip(),
+    )
+    record_event(
+        session,
+        "session.created",
+        {
+            "document_id": str(doc.id),
+            "signer_name": session.signer_name,
+            "signer_email": session.signer_email,
+        },
+    )
+    return Response(SigningSessionSerializer(session).data, status=201)
+
+
+@api_view(["GET"])
+def get_session_events(request, token):
+    """Tamper-evident audit trail for a session (public, token-addressed)."""
+    session = get_object_or_404(SigningSession, token=token)
+    events = session.events.order_by("created_at")
+    return Response(
+        {
+            "chain_valid": verify_chain(session),
+            "events": AuditEventSerializer(events, many=True).data,
+        }
+    )
+
+
+# ---------------------------------------------------------------------------
+# Signer endpoints (token-addressed, no account)
+# ---------------------------------------------------------------------------
+
+
+@api_view(["GET"])
+def get_session(request, token):
+    session = get_object_or_404(SigningSession, token=token)
+    return Response(SigningSessionSerializer(session).data)
+
+
+@api_view(["GET"])
+def session_document(request, token):
+    """Serve the PDF under review. Possession of the token is the auth."""
+    session = get_object_or_404(SigningSession, token=token)
+    if not session.is_usable() and session.status != SigningSession.Status.SIGNED:
+        return _error("session is no longer available", 410)
+    path = session.document.signed_file.path if session.document.signed_file else session.document.original_file.path
+    return FileResponse(open(path, "rb"), content_type="application/pdf")
+
+
+@api_view(["POST"])
+@parser_classes([JSONParser])
+def submit_signature(request, token):
+    session = get_object_or_404(SigningSession, token=token)
+    if not session.is_usable():
+        return _error("session is expired or already signed", 410)
+
+    try:
+        signature_png = _decode_data_url(request.data.get("signature", ""), "signature")
+    except ValueError as exc:
+        return _error(str(exc))
+    photo_png = None
+    if request.data.get("photo"):
+        try:
+            photo_png = _decode_data_url(request.data.get("photo"), "photo")
+        except ValueError as exc:
+            return _error(str(exc))
+    device_info = request.data.get("device_info") or {}
+    if not isinstance(device_info, dict):
+        return _error("device_info must be an object")
+
+    doc = session.document
+    with transaction.atomic():
+        # Lock the session row so two concurrent submits can't both seal.
+        session = SigningSession.objects.select_for_update().get(pk=session.pk)
+        if not session.is_usable():
+            return _error("session is expired or already signed", 410)
+
+        sig_digest = _sha256(signature_png)
+        photo_digest = _sha256(photo_png) if photo_png else None
+        session_id = str(session.id)
+
+        # Persist the evidence images (payload carries digests, not bytes).
+        sig_name = f"sessions/{session_id}/signature.png"
+        sig_path = os.path.join(settings.MEDIA_ROOT, sig_name)
+        os.makedirs(os.path.dirname(sig_path), exist_ok=True)
+        with open(sig_path, "wb") as f:
+            f.write(signature_png)
+        photo_name = None
+        if photo_png:
+            photo_name = f"sessions/{session_id}/photo.png"
+            photo_path = os.path.join(settings.MEDIA_ROOT, photo_name)
+            with open(photo_path, "wb") as f:
+                f.write(photo_png)
+
+        submitted = record_event(
+            session,
+            "signature.submitted",
+            {
+                "signature_sha256": sig_digest,
+                "signature_file": sig_name,
+                "photo_sha256": photo_digest,
+                "photo_file": photo_name,
+                "device_info": device_info,
+            },
+        )
+
+        # Seal: stamp the certificate page and store the signed PDF.
+        signed_bytes = build_signed_pdf(
+            doc.original_file.path,
+            signature_png,
+            photo_png,
+            {
+                "signer_name": session.signer_name,
+                "signed_at": submitted.created_at.isoformat(),
+                "document_id": str(doc.id),
+                "session_id": session_id,
+                "audit_hash": submitted.hash,
+            },
+        )
+        doc.signed_file.save(f"signed-{doc.id}.pdf", ContentFile(signed_bytes))
+        doc.status = Document.Status.SIGNED
+        doc.save(update_fields=["signed_file", "status", "updated_at"])
+
+        session.status = SigningSession.Status.SIGNED
+        session.save(update_fields=["status"])
+
+        sealed = record_event(
+            session,
+            "document.sealed",
+            {
+                "document_id": str(doc.id),
+                "signed_sha256": _sha256(signed_bytes),
+                "seal_event": str(submitted.id),
+            },
+        )
+
+    return Response(
+        {
+            "status": "signed",
+            "document": DocumentSerializer(doc).data,
+            "audit_seal": sealed.hash,
+            "chain_valid": verify_chain(session),
+        }
+    )
