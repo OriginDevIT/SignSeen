@@ -16,6 +16,7 @@ from rest_framework.decorators import api_view, authentication_classes, permissi
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
+from .google_auth import verify_google_id_token
 from .models import Account
 
 
@@ -80,6 +81,32 @@ def login(request):
     if account is None:
         # Same message for unknown email vs wrong password (no enumeration).
         return _error("invalid email or password", 401)
+    _claim_documents(account)
+    token, _ = Token.objects.get_or_create(user=account)
+    return Response({"token": token.key, "account": _account_payload(account)})
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+@authentication_classes([])
+def google_login(request):
+    """Sign up / log in with Google (scope §3.10).
+
+    The Google ID token is verified server-side; the account is keyed
+    by its verified email, so a Google sign-in for an existing password
+    account links to that account (same id, tier, and library) instead
+    of creating a duplicate. New accounts get an unusable password —
+    they can set one later via password reset.
+    """
+    if not settings.GOOGLE_OAUTH_CLIENT_ID:
+        return _error("google sign-in is not configured on this server", 503)
+    try:
+        identity = verify_google_id_token(request.data.get("id_token") or "")
+    except ValueError:
+        return _error("invalid google credential", 401)
+    account = Account.objects.filter(email=identity["email"]).first()
+    if account is None:
+        account = Account.objects.create_user(email=identity["email"])
     _claim_documents(account)
     token, _ = Token.objects.get_or_create(user=account)
     return Response({"token": token.key, "account": _account_payload(account)})

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { signup } from "../../lib/api";
+import GoogleSignIn from "../../components/GoogleSignIn";
 
 const card: React.CSSProperties = {
   maxWidth: "24rem",
@@ -91,6 +92,7 @@ export default function SignupPage() {
           {busy ? "Creating…" : "Create account"}
         </button>
       </form>
+      <GoogleSignIn onError={setError} />
       <p style={{ fontSize: "0.9rem", opacity: 0.7, margin: 0 }}>
         Already have one? <a href="/login">Log in</a>
       </p>

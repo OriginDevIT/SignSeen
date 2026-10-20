@@ -317,3 +317,41 @@ describe("setSignerEmail", () => {
     expect(init?.headers.get("Authorization")).toBeNull();
   });
 });
+
+describe("loginWithGoogle", () => {
+  const store: Record<string, string> = {};
+  beforeEach(() => {
+    for (const k of Object.keys(store)) delete store[k];
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (k: string) => store[k] ?? null,
+        setItem: (k: string, v: string) => {
+          store[k] = v;
+        },
+        removeItem: (k: string) => {
+          delete store[k];
+        },
+      },
+    });
+  });
+
+  it("posts the exact id_token body, sends no Authorization, and stores the token", async () => {
+    const { loginWithGoogle, getAuthToken, setAuthToken } = await import("./api");
+    setAuthToken("stale-token");
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({
+        token: "tok-google",
+        account: { id: "1", email: "g@example.com", tier: "free", is_premium: false },
+      })
+    );
+    const result = await loginWithGoogle("google-id-token-123");
+    expect(result.account.email).toBe("g@example.com");
+    expect(getAuthToken()).toBe("tok-google");
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toContain("/api/auth/google/");
+    expect(JSON.parse(init?.body as string)).toEqual({
+      id_token: "google-id-token-123",
+    });
+    expect(init?.headers.get("Authorization")).toBeNull();
+  });
+});
