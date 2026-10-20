@@ -13,7 +13,7 @@ import pymupdf
 
 PAGE_WIDTH, PAGE_HEIGHT = 595, 842  # A4 points
 MARGIN = 72
-WATERMARK_TEXT = "Signed with SignSeen"
+WATERMARK_TEXT = "Signed with SignSeen — free tier"
 
 
 def _apply_free_tier_watermark(doc: pymupdf.Document) -> None:
@@ -40,6 +40,7 @@ def build_signed_pdf(
     signature_png: bytes,
     photo_png: bytes | None,
     meta: dict,
+    watermark: bool = True,
 ) -> bytes:
     doc = pymupdf.open(original_path)
     page = doc.new_page(width=PAGE_WIDTH, height=PAGE_HEIGHT)
@@ -109,5 +110,6 @@ def build_signed_pdf(
         color=(0.4, 0.4, 0.4),
     )
 
-    _apply_free_tier_watermark(doc)
+    if watermark:
+        _apply_free_tier_watermark(doc)
     return doc.tobytes()

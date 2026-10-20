@@ -41,6 +41,15 @@ class Document(models.Model):
     source_url = models.URLField(blank=True, default="")
     signed_file = models.FileField(upload_to="signed/", null=True, blank=True)
     sender_email = models.EmailField()
+    # Owning account for storage-tier senders; null = free one-off send
+    # (identity is the sender email). Set when created while logged in.
+    owner = models.ForeignKey(
+        "accounts.Account",
+        related_name="documents",
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+    )
     status = models.CharField(
         max_length=16, choices=Status.choices, default=Status.PENDING
     )

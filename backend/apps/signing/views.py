@@ -14,6 +14,7 @@ Signer flow (token-addressed, no account):
 import base64
 import binascii
 import hashlib
+import logging
 import os
 
 from django.conf import settings
@@ -23,12 +24,24 @@ from django.http import FileResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.decorators import api_view, parser_classes
+from rest_framework.decorators import api_view, parser_classes, permission_classes
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from .hashing import record_event, verify_chain
 from .convert import ConversionError, convert_office_to_pdf, render_url_to_pdf
+from .limits import (
+    LimitExceeded,
+    check_can_create_document,
+    check_can_create_session,
+    check_pending_limit,
+    check_storage_limit,
+    storage_limit_bytes,
+    storage_used_bytes,
+    wants_watermark,
+)
+from .notifications import send_sealed_notifications
 from .trust import assess_photo, normalize_photo
 from .models import AuditEvent, Document, SigningSession
 from .pdf import build_signed_pdf
@@ -37,6 +50,8 @@ from .serializers import (
     DocumentSerializer,
     SigningSessionSerializer,
 )
+
+log = logging.getLogger(__name__)
 
 MAX_DOCUMENT_BYTES = 25 * 1024 * 1024  # 25 MB free-tier cap (scope §3.6)
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
@@ -143,9 +158,16 @@ def create_document(request):
     except ConversionError as exc:
         return _error(str(exc))
 
+    account = request.user if request.user.is_authenticated else None
+    try:
+        check_can_create_document(account, sender_email, len(pdf_bytes))
+    except LimitExceeded as exc:
+        return _error(str(exc), 409)
+
     doc = Document.objects.create(
         title=title,
         sender_email=sender_email,
+        owner=account,
         original_filename=original_filename,
         source=Document.Source.UPLOAD,
     )
@@ -165,20 +187,48 @@ def create_document_from_url(request):
     if not url:
         return _error("url is required")
 
+    account = request.user if request.user.is_authenticated else None
+    try:
+        check_pending_limit(account, sender_email)
+    except LimitExceeded as exc:
+        return _error(str(exc), 409)
+
     try:
         pdf_bytes = render_url_to_pdf(url)
     except ConversionError as exc:
         return _error(str(exc))
 
+    try:
+        check_storage_limit(account, sender_email, len(pdf_bytes))
+    except LimitExceeded as exc:
+        return _error(str(exc), 409)
+
     doc = Document.objects.create(
         title=title,
         sender_email=sender_email,
+        owner=account,
         original_filename="",
         source=Document.Source.URL,
         source_url=url,
     )
     doc.original_file.save(f"document-{doc.id}.pdf", ContentFile(pdf_bytes))
     return Response(DocumentSerializer(doc).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def my_documents(request):
+    """Sender dashboard: this account's documents + storage usage."""
+    docs = Document.objects.filter(owner=request.user).order_by("-created_at")
+    return Response(
+        {
+            "tier": request.user.tier,
+            "is_premium": request.user.is_premium,
+            "storage_used_bytes": storage_used_bytes(request.user, ""),
+            "storage_limit_bytes": storage_limit_bytes(request.user),
+            "documents": DocumentSerializer(docs, many=True).data,
+        }
+    )
 
 
 @api_view(["GET"])
@@ -193,6 +243,10 @@ def create_session(request, doc_id):
     doc = get_object_or_404(Document, pk=doc_id)
     if doc.status != Document.Status.PENDING:
         return _error("document is no longer pending signature", 409)
+    try:
+        check_can_create_session(doc)
+    except LimitExceeded as exc:
+        return _error(str(exc), 409)
 
     session = SigningSession.objects.create(
         document=doc,
@@ -330,6 +384,7 @@ def submit_signature(request, token):
         )
 
         # Seal: stamp the certificate page and store the signed PDF.
+        # Premium documents skip the free-tier watermark.
         signed_bytes = build_signed_pdf(
             doc.original_file.path,
             signature_png,
@@ -342,6 +397,7 @@ def submit_signature(request, token):
                 "audit_hash": submitted.hash,
                 "photo_assurance": photo_assurance,
             },
+            watermark=wants_watermark(doc),
         )
         doc.signed_file.save(f"signed-{doc.id}.pdf", ContentFile(signed_bytes))
         doc.status = Document.Status.SIGNED
@@ -361,6 +417,13 @@ def submit_signature(request, token):
                 "seal_event": str(submitted.id),
             },
         )
+
+    # Outside the transaction: email the signed copies (best-effort; a mail
+    # failure must never fail a completed signing).
+    try:
+        send_sealed_notifications(doc, session, sealed.hash)
+    except Exception:
+        log.exception("sealed-notification email failed")
 
     return Response(
         {

@@ -145,3 +145,80 @@ describe("mediaUrl", () => {
     expect(mediaUrl("/media/signed/x.pdf")).toContain("/media/signed/x.pdf");
   });
 });
+
+describe("auth", () => {
+  const store: Record<string, string> = {};
+  beforeEach(() => {
+    for (const k of Object.keys(store)) delete store[k];
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (k: string) => store[k] ?? null,
+        setItem: (k: string, v: string) => {
+          store[k] = v;
+        },
+        removeItem: (k: string) => {
+          delete store[k];
+        },
+      },
+    });
+  });
+
+  it("login posts credentials and stores the token", async () => {
+    const { login, getAuthToken, setAuthToken } = await import("./api");
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({
+        token: "tok-abc",
+        account: { id: "1", email: "a@example.com", tier: "free", is_premium: false },
+      })
+    );
+    setAuthToken(null);
+    const result = await login("a@example.com", "longpassword1");
+    expect(result.account.email).toBe("a@example.com");
+    expect(getAuthToken()).toBe("tok-abc");
+    const [, init] = vi.mocked(fetch).mock.calls[0];
+    expect(JSON.parse(init?.body as string).email).toBe("a@example.com");
+  });
+
+  it("attaches the stored token to later requests", async () => {
+    const { setAuthToken, myDashboard } = await import("./api");
+    setAuthToken("tok-abc");
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({ tier: "free", is_premium: false, documents: [] })
+    );
+    await myDashboard();
+    const [, init] = vi.mocked(fetch).mock.calls[0];
+    expect(init?.headers.get("Authorization")).toBe("Token tok-abc");
+    setAuthToken(null);
+  });
+
+  it("logout clears the stored token", async () => {
+    const { setAuthToken, getAuthToken, logout } = await import("./api");
+    setAuthToken("tok-abc");
+    vi.mocked(fetch).mockResolvedValue(jsonResponse({ status: "logged out" }));
+    await logout();
+    expect(getAuthToken()).toBeNull();
+  });
+
+  it("getDocument fetches the public document detail", async () => {
+    const { getDocument } = await import("./api");
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({ id: "d1", title: "T", status: "pending" })
+    );
+    const doc = await getDocument("d1");
+    const [url] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toContain("/api/documents/d1/");
+    expect(doc.title).toBe("T");
+  });
+
+  it("startCheckout returns the Stripe URL", async () => {
+    const { startCheckout } = await import("./api");
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({ url: "https://checkout.stripe/x" })
+    );
+    const url = await startCheckout();
+    const [reqUrl, init] = vi.mocked(fetch).mock.calls[0];
+    expect(reqUrl).toContain("/api/billing/checkout/");
+    expect(init?.method).toBe("POST");
+    expect(url).toBe("https://checkout.stripe/x");
+  });
+});
