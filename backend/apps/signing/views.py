@@ -28,6 +28,7 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
 from .hashing import record_event, verify_chain
+from .convert import ConversionError, convert_office_to_pdf, render_url_to_pdf
 from .models import AuditEvent, Document, SigningSession
 from .pdf import build_signed_pdf
 from .serializers import (
@@ -38,6 +39,18 @@ from .serializers import (
 
 MAX_DOCUMENT_BYTES = 25 * 1024 * 1024  # 25 MB free-tier cap (scope §3.6)
 MAX_IMAGE_BYTES = 5 * 1024 * 1024
+
+UPLOAD_EXTENSIONS = {".pdf", ".doc", ".docx"}
+
+
+def _validate_sender_fields(data) -> tuple[str, str] | Response:
+    title = (data.get("title") or "").strip()
+    sender_email = (data.get("sender_email") or "").strip()
+    if not title:
+        return _error("title is required")
+    if not sender_email or "@" not in sender_email:
+        return _error("a valid sender_email is required")
+    return title, sender_email
 
 
 def _error(message: str, code=status.HTTP_400_BAD_REQUEST) -> Response:
@@ -77,26 +90,67 @@ def _sha256(data: bytes) -> str:
 @api_view(["POST"])
 @parser_classes([MultiPartParser, FormParser])
 def create_document(request):
-    title = (request.data.get("title") or "").strip()
-    sender_email = (request.data.get("sender_email") or "").strip()
+    validated = _validate_sender_fields(request.data)
+    if isinstance(validated, Response):
+        return validated
+    title, sender_email = validated
     upload = request.data.get("file")
 
-    if not title:
-        return _error("title is required")
-    if not sender_email or "@" not in sender_email:
-        return _error("a valid sender_email is required")
     if upload is None:
         return _error("file is required")
     if upload.size > MAX_DOCUMENT_BYTES:
         return _error("file exceeds the 25 MB limit")
-    header = upload.read(5)
-    upload.seek(0)
-    if header != b"%PDF-":
-        return _error("file must be a PDF")
+
+    original_filename = upload.name or ""
+    ext = os.path.splitext(original_filename)[1].lower()
+    if ext not in UPLOAD_EXTENSIONS:
+        return _error("file must be a PDF, DOC, or DOCX")
+
+    try:
+        if ext == ".pdf":
+            pdf_bytes = upload.read()
+            if pdf_bytes[:5] != b"%PDF-":
+                return _error("file must be a PDF")
+        else:
+            pdf_bytes = convert_office_to_pdf(upload.read(), original_filename)
+    except ConversionError as exc:
+        return _error(str(exc))
 
     doc = Document.objects.create(
-        title=title, sender_email=sender_email, original_file=upload
+        title=title,
+        sender_email=sender_email,
+        original_filename=original_filename,
+        source=Document.Source.UPLOAD,
     )
+    doc.original_file.save(f"document-{doc.id}.pdf", ContentFile(pdf_bytes))
+    return Response(DocumentSerializer(doc).data, status=status.HTTP_201_CREATED)
+
+
+@api_view(["POST"])
+@parser_classes([JSONParser, FormParser, MultiPartParser])
+def create_document_from_url(request):
+    """Web-page signing: render a URL to PDF, then it flows like any upload."""
+    validated = _validate_sender_fields(request.data)
+    if isinstance(validated, Response):
+        return validated
+    title, sender_email = validated
+    url = (request.data.get("url") or "").strip()
+    if not url:
+        return _error("url is required")
+
+    try:
+        pdf_bytes = render_url_to_pdf(url)
+    except ConversionError as exc:
+        return _error(str(exc))
+
+    doc = Document.objects.create(
+        title=title,
+        sender_email=sender_email,
+        original_filename="",
+        source=Document.Source.URL,
+        source_url=url,
+    )
+    doc.original_file.save(f"document-{doc.id}.pdf", ContentFile(pdf_bytes))
     return Response(DocumentSerializer(doc).data, status=status.HTTP_201_CREATED)
 
 

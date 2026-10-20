@@ -27,9 +27,18 @@ class Document(models.Model):
         SIGNED = "signed", "Signed"
         EXPIRED = "expired", "Expired"
 
+    class Source(models.TextChoices):
+        UPLOAD = "upload", "Upload"
+        URL = "url", "URL"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     title = models.CharField(max_length=255)
     original_file = models.FileField(upload_to="originals/")
+    original_filename = models.CharField(max_length=255, default="", blank=True)
+    source = models.CharField(
+        max_length=16, choices=Source.choices, default=Source.UPLOAD
+    )
+    source_url = models.URLField(blank=True, default="")
     signed_file = models.FileField(upload_to="signed/", null=True, blank=True)
     sender_email = models.EmailField()
     status = models.CharField(

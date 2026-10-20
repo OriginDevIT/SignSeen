@@ -92,6 +92,19 @@ export function createSession(
   });
 }
 
+/** Sender: render a web page URL to PDF, then it flows like any upload. */
+export function createDocumentFromUrl(
+  url: string,
+  title: string,
+  senderEmail: string
+): Promise<DocumentInfo> {
+  return req<DocumentInfo>("/api/documents/from-url/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url, title, sender_email: senderEmail }),
+  });
+}
+
 /** Signer: fetch session info (no account; the token is the auth). */
 export function getSession(token: string): Promise<SessionInfo> {
   return req<SessionInfo>(`/api/sessions/${token}/`);

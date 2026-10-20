@@ -4,41 +4,46 @@ import { useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import {
   ApiError,
+  createDocumentFromUrl,
   createSession,
   uploadDocument,
   type SessionInfo,
 } from "../../lib/api";
 
 type Phase = "form" | "working" | "done";
+type Intake = "file" | "url";
 
 export default function SendPage() {
   const [phase, setPhase] = useState<Phase>("form");
+  const [intake, setIntake] = useState<Intake>("file");
   const [title, setTitle] = useState("");
   const [senderEmail, setSenderEmail] = useState("");
   const [signerName, setSignerName] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [pageUrl, setPageUrl] = useState("");
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!file) return;
+    if (intake === "file" && !file) return;
     setError("");
     setPhase("working");
     try {
-      const doc = await uploadDocument(file, title.trim(), senderEmail.trim());
-      const sess = await createSession(
-        doc.id,
-        signerName.trim(),
-        ""
-      );
+      const doc =
+        intake === "file"
+          ? await uploadDocument(file!, title.trim(), senderEmail.trim())
+          : await createDocumentFromUrl(
+              pageUrl.trim(),
+              title.trim(),
+              senderEmail.trim()
+            );
+      const sess = await createSession(doc.id, signerName.trim(), "");
       setSession(sess);
       setPhase("done");
     } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : "Something went wrong."
-      );
+      setError(err instanceof ApiError ? err.message : "Something went wrong.");
       setPhase("form");
     }
   };
@@ -91,6 +96,27 @@ export default function SendPage() {
 
       {phase !== "done" && (
         <form onSubmit={submit} style={{ display: "grid", gap: "1rem" }}>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            {(["file", "url"] as Intake[]).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                onClick={() => setIntake(mode)}
+                style={{
+                  flex: 1,
+                  padding: "0.6rem",
+                  borderRadius: 8,
+                  border: "1px solid #d1d5db",
+                  background: intake === mode ? "#111827" : "#fff",
+                  color: intake === mode ? "#fff" : "inherit",
+                  cursor: "pointer",
+                  fontWeight: 600,
+                }}
+              >
+                {mode === "file" ? "Upload a file" : "From a web page"}
+              </button>
+            ))}
+          </div>
           <label style={{ display: "grid", gap: "0.35rem" }}>
             Document title
             <input
@@ -121,16 +147,38 @@ export default function SendPage() {
               placeholder="Jane Doe"
             />
           </label>
-          <label style={{ display: "grid", gap: "0.35rem" }}>
-            PDF document <span style={{ opacity: 0.6 }}>(max 25 MB)</span>
-            <input
-              style={inputStyle}
-              type="file"
-              accept="application/pdf,.pdf"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-              required
-            />
-          </label>
+          {intake === "file" ? (
+            <label style={{ display: "grid", gap: "0.35rem" }}>
+              Document{" "}
+              <span style={{ opacity: 0.6 }}>
+                (PDF, DOC, DOCX — max 25 MB; Word docs convert to PDF)
+              </span>
+              <input
+                key="file-input"
+                style={inputStyle}
+                type="file"
+                accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                required
+              />
+            </label>
+          ) : (
+            <label style={{ display: "grid", gap: "0.35rem" }}>
+              Page URL{" "}
+              <span style={{ opacity: 0.6 }}>
+                (rendered to PDF — e.g. a terms page)
+              </span>
+              <input
+                key="url-input"
+                style={inputStyle}
+                type="url"
+                value={pageUrl}
+                onChange={(e) => setPageUrl(e.target.value)}
+                placeholder="https://example.com/terms"
+                required
+              />
+            </label>
+          )}
           <button
             type="submit"
             disabled={phase === "working"}
