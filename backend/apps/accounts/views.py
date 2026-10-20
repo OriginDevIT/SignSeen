@@ -18,6 +18,21 @@ from rest_framework.response import Response
 
 from .models import Account
 
+
+def _claim_documents(account: Account) -> None:
+    """Attach this email's unattached documents to the account.
+
+    Free one-off sends are keyed by sender email with no owner (scope
+    §3.10). When that sender signs up or logs in, those documents become
+    theirs — otherwise they'd block sends (the pending limit is keyed on
+    email) while never appearing in their dashboard.
+    """
+    from apps.signing.models import Document
+
+    Document.objects.filter(
+        owner__isnull=True, sender_email__iexact=account.email
+    ).update(owner=account)
+
 _token_generator = PasswordResetTokenGenerator()
 
 
@@ -46,6 +61,7 @@ def signup(request):
     if Account.objects.filter(email=email).exists():
         return _error("an account with this email already exists", 409)
     account = Account.objects.create_user(email=email, password=password)
+    _claim_documents(account)
     token, _ = Token.objects.get_or_create(user=account)
     return Response(
         {"token": token.key, "account": _account_payload(account)},
@@ -62,6 +78,7 @@ def login(request):
     if account is None:
         # Same message for unknown email vs wrong password (no enumeration).
         return _error("invalid email or password", 401)
+    _claim_documents(account)
     token, _ = Token.objects.get_or_create(user=account)
     return Response({"token": token.key, "account": _account_payload(account)})
 
