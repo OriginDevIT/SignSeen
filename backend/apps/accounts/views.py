@@ -12,7 +12,7 @@ from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from rest_framework import status
 from rest_framework.authtoken.models import Token
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
@@ -51,6 +51,7 @@ def _account_payload(account: Account) -> dict:
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@authentication_classes([])
 def signup(request):
     email = (request.data.get("email") or "").strip().lower()
     password = request.data.get("password") or ""
@@ -71,6 +72,7 @@ def signup(request):
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@authentication_classes([])
 def login(request):
     email = (request.data.get("email") or "").strip().lower()
     password = request.data.get("password") or ""
@@ -98,6 +100,7 @@ def me(request):
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@authentication_classes([])
 def password_reset(request):
     """Email a reset link. Always 200 — never reveal whether the email exists."""
     email = (request.data.get("email") or "").strip().lower()
@@ -123,6 +126,7 @@ def password_reset(request):
 
 @api_view(["POST"])
 @permission_classes([AllowAny])
+@authentication_classes([])
 def password_reset_confirm(request):
     uid = request.data.get("uid") or ""
     token = request.data.get("token") or ""

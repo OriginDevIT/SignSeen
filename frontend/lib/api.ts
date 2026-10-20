@@ -72,8 +72,20 @@ export function setAuthToken(token: string | null): void {
   }
 }
 
-async function req<T>(path: string, init?: RequestInit): Promise<T> {
-  const token = getAuthToken();
+interface ReqOptions {
+  /** Attach the stored sender token. Public / signer endpoints pass
+   * false: the signing token in the URL is their credential, and a
+   * stale sender token must never break a signing link. */
+  auth?: boolean;
+}
+
+async function req<T>(
+  path: string,
+  init?: RequestInit,
+  options?: ReqOptions
+): Promise<T> {
+  const useAuth = options?.auth !== false;
+  const token = useAuth ? getAuthToken() : null;
   const headers = new Headers(init?.headers);
   if (token) {
     headers.set("Authorization", `Token ${token}`);
@@ -81,10 +93,15 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
-    throw new ApiError(
-      (body as { error?: string }).error || `Request failed (${res.status})`,
-      res.status
-    );
+    const { error, detail } = body as { error?: string; detail?: string };
+    const message = error || detail || `Request failed (${res.status})`;
+    // The server no longer knows this token (logout elsewhere,
+    // password reset, database reset): drop it so later requests
+    // don't keep failing the same way.
+    if (res.status === 401 && /invalid token/i.test(message)) {
+      setAuthToken(null);
+    }
+    throw new ApiError(message, res.status);
   }
   return body as T;
 }
@@ -130,7 +147,7 @@ export function createDocumentFromUrl(
 
 /** Signer: fetch session info (no account; the token is the auth). */
 export function getSession(token: string): Promise<SessionInfo> {
-  return req<SessionInfo>(`/api/sessions/${token}/`);
+  return req<SessionInfo>(`/api/sessions/${token}/`, undefined, { auth: false });
 }
 
 /** Signer: token-addressed URL of the PDF under review. */
@@ -170,24 +187,28 @@ export function submitSignature(
     signerEmail?: string;
   }
 ): Promise<SignResult> {
-  return req<SignResult>(`/api/sessions/${token}/sign/`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      signature: payload.signature,
-      photo: payload.photo,
-      photo_consent: payload.photoConsent === true,
-      device_info: payload.deviceInfo,
-      signer_email: payload.signerEmail || "",
-    }),
-  });
+  return req<SignResult>(
+    `/api/sessions/${token}/sign/`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        signature: payload.signature,
+        photo: payload.photo,
+        photo_consent: payload.photoConsent === true,
+        device_info: payload.deviceInfo,
+        signer_email: payload.signerEmail || "",
+      }),
+    },
+    { auth: false }
+  );
 }
 
 /** Anyone with the token: the tamper-evident audit trail. */
 export function getSessionEvents(
   token: string
 ): Promise<{ chain_valid: boolean; events: AuditEventInfo[] }> {
-  return req(`/api/sessions/${token}/events/`);
+  return req(`/api/sessions/${token}/events/`, undefined, { auth: false });
 }
 
 /** Absolute URL for a media path returned by the API (e.g. signed_file). */
@@ -216,11 +237,15 @@ export async function signup(
   email: string,
   password: string
 ): Promise<AuthResult> {
-  const result = await req<AuthResult>("/api/auth/signup/", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
-  });
+  const result = await req<AuthResult>(
+    "/api/auth/signup/",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    },
+    { auth: false }
+  );
   setAuthToken(result.token);
   return result;
 }
@@ -229,11 +254,15 @@ export async function login(
   email: string,
   password: string
 ): Promise<AuthResult> {
-  const result = await req<AuthResult>("/api/auth/login/", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
-  });
+  const result = await req<AuthResult>(
+    "/api/auth/login/",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    },
+    { auth: false }
+  );
   setAuthToken(result.token);
   return result;
 }
@@ -251,11 +280,15 @@ export function myAccount(): Promise<AccountInfo> {
 }
 
 export function requestPasswordReset(email: string): Promise<void> {
-  return req("/api/auth/password-reset/", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email }),
-  });
+  return req(
+    "/api/auth/password-reset/",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    },
+    { auth: false }
+  );
 }
 
 export function confirmPasswordReset(
@@ -263,11 +296,15 @@ export function confirmPasswordReset(
   token: string,
   password: string
 ): Promise<void> {
-  return req("/api/auth/password-reset/confirm/", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ uid, token, password }),
-  });
+  return req(
+    "/api/auth/password-reset/confirm/",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ uid, token, password }),
+    },
+    { auth: false }
+  );
 }
 
 /* ------------------------------------------------------------------ */
@@ -290,7 +327,9 @@ export function myDashboard(): Promise<DashboardData> {
 
 /** Public tracking page data for a document (status + signed download). */
 export function getDocument(docId: string): Promise<DocumentInfo> {
-  return req<DocumentInfo>(`/api/documents/${docId}/`);
+  return req<DocumentInfo>(`/api/documents/${docId}/`, undefined, {
+    auth: false,
+  });
 }
 
 /* ------------------------------------------------------------------ */

@@ -105,3 +105,23 @@ def test_password_reset_flow():
         {"email": "a@example.com", "password": "newpassword99"},
         format="json",
     ).status_code == 200
+
+
+@pytest.mark.django_db
+def test_auth_endpoints_ignore_stale_sender_token():
+    # A browser holding a token the server no longer knows (DB reset,
+    # token deleted elsewhere) must still be able to sign up and log in;
+    # otherwise the stale header deadlocks account recovery entirely.
+    stale = APIClient()
+    stale.credentials(HTTP_AUTHORIZATION="Token stale-token-no-longer-in-db")
+    assert signup(stale).status_code == 201
+
+    stale2 = APIClient()
+    stale2.credentials(HTTP_AUTHORIZATION="Token stale-token-no-longer-in-db")
+    good = stale2.post(
+        "/api/auth/login/",
+        {"email": "a@example.com", "password": "longpassword1"},
+        format="json",
+    )
+    assert good.status_code == 200
+    assert good.json()["token"]

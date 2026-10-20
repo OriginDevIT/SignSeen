@@ -222,3 +222,64 @@ describe("auth", () => {
     expect(url).toBe("https://checkout.stripe/x");
   });
 });
+
+describe("stale sender token handling", () => {
+  const store: Record<string, string> = {};
+  beforeEach(() => {
+    for (const k of Object.keys(store)) delete store[k];
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (k: string) => store[k] ?? null,
+        setItem: (k: string, v: string) => {
+          store[k] = v;
+        },
+        removeItem: (k: string) => {
+          delete store[k];
+        },
+      },
+    });
+  });
+
+  it("getSession sends no Authorization header even with a stored token", async () => {
+    const { getSession, setAuthToken } = await import("./api");
+    setAuthToken("stale-token");
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({ token: "sess-1", usable: true })
+    );
+    await getSession("sess-1");
+    const [, init] = vi.mocked(fetch).mock.calls[0];
+    expect(init?.headers.get("Authorization")).toBeNull();
+  });
+
+  it("submitSignature sends no Authorization header", async () => {
+    const { submitSignature, setAuthToken } = await import("./api");
+    setAuthToken("stale-token");
+    vi.mocked(fetch).mockResolvedValue(jsonResponse({ status: "signed" }));
+    await submitSignature("sess-1", {
+      signature: "data:image/png;base64,AAA",
+      deviceInfo: {
+        userAgent: "ua",
+        platform: "p",
+        language: "en",
+        screenWidth: 1,
+        screenHeight: 2,
+        timezoneOffsetMinutes: 0,
+      },
+    });
+    const [, init] = vi.mocked(fetch).mock.calls[0];
+    expect(init?.headers.get("Authorization")).toBeNull();
+  });
+
+  it("a 401 Invalid token clears the stored token and surfaces detail", async () => {
+    const { myDashboard, getAuthToken, setAuthToken } = await import("./api");
+    setAuthToken("stale-token");
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({ detail: "Invalid token." }, 401)
+    );
+    await expect(myDashboard()).rejects.toMatchObject({
+      message: "Invalid token.",
+      status: 401,
+    });
+    expect(getAuthToken()).toBeNull();
+  });
+});
