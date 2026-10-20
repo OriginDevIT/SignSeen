@@ -70,8 +70,46 @@ This script covers those by hand.
     - ✅ Nothing happens (stays on the step).
 17. **Skipped photo**: submit without a photo.
     - ✅ Seals fine; certificate page shows no photo.
+18. **Second pending doc (anonymous, same email)**: send a doc, then send
+    another with the same sender email before the first is signed.
+    - ✅ 409: "Free tier allows 1 document pending signature at a time."
+19. **Second pending doc (same email, account)**: sign up with the same
+    sender email, try `/send` again while the first is pending.
+    - ✅ Still 409 — the limit is keyed on the email, not the account.
+20. **Second signing session on one document**: POST a second session.
+    - ✅ 409: "This document already has a signing session."
 
-## E. Eyeball items (known unknowns — report what you see)
+## E. Accounts, dashboard, email (Phase 4)
+
+21. **Signup/login**: `/signup` → create account → land on `/dashboard`.
+    Log out, `/login` → back in. Wrong password → "invalid email or
+    password". Reset flow: `/reset-password` → email link (check the API
+    server log for the link when SMTP is unset) → set new password → login.
+22. **Dashboard**: send a doc while logged in → it appears on `/dashboard`
+    with status `pending`; storage meter shows usage; sender email is
+    prefilled on `/send` with a "Signed in as …" note.
+23. **Seal email**: complete a ceremony with a signer email entered. Check
+    both the sender and signer inboxes for the signed PDF + audit seal.
+    (Without SMTP configured, check the API server log instead — the
+    console email backend prints there. Sealing must succeed regardless.)
+24. **Tracking page**: open `/d/<doc-id>` from the dashboard or the email.
+    - ✅ Title, status, sender, and a signed-PDF download once sealed.
+25. **Watermark**: seal a doc as a free user → every page carries the light
+    diagonal "Signed with SignSeen — free tier". (Premium accounts skip it —
+    testable only with Stripe keys configured; see §I.)
+26. **Done-screen offer**: after sealing, the confirmation page offers
+    "Create a free account" → `/signup`. Factual wording, no upsell copy.
+
+## F. Billing (Stripe test mode — needs keys)
+
+Only when `STRIPE_SECRET_KEY` / `STRIPE_PRICE_ID` are set in `.env.staging`:
+27. **Upgrade**: on `/dashboard`, **Upgrade to premium** → Stripe Checkout
+    (use the `4242…` test card) → back on `/dashboard?upgraded=1` as Premium.
+28. **No watermark**: seal a doc as premium → no free-tier watermark.
+29. **Portal**: **Manage billing** → Stripe customer portal → cancel →
+    webhook flips the account back to free.
+
+## G. Eyeball items (known unknowns — report what you see)
 
 - **Photo orientation**: take the witness photo in portrait. Is it upright
   in the sealed PDF, or rotated 90°? (Mobile EXIF orientation handling.)
@@ -80,7 +118,7 @@ This script covers those by hand.
 - **Small screens**: any layout breakage on the ceremony pages at 360px wide?
 - **Camera permission**: first-tap behavior on iOS Safari vs Chrome Android.
 
-## F. Testing with a real phone (LAN)
+## H. Testing with a real phone (LAN)
 
 `localhost` doesn't reach your phone. Put both on the same Wi-Fi, find
 your machine's LAN IP (`ipconfig` / `ifconfig` / `ip addr`), then:
@@ -93,7 +131,7 @@ FRONTEND_URL=http://<LAN-IP>:3000 NEXT_PUBLIC_API_URL=http://<LAN-IP>:8000 \
 The QR code will then encode the LAN address and your phone can reach
 both the web app and the API.
 
-## G. Cleanup
+## I. Cleanup
 
 `docker compose down -v` — wipes containers, the test database, and
 uploaded files.
