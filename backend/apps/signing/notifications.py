@@ -13,16 +13,7 @@ from django.core.mail import EmailMessage
 log = logging.getLogger(__name__)
 
 
-def send_sealed_notifications(document, session, audit_seal: str) -> None:
-    recipients = []
-    if document.sender_email:
-        recipients.append(document.sender_email)
-    signer_email = (session.signer_email or "").strip()
-    if signer_email and signer_email.lower() != document.sender_email.lower():
-        recipients.append(signer_email)
-    if not recipients:
-        return
-
+def _email_copy(document, audit_seal: str, recipient: str) -> None:
     track_url = f"{settings.FRONTEND_URL}/d/{document.id}"
     body = (
         f'"{document.title}" has been signed.\n\n'
@@ -32,16 +23,35 @@ def send_sealed_notifications(document, session, audit_seal: str) -> None:
     )
     with document.signed_file.open("rb") as f:
         pdf_bytes = f.read()
+    msg = EmailMessage(
+        subject=f"Signed: {document.title}",
+        body=body,
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        to=[recipient],
+    )
+    msg.attach(f"signed-{document.id}.pdf", pdf_bytes, "application/pdf")
+    try:
+        msg.send()
+    except Exception:
+        log.exception("failed to email sealed document to %s", recipient)
+
+
+def send_sealed_notifications(document, session, audit_seal: str) -> None:
+    recipients = []
+    if document.sender_email:
+        recipients.append(document.sender_email)
+    signer_email = (session.signer_email or "").strip()
+    if signer_email and signer_email.lower() != document.sender_email.lower():
+        recipients.append(signer_email)
 
     for email in recipients:
-        msg = EmailMessage(
-            subject=f"Signed: {document.title}",
-            body=body,
-            from_email=settings.DEFAULT_FROM_EMAIL,
-            to=[email],
-        )
-        msg.attach(f"signed-{document.id}.pdf", pdf_bytes, "application/pdf")
-        try:
-            msg.send()
-        except Exception:
-            log.exception("failed to email sealed document to %s", email)
+        _email_copy(document, audit_seal, email)
+
+
+def send_signer_copy(document, session, audit_seal: str) -> None:
+    """Email the signer their copy after they leave an email at completion
+    (scope §3.3: the email step happens on the Sealed screen, after the
+    ceremony, so it cannot ride the seal-time notification)."""
+    signer_email = (session.signer_email or "").strip()
+    if signer_email:
+        _email_copy(document, audit_seal, signer_email)

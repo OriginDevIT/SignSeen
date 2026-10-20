@@ -204,6 +204,24 @@ export function submitSignature(
   );
 }
 
+/** Signer, at completion: leave an email to receive a copy of the sealed
+ * document. This email is also what links the document to a later
+ * account's "Documents you've signed" archive. */
+export function setSignerEmail(
+  token: string,
+  email: string
+): Promise<{ status: string; signer_email: string }> {
+  return req(
+    `/api/sessions/${token}/signer-email/`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email }),
+    },
+    { auth: false }
+  );
+}
+
 /** Anyone with the token: the tamper-evident audit trail. */
 export function getSessionEvents(
   token: string

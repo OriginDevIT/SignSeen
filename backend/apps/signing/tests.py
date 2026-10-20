@@ -831,3 +831,84 @@ def test_anonymous_upload_with_stale_token_degrades_to_anonymous():
         format="json",
     )
     assert session.status_code == 201
+
+
+# ---------------------------------------------------------------------------
+# Completion email step (scope §3.3/§3.10): the signer leaves an email
+# after sealing to receive a copy; that email is what links the signed
+# document to a later account's "Documents you've signed" archive.
+# ---------------------------------------------------------------------------
+
+
+def _sign_document(client, email="sender@example.com"):
+    doc_id = upload_document(client, email=email).json()["id"]
+    token = client.post(
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Jane"}, format="json"
+    ).json()["token"]
+    assert client.post(
+        f"/api/sessions/{token}/sign/",
+        {"signature": SIG_DATA_URL, "device_info": {}},
+        format="json",
+    ).status_code == 200
+    return doc_id, token
+
+
+@pytest.mark.django_db
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+def test_signer_email_at_completion_sends_copy_and_links_archive():
+    from django.core import mail
+
+    client = APIClient()
+    doc_id, token = _sign_document(client)
+    # Seal-time mail went to the sender only (no signer email known yet).
+    assert [m.to for m in mail.outbox] == [["sender@example.com"]]
+
+    # A stale sender Authorization header must not matter here either.
+    stale = APIClient()
+    stale.credentials(HTTP_AUTHORIZATION="Token stale-token-no-longer-in-db")
+    response = stale.post(
+        f"/api/sessions/{token}/signer-email/",
+        {"email": "jane@example.com"},
+        format="json",
+    )
+    assert response.status_code == 200
+    session = SigningSession.objects.get(token=token)
+    assert session.signer_email == "jane@example.com"
+    assert [m.to for m in mail.outbox][-1] == ["jane@example.com"]
+    assert session.events.filter(event_type="signer.email_provided").exists()
+    assert verify_chain(session) is True
+
+    # An account created with that email now archives the document.
+    account_client = APIClient()
+    auth = account_client.post(
+        "/api/auth/signup/",
+        {"email": "jane@example.com", "password": "longpassword1"},
+        format="json",
+    ).json()["token"]
+    account_client.credentials(HTTP_AUTHORIZATION=f"Token {auth}")
+    body = account_client.get("/api/documents/mine/").json()
+    assert [d["id"] for d in body["signed_documents"]] == [doc_id]
+
+
+@pytest.mark.django_db
+def test_signer_email_rejected_before_signing_and_when_invalid():
+    client = APIClient()
+    doc_id = upload_document(client).json()["id"]
+    token = client.post(
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Jane"}, format="json"
+    ).json()["token"]
+    pending = client.post(
+        f"/api/sessions/{token}/signer-email/",
+        {"email": "jane@example.com"},
+        format="json",
+    )
+    assert pending.status_code == 409
+
+    _, signed_token = _sign_document(APIClient(), email="other@example.com")
+    bad = client.post(
+        f"/api/sessions/{signed_token}/signer-email/",
+        {"email": "not-an-email"},
+        format="json",
+    )
+    assert bad.status_code == 400
+    assert SigningSession.objects.get(token=signed_token).signer_email == ""
