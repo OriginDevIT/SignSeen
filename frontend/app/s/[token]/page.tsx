@@ -214,7 +214,7 @@ export default function SignPage() {
             ref={photoInputRef}
             type="file"
             accept="image/*"
-            capture="environment"
+            capture="user"
             onChange={onPhotoPicked}
             style={{ display: "none" }}
           />
