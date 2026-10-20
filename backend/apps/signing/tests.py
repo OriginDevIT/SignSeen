@@ -1057,3 +1057,271 @@ def test_three_signer_document_seals_once_in_order():
         ("Signer Two", "signed", 1),
         ("Signer Three", "signed", 2),
     ]
+
+
+# ---------------------------------------------------------------------------
+# Complex documents (#13): sender-placed fields, per-signer assignment,
+# sequential vs parallel signing, field stamping at seal, email invites.
+# ---------------------------------------------------------------------------
+
+from .models import DocumentField
+
+
+def make_multipage_pdf_bytes(pages=2) -> bytes:
+    doc = pymupdf.open()
+    for i in range(pages):
+        page = doc.new_page()
+        page.insert_text((72, 72), f"Page {i + 1} body")
+    return doc.tobytes()
+
+
+def upload_mode_document(client, email, mode=None, pages=2):
+    pdf = SimpleUploadedFile(
+        "complex.pdf", make_multipage_pdf_bytes(pages), content_type="application/pdf"
+    )
+    data = {"title": "Complex", "sender_email": email, "file": pdf}
+    if mode is not None:
+        data["signing_mode"] = mode
+    return client.post("/api/documents/", data, format="multipart")
+
+
+def _make_session(client, doc_id, name, email):
+    resp = client.post(
+        f"/api/documents/{doc_id}/sessions/",
+        {"signer_name": name, "signer_email": email},
+        format="json",
+    )
+    assert resp.status_code == 201, resp.content
+    return resp.json()
+
+
+def _place(client, doc_id, session_id, field_type, page=1, x=0.1, y=0.2, required=True):
+    resp = client.post(
+        f"/api/documents/{doc_id}/fields/",
+        {
+            "session_id": session_id,
+            "type": field_type,
+            "page": page,
+            "x": x,
+            "y": y,
+            "required": required,
+        },
+        format="json",
+    )
+    assert resp.status_code == 201, resp.content
+    return resp.json()
+
+
+def _sign_with_fields(token, field_values):
+    return APIClient().post(
+        f"/api/sessions/{token}/sign/",
+        {
+            "signature": SIG_DATA_URL,
+            "device_info": {},
+            "field_values": field_values,
+        },
+        format="json",
+    )
+
+
+def _premium_fields_setup(mode="sequential"):
+    account = _make_account(
+        email=f"fields-{mode}@example.com", tier=Account.Tier.PREMIUM
+    )
+    client = _auth_client(account)
+    resp = upload_mode_document(client, account.email, mode=mode)
+    assert resp.status_code == 201, resp.content
+    doc_id = resp.json()["id"]
+    alice = _make_session(client, doc_id, "Alice", "alice@example.com")
+    bob = _make_session(client, doc_id, "Bob", "bob@example.com")
+    return client, doc_id, alice, bob
+
+
+@pytest.mark.django_db
+def test_signing_mode_defaults_sequential_and_validates():
+    client = APIClient()
+    ok = upload_mode_document(client, "mode-default@example.com")
+    assert ok.status_code == 201
+    assert ok.json()["signing_mode"] == "sequential"
+    bad = upload_mode_document(client, "mode-bad@example.com", mode="sideways")
+    assert bad.status_code == 400
+
+
+@pytest.mark.django_db
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+def test_complex_document_fields_end_to_end_sequential():
+    from django.core import mail
+
+    client, doc_id, alice, bob = _premium_fields_setup("sequential")
+
+    # Invite delivery: Alice (active) was invited at creation; Bob is
+    # held by the sequence and has not been invited yet.
+    invited = [m.to[0] for m in mail.outbox if m.subject.startswith("Please sign")]
+    assert invited == ["alice@example.com"]
+
+    # Fields: Alice signs/text/dates, Bob initials + checkbox.
+    a_sig = _place(client, doc_id, alice["id"], "signature", page=1, x=0.1, y=0.2)
+    a_text = _place(client, doc_id, alice["id"], "text", page=1, x=0.1, y=0.45)
+    a_date = _place(client, doc_id, alice["id"], "date", page=2, x=0.1, y=0.2)
+    b_init = _place(client, doc_id, bob["id"], "initials", page=1, x=0.55, y=0.2)
+    b_check = _place(client, doc_id, bob["id"], "checkbox", page=2, x=0.1, y=0.5)
+
+    # The ceremony payload carries only the signer's own fields.
+    payload = APIClient().get(f"/api/sessions/{alice['token']}/").json()
+    assert [f["id"] for f in payload["fields"]] == [a_sig["id"], a_text["id"], a_date["id"]]
+    assert [f["type"] for f in payload["fields"]] == ["signature", "text", "date"]
+
+    # Signer 2 cannot submit before signer 1 (sequential gating).
+    assert _sign(bob["token"]).status_code == 410
+
+    # Missing required fields -> 400, and completing another signer's
+    # field -> 400.
+    assert _sign_with_fields(alice["token"], []).status_code == 400
+    partial = [
+        {"field_id": a_sig["id"], "value": SIG_DATA_URL},
+        {"field_id": a_text["id"], "value": "Alice agreed"},
+    ]
+    assert _sign_with_fields(alice["token"], partial).status_code == 400
+    foreign = partial + [
+        {"field_id": a_date["id"], "value": "2026-10-20"},
+        {"field_id": b_check["id"], "value": True},
+    ]
+    assert _sign_with_fields(alice["token"], foreign).status_code == 400
+
+    # Alice completes all of her fields.
+    done = _sign_with_fields(
+        alice["token"],
+        partial + [{"field_id": a_date["id"], "value": "2026-10-20"}],
+    )
+    assert done.status_code == 200, done.content
+    assert done.json()["document_final"] is False
+    doc = Document.objects.get(pk=doc_id)
+    assert doc.status == Document.Status.PENDING
+
+    # Bob was invited when Alice's signature activated his session.
+    bob_invites = [
+        m for m in mail.outbox
+        if m.to == ["bob@example.com"] and m.subject.startswith("Please sign")
+    ]
+    assert len(bob_invites) == 1
+    assert f"/s/{bob['token']}" in bob_invites[0].body
+
+    # Bob completes his fields; the document seals exactly once.
+    final = _sign_with_fields(
+        bob["token"],
+        [
+            {"field_id": b_init["id"], "value": SIG_DATA_URL},
+            {"field_id": b_check["id"], "value": True},
+        ],
+    )
+    assert final.status_code == 200, final.content
+    assert final.json()["document_final"] is True
+    doc.refresh_from_db()
+    assert doc.status == Document.Status.SIGNED
+    assert DocumentField.objects.filter(
+        document_id=doc_id, completed_at__isnull=True
+    ).count() == 0
+
+    # Sealed PDF: field values are stamped on their pages.
+    pdf = pymupdf.open(stream=doc.signed_file.read())
+    page1 = pdf[0].get_text()
+    page2 = pdf[1].get_text()
+    assert "Alice agreed" in page1
+    assert "2026-10-20" in page2
+    assert "X" in page2  # the checkbox mark
+
+    # field.completed events in both chains; every chain verifies.
+    for session_id, count in ((alice["id"], 3), (bob["id"], 2)):
+        session = SigningSession.objects.get(pk=session_id)
+        events = session.events.filter(event_type="field.completed")
+        assert events.count() == count
+        assert verify_chain(session) is True
+
+
+@pytest.mark.django_db
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+def test_parallel_mode_lets_signer_two_go_first():
+    from django.core import mail
+
+    client, doc_id, alice, bob = _premium_fields_setup("parallel")
+
+    # Parallel: both signers were invited at creation.
+    invited = {m.to[0] for m in mail.outbox if m.subject.startswith("Please sign")}
+    assert invited == {"alice@example.com", "bob@example.com"}
+
+    a_text = _place(client, doc_id, alice["id"], "text")
+    b_text = _place(client, doc_id, bob["id"], "text")
+    anon = APIClient()
+    assert anon.get(f"/api/sessions/{bob['token']}/").json()["usable"] is True
+
+    # Bob (order 1) signs first — allowed in parallel mode.
+    first = _sign_with_fields(
+        bob["token"], [{"field_id": b_text["id"], "value": "Bob first"}]
+    )
+    assert first.status_code == 200, first.content
+    assert first.json()["document_final"] is False
+
+    second = _sign_with_fields(
+        alice["token"], [{"field_id": a_text["id"], "value": "Alice second"}]
+    )
+    assert second.json()["document_final"] is True
+    doc = Document.objects.get(pk=doc_id)
+    pdf = pymupdf.open(stream=doc.signed_file.read())
+    text = "".join(page.get_text() for page in pdf)
+    assert "Bob first" in text and "Alice second" in text
+
+
+@pytest.mark.django_db
+def test_field_placement_rejects_non_owner_and_bad_values():
+    client, doc_id, alice, _ = _premium_fields_setup("sequential")
+
+    # Unauthenticated and non-owner access is refused.
+    assert APIClient().get(f"/api/documents/{doc_id}/fields/").status_code == 401
+    other = _auth_client(_make_account(email="intruder@example.com"))
+    assert other.get(f"/api/documents/{doc_id}/fields/").status_code == 403
+    assert other.post(
+        f"/api/documents/{doc_id}/fields/",
+        {"session_id": alice["id"], "type": "text", "page": 1, "x": 0.1, "y": 0.1},
+        format="json",
+    ).status_code == 403
+    assert other.get(f"/api/documents/{doc_id}/page/1.png").status_code == 403
+
+    def place(**overrides):
+        body = {
+            "session_id": alice["id"],
+            "type": "text",
+            "page": 1,
+            "x": 0.1,
+            "y": 0.1,
+        }
+        body.update(overrides)
+        return client.post(f"/api/documents/{doc_id}/fields/", body, format="json")
+
+    assert place(page=99).status_code == 400  # beyond the 2-page document
+    assert place(page=0).status_code == 400
+    assert place(x=1.5).status_code == 400
+    assert place(y=-0.1).status_code == 400
+    assert place(type="bogus").status_code == 400
+    assert place(session_id="00000000-0000-0000-0000-000000000000").status_code == 400
+
+    # Page rendering: owner gets a PNG; out-of-range is a 404.
+    png = client.get(f"/api/documents/{doc_id}/page/1.png")
+    assert png.status_code == 200
+    assert png["Content-Type"] == "image/png"
+    assert png.content[:8] == b"\x89PNG\r\n\x1a\n"
+    assert client.get(f"/api/documents/{doc_id}/page/99.png").status_code == 404
+
+    # Signer page render: the active signer can view; nobody else
+    # holds a token for the waiting signer here, but the waiting
+    # session's own render is refused.
+    anon = APIClient()
+    assert anon.get(f"/api/sessions/{alice['token']}/page/1.png").status_code == 200
+    sessions = list(SigningSession.objects.filter(document_id=doc_id).order_by("order"))
+    assert anon.get(f"/api/sessions/{sessions[1].token}/page/1.png").status_code == 410
+
+    # Delete works for the owner while the field is uncompleted.
+    field = _place(client, doc_id, alice["id"], "text")
+    assert client.delete(f"/api/documents/{doc_id}/fields/{field['id']}/").status_code == 204
+    listing = client.get(f"/api/documents/{doc_id}/fields/").json()
+    assert listing["page_count"] == 2
+    assert listing["fields"] == []

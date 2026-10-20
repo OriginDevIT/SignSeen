@@ -10,7 +10,9 @@ import {
   mediaUrl,
   setSignerEmail,
   sessionDocumentUrl,
+  sessionPageUrl,
   submitSignature,
+  type DocumentFieldInfo,
   type SessionInfo,
   type SignResult,
 } from "../../../lib/api";
@@ -89,6 +91,9 @@ export default function SignPage() {
   const [copyState, setCopyState] = useState<"idle" | "sending" | "sent">("idle");
   const [copyError, setCopyError] = useState("");
 
+  const [fieldValues, setFieldValues] = useState<Record<string, string | boolean>>({});
+  const fieldPadRefs = useRef(new Map<string, SignaturePadHandle>());
+
   const padRef = useRef<SignaturePadHandle>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
 
@@ -96,6 +101,17 @@ export default function SignPage() {
     getSession(token)
       .then((s) => {
         setSession(s);
+        // Date fields default to today (editable), per the ceremony spec.
+        const today = new Date().toISOString().slice(0, 10);
+        setFieldValues((prev) => {
+          const next = { ...prev };
+          for (const f of s.fields ?? []) {
+            if (f.type === "date" && next[f.id] === undefined) {
+              next[f.id] = today;
+            }
+          }
+          return next;
+        });
         setStep(s.usable ? "intro" : s.waiting ? "waiting" : "unavailable");
       })
       .catch((err) => {
@@ -121,6 +137,25 @@ export default function SignPage() {
     reader.readAsDataURL(f);
   };
 
+  const fieldComplete = (f: DocumentFieldInfo): boolean => {
+    const v = fieldValues[f.id];
+    if (f.type === "checkbox") return v === true;
+    if (f.type === "text") return typeof v === "string" && v.trim().length > 0;
+    return typeof v === "string" && v.length > 0;
+  };
+
+  const sessionFields = session?.fields ?? [];
+  const hasFields = sessionFields.length > 0;
+  const allRequiredComplete = sessionFields
+    .filter((f) => f.required)
+    .every(fieldComplete);
+
+  const captureFieldPad = (f: DocumentFieldInfo) => {
+    const pad = fieldPadRefs.current.get(f.id);
+    if (!pad || pad.isEmpty()) return;
+    setFieldValues((prev) => ({ ...prev, [f.id]: pad.toDataURL() }));
+  };
+
   const submit = async () => {
     setError("");
     setStep("submitting");
@@ -130,6 +165,9 @@ export default function SignPage() {
         photo: photoUrl ?? undefined,
         photoConsent: photoUrl ? photoConsent : undefined,
         deviceInfo: collectDeviceInfo(),
+        fieldValues: sessionFields
+          .filter((f) => fieldValues[f.id] !== undefined && fieldValues[f.id] !== "")
+          .map((f) => ({ field_id: f.id, value: fieldValues[f.id] })),
       });
       setResult(res);
       setStep("done");
@@ -230,11 +268,170 @@ export default function SignPage() {
         <section style={{ display: "grid", gap: "1rem" }}>
           <h2 style={{ margin: 0 }}>1. Signed — draw your signature</h2>
           <SignaturePad ref={padRef} />
+          {hasFields && (
+            <div style={{ display: "grid", gap: "1rem" }}>
+              <h3 style={{ margin: 0 }}>Your fields on this document</h3>
+              {[...new Set(sessionFields.map((f) => f.page))]
+                .sort((a, b) => a - b)
+                .map((pg) => (
+                  <div
+                    key={pg}
+                    style={{
+                      position: "relative",
+                      border: "1px solid #e5e7eb",
+                      borderRadius: 8,
+                      overflow: "hidden",
+                    }}
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={sessionPageUrl(token, pg)}
+                      alt={`Document page ${pg}`}
+                      style={{ width: "100%", display: "block" }}
+                    />
+                    {sessionFields
+                      .filter((f) => f.page === pg)
+                      .map((f) => (
+                        <div
+                          key={f.id}
+                          style={{
+                            position: "absolute",
+                            left: `${f.x * 100}%`,
+                            top: `${f.y * 100}%`,
+                            transform: "translate(-2px, -50%)",
+                            background: fieldComplete(f) ? "#15803d" : "#111827",
+                            color: "#fff",
+                            fontSize: "0.7rem",
+                            padding: "0.15rem 0.45rem",
+                            borderRadius: 999,
+                            pointerEvents: "none",
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {f.type}
+                          {f.required ? " *" : ""}
+                        </div>
+                      ))}
+                  </div>
+                ))}
+              {sessionFields.map((f) => (
+                <div
+                  key={f.id}
+                  style={{
+                    display: "grid",
+                    gap: "0.4rem",
+                    border: "1px solid #e5e7eb",
+                    borderRadius: 8,
+                    padding: "0.75rem",
+                  }}
+                >
+                  <span style={{ fontWeight: 600, textTransform: "capitalize" }}>
+                    {f.type} <span style={{ opacity: 0.6, fontWeight: 400 }}>(page {f.page}{f.required ? ", required" : ", optional"})</span>
+                  </span>
+                  {(f.type === "signature" || f.type === "initials") &&
+                    (typeof fieldValues[f.id] === "string" && fieldValues[f.id] ? (
+                      <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={fieldValues[f.id] as string}
+                          alt={`${f.type} preview`}
+                          style={{ height: 48, border: "1px solid #e5e7eb", borderRadius: 6 }}
+                        />
+                        <button
+                          onClick={() =>
+                            setFieldValues((prev) => ({ ...prev, [f.id]: "" }))
+                          }
+                          style={{ ...ghostBtn, width: "auto" }}
+                        >
+                          Redo
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <SignaturePad
+                          ref={(h) => {
+                            if (h) fieldPadRefs.current.set(f.id, h);
+                          }}
+                        />
+                        <button
+                          onClick={() => captureFieldPad(f)}
+                          style={{ ...ghostBtn }}
+                        >
+                          Use this {f.type}
+                        </button>
+                      </>
+                    ))}
+                  {f.type === "checkbox" && (
+                    <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", cursor: "pointer" }}>
+                      <input
+                        type="checkbox"
+                        checked={fieldValues[f.id] === true}
+                        onChange={(e) =>
+                          setFieldValues((prev) => ({ ...prev, [f.id]: e.target.checked }))
+                        }
+                      />
+                      Check the box
+                    </label>
+                  )}
+                  {f.type === "text" && (
+                    <input
+                      type="text"
+                      value={(fieldValues[f.id] as string) || ""}
+                      onChange={(e) =>
+                        setFieldValues((prev) => ({ ...prev, [f.id]: e.target.value }))
+                      }
+                      placeholder="Type here"
+                      style={{
+                        padding: "0.65rem 0.8rem",
+                        border: "1px solid #d1d5db",
+                        borderRadius: 8,
+                        fontSize: "1rem",
+                        boxSizing: "border-box",
+                        width: "100%",
+                      }}
+                    />
+                  )}
+                  {f.type === "date" && (
+                    <input
+                      type="date"
+                      value={(fieldValues[f.id] as string) || ""}
+                      onChange={(e) =>
+                        setFieldValues((prev) => ({ ...prev, [f.id]: e.target.value }))
+                      }
+                      style={{
+                        padding: "0.65rem 0.8rem",
+                        border: "1px solid #d1d5db",
+                        borderRadius: 8,
+                        fontSize: "1rem",
+                        boxSizing: "border-box",
+                        width: "100%",
+                      }}
+                    />
+                  )}
+                </div>
+              ))}
+              {!allRequiredComplete && (
+                <p style={{ opacity: 0.65, margin: 0, fontSize: "0.9rem" }}>
+                  Complete every required field (marked *) to continue.
+                </p>
+              )}
+            </div>
+          )}
           <div style={{ display: "flex", gap: "0.75rem" }}>
             <button onClick={() => padRef.current?.clear()} style={{ ...ghostBtn, width: "auto", flex: 1 }}>
               Clear
             </button>
-            <button onClick={confirmSignature} style={{ ...primaryBtn, width: "auto", flex: 2 }}>
+            <button
+              onClick={confirmSignature}
+              disabled={hasFields && !allRequiredComplete}
+              style={{
+                ...primaryBtn,
+                width: "auto",
+                flex: 2,
+                opacity: hasFields && !allRequiredComplete ? 0.45 : 1,
+                cursor: hasFields && !allRequiredComplete ? "not-allowed" : "pointer",
+              }}
+            >
               Looks good — continue
             </button>
           </div>
@@ -309,7 +506,16 @@ export default function SignPage() {
             >
               {photoUrl ? "Retake" : "Take photo"}
             </button>
-            <button onClick={submit} style={{ ...primaryBtn, flex: 2 }}>
+            <button
+              onClick={submit}
+              disabled={hasFields && !allRequiredComplete}
+              style={{
+                ...primaryBtn,
+                flex: 2,
+                opacity: hasFields && !allRequiredComplete ? 0.45 : 1,
+                cursor: hasFields && !allRequiredComplete ? "not-allowed" : "pointer",
+              }}
+            >
               {photoUrl ? "Seal it — submit" : "Skip photo & submit"}
             </button>
           </div>

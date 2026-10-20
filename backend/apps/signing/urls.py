@@ -12,7 +12,27 @@ urlpatterns = [
         views.create_session,
         name="session-create",
     ),
+    path(
+        "documents/<uuid:doc_id>/fields/",
+        views.document_fields,
+        name="document-fields",
+    ),
+    path(
+        "documents/<uuid:doc_id>/fields/<uuid:field_id>/",
+        views.delete_document_field,
+        name="document-field-delete",
+    ),
+    path(
+        "documents/<uuid:doc_id>/page/<int:page>.png",
+        views.document_page_png,
+        name="document-page-png",
+    ),
     path("sessions/<str:token>/", views.get_session, name="session-detail"),
+    path(
+        "sessions/<str:token>/page/<int:page>.png",
+        views.session_page_png,
+        name="session-page-png",
+    ),
     path(
         "sessions/<str:token>/document/",
         views.session_document,

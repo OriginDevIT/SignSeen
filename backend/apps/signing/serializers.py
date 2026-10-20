@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from .models import AuditEvent, Document, SigningSession
+from .models import AuditEvent, Document, DocumentField, SigningSession
 
 
 class SessionSummarySerializer(serializers.ModelSerializer):
@@ -10,6 +10,35 @@ class SessionSummarySerializer(serializers.ModelSerializer):
     class Meta:
         model = SigningSession
         fields = ["id", "signer_name", "signer_email", "status", "order"]
+        read_only_fields = fields
+
+
+class DocumentFieldSerializer(serializers.ModelSerializer):
+    """One sender-placed field (#13). `type` is the wire name for the
+    model's field_type; `value` exposes the text value (signature /
+    initials images stay server-side as files, like ceremony evidence).
+    """
+
+    type = serializers.CharField(source="field_type", read_only=True)
+    value = serializers.CharField(source="value_text", read_only=True)
+    completed = serializers.BooleanField(source="is_completed", read_only=True)
+
+    class Meta:
+        model = DocumentField
+        fields = [
+            "id",
+            "document",
+            "session",
+            "type",
+            "page",
+            "x",
+            "y",
+            "required",
+            "value",
+            "completed",
+            "completed_at",
+            "created_at",
+        ]
         read_only_fields = fields
 
 
@@ -27,6 +56,7 @@ class DocumentSerializer(serializers.ModelSerializer):
             "original_filename",
             "sender_email",
             "signed_file",
+            "signing_mode",
             "sessions",
             "created_at",
             "updated_at",
@@ -38,6 +68,7 @@ class SigningSessionSerializer(serializers.ModelSerializer):
     signing_url = serializers.SerializerMethodField()
     usable = serializers.SerializerMethodField()
     waiting = serializers.SerializerMethodField()
+    fields = DocumentFieldSerializer(many=True, read_only=True)
     document_title = serializers.CharField(source="document.title", read_only=True)
     document_status = serializers.CharField(source="document.status", read_only=True)
 
@@ -55,6 +86,7 @@ class SigningSessionSerializer(serializers.ModelSerializer):
             "order",
             "usable",
             "waiting",
+            "fields",
             "expires_at",
             "created_at",
             "signing_url",

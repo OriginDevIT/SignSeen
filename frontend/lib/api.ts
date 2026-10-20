@@ -27,9 +27,37 @@ export interface DocumentInfo {
   status: string;
   sender_email: string;
   signed_file: string | null;
+  signing_mode: "sequential" | "parallel";
   sessions?: SessionSummary[];
   created_at: string;
   updated_at: string;
+}
+
+export type FieldType = "signature" | "initials" | "checkbox" | "text" | "date";
+
+/** A sender-placed field (#13), assigned to one signer session. */
+export interface DocumentFieldInfo {
+  id: string;
+  document: string;
+  session: string;
+  type: FieldType;
+  page: number;
+  /** Normalized coordinates (0-1 fractions of the page size). */
+  x: number;
+  y: number;
+  required: boolean;
+  /** Text value (text/date submitted values; "true"/"false" for a
+   * checkbox). Signature/initials values are stored server-side. */
+  value: string;
+  completed: boolean;
+  completed_at: string | null;
+  created_at: string;
+}
+
+/** One field value in a ceremony submit. */
+export interface FieldValue {
+  field_id: string;
+  value: string | boolean;
 }
 
 export interface SessionInfo {
@@ -48,6 +76,8 @@ export interface SessionInfo {
   expires_at: string;
   created_at: string;
   signing_url: string;
+  /** This signer's assigned fields (#13); empty for simple documents. */
+  fields: DocumentFieldInfo[];
 }
 
 export interface SignResult {
@@ -126,12 +156,14 @@ async function req<T>(
 export function uploadDocument(
   file: File,
   title: string,
-  senderEmail: string
+  senderEmail: string,
+  signingMode: "sequential" | "parallel" = "sequential"
 ): Promise<DocumentInfo> {
   const form = new FormData();
   form.append("file", file);
   form.append("title", title);
   form.append("sender_email", senderEmail);
+  form.append("signing_mode", signingMode);
   return req<DocumentInfo>("/api/documents/", { method: "POST", body: form });
 }
 
@@ -152,12 +184,18 @@ export function createSession(
 export function createDocumentFromUrl(
   url: string,
   title: string,
-  senderEmail: string
+  senderEmail: string,
+  signingMode: "sequential" | "parallel" = "sequential"
 ): Promise<DocumentInfo> {
   return req<DocumentInfo>("/api/documents/from-url/", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ url, title, sender_email: senderEmail }),
+    body: JSON.stringify({
+      url,
+      title,
+      sender_email: senderEmail,
+      signing_mode: signingMode,
+    }),
   });
 }
 
@@ -201,6 +239,7 @@ export function submitSignature(
     photoConsent?: boolean;
     deviceInfo: DeviceInfo;
     signerEmail?: string;
+    fieldValues?: FieldValue[];
   }
 ): Promise<SignResult> {
   return req<SignResult>(
@@ -214,6 +253,7 @@ export function submitSignature(
         photo_consent: payload.photoConsent === true,
         device_info: payload.deviceInfo,
         signer_email: payload.signerEmail || "",
+        field_values: payload.fieldValues ?? [],
       }),
     },
     { auth: false }
@@ -243,6 +283,72 @@ export function getSessionEvents(
   token: string
 ): Promise<{ chain_valid: boolean; events: AuditEventInfo[] }> {
   return req(`/api/sessions/${token}/events/`, undefined, { auth: false });
+}
+
+/* ------------------------------------------------------------------ */
+/* Complex-document fields (#13). Placement is owner-only.             */
+/* ------------------------------------------------------------------ */
+
+export interface DocumentFieldsData {
+  page_count: number;
+  fields: DocumentFieldInfo[];
+}
+
+export function getDocumentFields(docId: string): Promise<DocumentFieldsData> {
+  return req<DocumentFieldsData>(`/api/documents/${docId}/fields/`);
+}
+
+export function createDocumentField(
+  docId: string,
+  field: {
+    session_id: string;
+    type: FieldType;
+    page: number;
+    x: number;
+    y: number;
+    required?: boolean;
+  }
+): Promise<DocumentFieldInfo> {
+  return req<DocumentFieldInfo>(`/api/documents/${docId}/fields/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(field),
+  });
+}
+
+export function deleteDocumentField(
+  docId: string,
+  fieldId: string
+): Promise<void> {
+  return req(`/api/documents/${docId}/fields/${fieldId}/`, {
+    method: "DELETE",
+  });
+}
+
+/** Owner-only page render for placement. The endpoint needs the
+ * Authorization header, so it is fetched as a blob (an <img> tag
+ * cannot send headers). Caller owns revoking the object URL. */
+export async function fetchDocumentPageImageUrl(
+  docId: string,
+  page: number
+): Promise<string> {
+  const token = getAuthToken();
+  const headers = new Headers();
+  if (token) {
+    headers.set("Authorization", `Token ${token}`);
+  }
+  const res = await fetch(`${API_BASE}/api/documents/${docId}/page/${page}.png`, {
+    headers,
+  });
+  if (!res.ok) {
+    throw new ApiError(`Could not load page ${page} (${res.status})`, res.status);
+  }
+  return URL.createObjectURL(await res.blob());
+}
+
+/** Signer page render URL (token-addressed; plain <img> works). */
+export function sessionPageUrl(token: string, page: number): string {
+  return `${API_BASE}/api/sessions/${token}/page/${page}.png`;
 }
 
 /** Absolute URL for a media path returned by the API (e.g. signed_file). */
