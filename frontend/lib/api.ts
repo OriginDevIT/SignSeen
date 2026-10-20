@@ -153,6 +153,7 @@ export function submitSignature(
     body: JSON.stringify({
       signature: payload.signature,
       photo: payload.photo,
+      photo_consent: payload.photoConsent === true,
       device_info: payload.deviceInfo,
       signer_email: payload.signerEmail || "",
     }),

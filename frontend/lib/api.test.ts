@@ -73,10 +73,12 @@ describe("submitSignature", () => {
       language: "en",
       screenWidth: 1,
       screenHeight: 2,
+      timezoneOffsetMinutes: 300,
     };
     const result = await submitSignature("tok123", {
       signature: "data:image/png;base64,AAA",
       photo: "data:image/png;base64,BBB",
+      photoConsent: true,
       deviceInfo,
     });
     expect(result.status).toBe("signed");
@@ -85,7 +87,28 @@ describe("submitSignature", () => {
     const body = JSON.parse(init?.body as string);
     expect(body.signature).toBe("data:image/png;base64,AAA");
     expect(body.photo).toBe("data:image/png;base64,BBB");
+    expect(body.photo_consent).toBe(true);
     expect(body.device_info).toEqual(deviceInfo);
+  });
+
+  it("sends photo_consent=false when consent is not given", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({ status: "signed", chain_valid: true })
+    );
+    await submitSignature("tok123", {
+      signature: "data:image/png;base64,AAA",
+      deviceInfo: {
+        userAgent: "ua",
+        platform: "p",
+        language: "en",
+        screenWidth: 1,
+        screenHeight: 2,
+        timezoneOffsetMinutes: 0,
+      },
+    });
+    const [, init] = vi.mocked(fetch).mock.calls[0];
+    const body = JSON.parse(init?.body as string);
+    expect(body.photo_consent).toBe(false);
   });
 });
 
