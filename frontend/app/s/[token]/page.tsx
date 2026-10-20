@@ -316,6 +316,11 @@ export default function SignPage() {
               Download signed PDF
             </a>
           )}
+          <p style={{ fontSize: "0.9rem", opacity: 0.65, margin: 0 }}>
+            Want to keep this document in your own library?{" "}
+            <a href="/signup">Create a free account</a> — you&apos;ll find the
+            documents you&apos;ve sent and received there.
+          </p>
         </section>
       )}
     </main>

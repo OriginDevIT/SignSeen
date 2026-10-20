@@ -499,12 +499,13 @@ def test_cleanup_expired_marks_stale_sessions():
     from django.core.management import call_command
 
     client = APIClient()
-    doc_id = upload_document(client).json()["id"]
+    stale_doc_id = upload_document(client, email="old@example.com").json()["id"]
     stale_token = client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Old"}, format="json"
+        f"/api/documents/{stale_doc_id}/sessions/", {"signer_name": "Old"}, format="json"
     ).json()["token"]
+    fresh_doc_id = upload_document(client, title="Fresh", email="new@example.com").json()["id"]
     fresh_token = client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "New"}, format="json"
+        f"/api/documents/{fresh_doc_id}/sessions/", {"signer_name": "New"}, format="json"
     ).json()["token"]
     stale = SigningSession.objects.get(token=stale_token)
     stale.expires_at = timezone.now() - timedelta(seconds=1)
@@ -516,5 +517,194 @@ def test_cleanup_expired_marks_stale_sessions():
     fresh = SigningSession.objects.get(token=fresh_token)
     assert stale.status == SigningSession.Status.EXPIRED
     assert fresh.status == SigningSession.Status.PENDING
-    # The document stays pending: it still has a live session.
-    assert Document.objects.get(pk=doc_id).status == Document.Status.PENDING
+    # The fresh document stays pending: it still has a live session.
+    assert Document.objects.get(pk=fresh_doc_id).status == Document.Status.PENDING
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: freemium (accounts, enforcement, watermark gating, email)
+# ---------------------------------------------------------------------------
+
+from django.test import override_settings
+
+from apps.accounts.models import Account
+
+
+def _make_account(email="owner@example.com", tier=Account.Tier.FREE):
+    account = Account.objects.create_user(
+        email=email, password="longpassword1"
+    )
+    if tier != Account.Tier.FREE:
+        account.tier = tier
+        account.save(update_fields=["tier"])
+    return account
+
+
+def _auth_client(account):
+    client = APIClient()
+    token = client.post(
+        "/api/auth/login/",
+        {"email": account.email, "password": "longpassword1"},
+        format="json",
+    ).json()["token"]
+    client.credentials(HTTP_AUTHORIZATION=f"Token {token}")
+    return client
+
+
+@pytest.mark.django_db
+def test_free_tier_allows_only_one_pending_document():
+    client = APIClient()
+    assert upload_document(client).status_code == 201
+    second = upload_document(client, title="Second")
+    assert second.status_code == 409
+    assert "1 document pending" in second.json()["error"]
+
+
+@pytest.mark.django_db
+def test_signed_document_frees_the_pending_slot():
+    client = APIClient()
+    doc_id = upload_document(client).json()["id"]
+    token = client.post(
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "J"}, format="json"
+    ).json()["token"]
+    assert client.post(
+        f"/api/sessions/{token}/sign/",
+        {"signature": SIG_DATA_URL, "device_info": {}},
+        format="json",
+    ).status_code == 200
+    assert upload_document(client, title="Next").status_code == 201
+
+
+@pytest.mark.django_db
+def test_account_documents_get_owner_and_share_the_limit():
+    account = _make_account()
+    client = _auth_client(account)
+    doc_id = upload_document(client, email=account.email).json()["id"]
+    assert Document.objects.get(pk=doc_id).owner == account
+    # The account's pending doc blocks a second one, even anonymously
+    # addressed to the same email (identity = account when logged in;
+    # anonymous path counts by email and sees the same pending doc).
+    assert upload_document(client, email=account.email).status_code == 409
+
+
+@pytest.mark.django_db
+def test_premium_bypasses_pending_limit():
+    account = _make_account(email="pro@example.com", tier=Account.Tier.PREMIUM)
+    client = _auth_client(account)
+    assert upload_document(client, email=account.email).status_code == 201
+    assert upload_document(client, title="Two", email=account.email).status_code == 201
+
+
+@pytest.mark.django_db
+@override_settings(FREE_STORAGE_BYTES=1)
+def test_free_storage_cap_is_enforced():
+    client = APIClient()
+    response = upload_document(client)
+    assert response.status_code == 409
+    assert "Storage limit" in response.json()["error"]
+
+
+@pytest.mark.django_db
+def test_second_signing_session_is_rejected():
+    client = APIClient()
+    doc_id = upload_document(client).json()["id"]
+    assert client.post(
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "One"}, format="json"
+    ).status_code == 201
+    second = client.post(
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Two"}, format="json"
+    )
+    assert second.status_code == 409
+
+
+@pytest.mark.django_db
+def test_my_documents_requires_auth_and_reports_usage():
+    account = _make_account()
+    client = _auth_client(account)
+    assert APIClient().get("/api/documents/mine/").status_code == 401
+    doc_id = upload_document(client, email=account.email).json()["id"]
+    body = client.get("/api/documents/mine/").json()
+    assert body["tier"] == "free"
+    assert [d["id"] for d in body["documents"]] == [doc_id]
+    assert body["storage_used_bytes"] > 0
+    assert body["storage_limit_bytes"] == 100 * 1024 * 1024
+
+
+def _sign_and_get_pdf_text(client, doc_id):
+    token = client.post(
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "J"}, format="json"
+    ).json()["token"]
+    assert client.post(
+        f"/api/sessions/{token}/sign/",
+        {"signature": SIG_DATA_URL, "device_info": {}},
+        format="json",
+    ).status_code == 200
+    doc = Document.objects.get(pk=doc_id)
+    return pymupdf.open(stream=doc.signed_file.read())[-1].get_text(), doc
+
+
+@pytest.mark.django_db
+def test_free_document_is_watermarked_premium_is_not():
+    # Free (anonymous): watermark present.
+    anon = APIClient()
+    free_doc_id = upload_document(anon).json()["id"]
+    _, _ = _sign_and_get_pdf_text(anon, free_doc_id)
+
+    # Premium (account): no watermark anywhere in the sealed PDF.
+    account = _make_account(email="pro2@example.com", tier=Account.Tier.PREMIUM)
+    client = _auth_client(account)
+    pro_doc_id = upload_document(client, email=account.email).json()["id"]
+    token = client.post(
+        f"/api/documents/{pro_doc_id}/sessions/", {"signer_name": "J"}, format="json"
+    ).json()["token"]
+    assert client.post(
+        f"/api/sessions/{token}/sign/",
+        {"signature": SIG_DATA_URL, "device_info": {}},
+        format="json",
+    ).status_code == 200
+    doc = Document.objects.get(pk=pro_doc_id)
+    pdf = pymupdf.open(stream=doc.signed_file.read())
+    for page in pdf:
+        assert "free tier" not in page.get_text()
+
+
+@pytest.mark.django_db
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+def test_sealed_email_goes_to_sender_and_signer():
+    from django.core import mail
+
+    client = APIClient()
+    doc_id = upload_document(client, email="sender@example.com").json()["id"]
+    token = client.post(
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "J"}, format="json"
+    ).json()["token"]
+    assert client.post(
+        f"/api/sessions/{token}/sign/",
+        {
+            "signature": SIG_DATA_URL,
+            "device_info": {},
+            "signer_email": "signer@example.com",
+        },
+        format="json",
+    ).status_code == 200
+    recipients = sorted(m.to[0] for m in mail.outbox)
+    assert recipients == ["sender@example.com", "signer@example.com"]
+    for message in mail.outbox:
+        assert len(message.attachments) == 1
+        assert "Audit seal" in message.body
+
+
+@pytest.mark.django_db
+def test_pending_limit_is_keyed_on_email_across_account_and_anonymous():
+    # Anonymous send holds the email's single pending slot...
+    anon = APIClient()
+    assert upload_document(anon, email="same@example.com").status_code == 201
+    # ...so the same email, now logged in, is still blocked.
+    account = _make_account(email="same@example.com")
+    authed = _auth_client(account)
+    assert upload_document(authed, email="same@example.com").status_code == 409
+    # And the reverse: an account's pending doc blocks anonymous use of it.
+    account2 = _make_account(email="other@example.com")
+    authed2 = _auth_client(account2)
+    assert upload_document(authed2, email="other@example.com").status_code == 201
+    assert upload_document(anon, email="other@example.com").status_code == 409

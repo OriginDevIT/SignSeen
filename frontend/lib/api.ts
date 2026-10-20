@@ -54,8 +54,31 @@ export interface AuditEventInfo {
   created_at: string;
 }
 
+const TOKEN_KEY = "signseen_token";
+
+/** Sender account token, stored in localStorage (senders only — signers
+ * never have accounts). Guarded for SSR/tests where window is unavailable. */
+export function getAuthToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return window.localStorage.getItem(TOKEN_KEY);
+}
+
+export function setAuthToken(token: string | null): void {
+  if (typeof window === "undefined") return;
+  if (token) {
+    window.localStorage.setItem(TOKEN_KEY, token);
+  } else {
+    window.localStorage.removeItem(TOKEN_KEY);
+  }
+}
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, init);
+  const token = getAuthToken();
+  const headers = new Headers(init?.headers);
+  if (token) {
+    headers.set("Authorization", `Token ${token}`);
+  }
+  const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
     throw new ApiError(
@@ -171,4 +194,117 @@ export function getSessionEvents(
 export function mediaUrl(path: string | null): string | null {
   if (!path) return null;
   return path.startsWith("http") ? path : `${API_BASE}${path}`;
+}
+
+/* ------------------------------------------------------------------ */
+/* Sender accounts (storage tier). Email + password.                    */
+/* ------------------------------------------------------------------ */
+
+export interface AccountInfo {
+  id: string;
+  email: string;
+  tier: "free" | "premium";
+  is_premium: boolean;
+}
+
+interface AuthResult {
+  token: string;
+  account: AccountInfo;
+}
+
+export async function signup(
+  email: string,
+  password: string
+): Promise<AuthResult> {
+  const result = await req<AuthResult>("/api/auth/signup/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  setAuthToken(result.token);
+  return result;
+}
+
+export async function login(
+  email: string,
+  password: string
+): Promise<AuthResult> {
+  const result = await req<AuthResult>("/api/auth/login/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email, password }),
+  });
+  setAuthToken(result.token);
+  return result;
+}
+
+export async function logout(): Promise<void> {
+  try {
+    await req("/api/auth/logout/", { method: "POST" });
+  } finally {
+    setAuthToken(null);
+  }
+}
+
+export function myAccount(): Promise<AccountInfo> {
+  return req<AccountInfo>("/api/auth/me/");
+}
+
+export function requestPasswordReset(email: string): Promise<void> {
+  return req("/api/auth/password-reset/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ email }),
+  });
+}
+
+export function confirmPasswordReset(
+  uid: string,
+  token: string,
+  password: string
+): Promise<void> {
+  return req("/api/auth/password-reset/confirm/", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ uid, token, password }),
+  });
+}
+
+/* ------------------------------------------------------------------ */
+/* Sender dashboard (logged-in accounts only).                         */
+/* ------------------------------------------------------------------ */
+
+export interface DashboardData {
+  tier: "free" | "premium";
+  is_premium: boolean;
+  storage_used_bytes: number;
+  storage_limit_bytes: number;
+  documents: DocumentInfo[];
+}
+
+export function myDashboard(): Promise<DashboardData> {
+  return req<DashboardData>("/api/documents/mine/");
+}
+
+/** Public tracking page data for a document (status + signed download). */
+export function getDocument(docId: string): Promise<DocumentInfo> {
+  return req<DocumentInfo>(`/api/documents/${docId}/`);
+}
+
+/* ------------------------------------------------------------------ */
+/* Billing (Stripe; disabled server-side when unconfigured).            */
+/* ------------------------------------------------------------------ */
+
+export async function startCheckout(): Promise<string> {
+  const { url } = await req<{ url: string }>("/api/billing/checkout/", {
+    method: "POST",
+  });
+  return url;
+}
+
+export async function openBillingPortal(): Promise<string> {
+  const { url } = await req<{ url: string }>("/api/billing/portal/", {
+    method: "POST",
+  });
+  return url;
 }

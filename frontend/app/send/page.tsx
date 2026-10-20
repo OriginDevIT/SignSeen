@@ -1,11 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import {
   ApiError,
   createDocumentFromUrl,
   createSession,
+  getAuthToken,
+  myAccount,
   uploadDocument,
   type SessionInfo,
 } from "../../lib/api";
@@ -24,6 +26,19 @@ export default function SendPage() {
   const [session, setSession] = useState<SessionInfo | null>(null);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [accountEmail, setAccountEmail] = useState<string | null>(null);
+
+  // Logged-in senders: prefill their email and attach documents to the
+  // account (the API does this from the token automatically).
+  useEffect(() => {
+    if (!getAuthToken()) return;
+    myAccount()
+      .then((account) => {
+        setAccountEmail(account.email);
+        setSenderEmail(account.email);
+      })
+      .catch(() => {});
+  }, []);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -80,6 +95,17 @@ export default function SendPage() {
         Upload a PDF and get a signing link + QR code. The signer needs no
         account.
       </p>
+      {accountEmail ? (
+        <p style={{ fontSize: "0.9rem", opacity: 0.7, marginTop: "-1rem", marginBottom: "1.5rem" }}>
+          Signed in as {accountEmail} — this document will appear in your{" "}
+          <a href="/dashboard">dashboard</a>.
+        </p>
+      ) : (
+        <p style={{ fontSize: "0.9rem", opacity: 0.7, marginTop: "-1rem", marginBottom: "1.5rem" }}>
+          Sending without an account is fine.{" "}
+          <a href="/login">Log in</a> if you want the document in your library.
+        </p>
+      )}
 
       {error && (
         <p

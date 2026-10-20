@@ -5,6 +5,7 @@ from . import views
 urlpatterns = [
     path("documents/", views.create_document, name="document-create"),
     path("documents/from-url/", views.create_document_from_url, name="document-from-url"),
+    path("documents/mine/", views.my_documents, name="document-mine"),
     path("documents/<uuid:doc_id>/", views.get_document, name="document-detail"),
     path(
         "documents/<uuid:doc_id>/sessions/",

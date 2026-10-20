@@ -37,3 +37,4 @@ typing_extensions==4.16.0
 weasyprint==70.0
 webencodings==0.6.1
 zopfli==0.4.3
+stripe==16.0.0
