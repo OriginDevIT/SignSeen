@@ -692,3 +692,19 @@ def test_sealed_email_goes_to_sender_and_signer():
     for message in mail.outbox:
         assert len(message.attachments) == 1
         assert "Audit seal" in message.body
+
+
+@pytest.mark.django_db
+def test_pending_limit_is_keyed_on_email_across_account_and_anonymous():
+    # Anonymous send holds the email's single pending slot...
+    anon = APIClient()
+    assert upload_document(anon, email="same@example.com").status_code == 201
+    # ...so the same email, now logged in, is still blocked.
+    account = _make_account(email="same@example.com")
+    authed = _auth_client(account)
+    assert upload_document(authed, email="same@example.com").status_code == 409
+    # And the reverse: an account's pending doc blocks anonymous use of it.
+    account2 = _make_account(email="other@example.com")
+    authed2 = _auth_client(account2)
+    assert upload_document(authed2, email="other@example.com").status_code == 201
+    assert upload_document(anon, email="other@example.com").status_code == 409

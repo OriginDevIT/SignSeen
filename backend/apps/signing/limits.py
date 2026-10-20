@@ -49,8 +49,12 @@ def check_can_create_document(account, sender_email, upload_bytes: int) -> None:
 
 
 def check_pending_limit(account, sender_email) -> None:
-    pending = _identity_documents(account, sender_email).filter(
-        status=Document.Status.PENDING
+    # The free tier's "1 pending document" rule is keyed on the sender email
+    # itself — not on whether there's an account. An email address gets one
+    # pending document at a time, anonymous or logged in.
+    pending = Document.objects.filter(
+        status=Document.Status.PENDING,
+        sender_email__iexact=(sender_email or "").strip(),
     )
     is_premium = (
         account is not None
