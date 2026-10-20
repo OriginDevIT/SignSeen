@@ -68,6 +68,12 @@ class SigningSession(models.Model):
         max_length=16, choices=Status.choices, default=Status.PENDING
     )
     expires_at = models.DateTimeField(default=default_session_expiry)
+    # v1 device evidence: normalized snapshot of the signer's device at
+    # submit time (user agent, platform, screen, tz offset). The raw
+    # client payload stays in the audit trail; this is the queryable copy.
+    device_evidence = models.JSONField(default=dict, blank=True)
+    # Reserved for future passkey-bound sessions (WebAuthn). Unused in v1.
+    webauthn_credential_id = models.CharField(max_length=255, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
 
     def is_usable(self) -> bool:

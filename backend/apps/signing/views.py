@@ -29,6 +29,7 @@ from rest_framework.response import Response
 
 from .hashing import record_event, verify_chain
 from .convert import ConversionError, convert_office_to_pdf, render_url_to_pdf
+from .trust import assess_photo, normalize_photo
 from .models import AuditEvent, Document, SigningSession
 from .pdf import build_signed_pdf
 from .serializers import (
@@ -80,6 +81,32 @@ def _decode_data_url(value: str, field: str) -> bytes:
 
 def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def _safe_int(value, default=0):
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _normalize_device_info(raw: dict) -> dict:
+    """v1 structured device evidence stored on the session.
+
+    The raw client payload stays in the audit trail; this is the small,
+    queryable copy. Unknown/missing fields degrade to blanks, never errors.
+    """
+    tz = raw.get("timezoneOffsetMinutes")
+    return {
+        "user_agent": str(raw.get("userAgent") or "")[:512],
+        "platform": str(raw.get("platform") or "")[:128],
+        "language": str(raw.get("language") or "")[:32],
+        "screen": {
+            "width": _safe_int(raw.get("screenWidth"), 0),
+            "height": _safe_int(raw.get("screenHeight"), 0),
+        },
+        "timezone_offset_minutes": _safe_int(tz, None) if tz is not None else None,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -230,7 +257,13 @@ def submit_signature(request, token):
     except ValueError as exc:
         return _error(str(exc))
     photo_png = None
+    photo_consent = request.data.get("photo_consent") is True
     if request.data.get("photo"):
+        # A witness photo is an explicit act: the signer must have checked
+        # the consent box (plain photos aren't BIPA biometric identifiers,
+        # but informed consent is recorded regardless).
+        if not photo_consent:
+            return _error("photo_consent is required when submitting a photo")
         try:
             photo_png = _decode_data_url(request.data.get("photo"), "photo")
         except ValueError as exc:
@@ -248,6 +281,23 @@ def submit_signature(request, token):
             return _error("session is expired or already signed", 410)
 
         sig_digest = _sha256(signature_png)
+        session.device_evidence = _normalize_device_info(device_info)
+
+        # Trust hardening: assess the witness photo's EXIF capture time
+        # against the server clock (heuristic; never blocks), then
+        # normalize its orientation. The digest covers the stored bytes.
+        photo_assurance = None
+        if photo_png:
+            photo_assurance = assess_photo(
+                photo_png,
+                timezone.now(),
+                session.device_evidence["timezone_offset_minutes"],
+            )
+            try:
+                photo_png = normalize_photo(photo_png)
+            except Exception:
+                photo_assurance["assurance"] = "reduced"
+                photo_assurance["reason"] = "photo_unreadable"
         photo_digest = _sha256(photo_png) if photo_png else None
         session_id = str(session.id)
 
@@ -272,6 +322,8 @@ def submit_signature(request, token):
                 "signature_file": sig_name,
                 "photo_sha256": photo_digest,
                 "photo_file": photo_name,
+                "photo_consent": photo_consent,
+                "photo_assurance": photo_assurance,
                 "device_info": device_info,
                 "signer_email": signer_email,
             },
@@ -288,6 +340,7 @@ def submit_signature(request, token):
                 "document_id": str(doc.id),
                 "session_id": session_id,
                 "audit_hash": submitted.hash,
+                "photo_assurance": photo_assurance,
             },
         )
         doc.signed_file.save(f"signed-{doc.id}.pdf", ContentFile(signed_bytes))
@@ -297,7 +350,7 @@ def submit_signature(request, token):
         session.status = SigningSession.Status.SIGNED
         if signer_email:
             session.signer_email = signer_email
-        session.save(update_fields=["status", "signer_email"])
+        session.save(update_fields=["status", "signer_email", "device_evidence"])
 
         sealed = record_event(
             session,

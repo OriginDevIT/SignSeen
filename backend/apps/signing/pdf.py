@@ -1,16 +1,38 @@
 """PDF stamping: append a signature certificate page to the signed document.
 
-Phase 1 keeps this deliberately simple and robust: rather than overlaying
-the original pages (risking covering document text), we append a final
-"SIGNATURE CERTIFICATE" page carrying the signature image, the optional
-witness photo, and the audit metadata. The document hash in the audit trail
-covers the sealed file.
+Rather than overlaying the original pages (risking covering document
+text), we append a final "SIGNATURE CERTIFICATE" page carrying the
+signature image, the optional witness photo, and the audit metadata. The
+document hash in the audit trail covers the sealed file.
+
+Free tier: every page carries a light diagonal "Signed with SignSeen"
+watermark (lifted for premium).
 """
 
 import pymupdf
 
 PAGE_WIDTH, PAGE_HEIGHT = 595, 842  # A4 points
 MARGIN = 72
+WATERMARK_TEXT = "Signed with SignSeen"
+
+
+def _apply_free_tier_watermark(doc: pymupdf.Document) -> None:
+    """Light diagonal free-tier mark on every page of the sealed PDF."""
+    for page in doc:
+        cx, cy = page.rect.width / 2, page.rect.height / 2
+        anchor = pymupdf.Point(cx - 150, cy)
+        # insert_text only accepts multiples of 90°; morph for a diagonal.
+        matrix = pymupdf.Matrix(1, 0, 0, 1, 0, 0)
+        matrix.prerotate(45)
+        page.insert_text(
+            anchor,
+            WATERMARK_TEXT,
+            fontsize=40,
+            fontname="helv",
+            color=(0.90, 0.90, 0.90),
+            morph=(anchor, matrix),
+            overlay=True,
+        )
 
 
 def build_signed_pdf(
@@ -63,6 +85,12 @@ def build_signed_pdf(
         f"Session ID: {meta.get('session_id')}",
         f"Audit seal: {meta.get('audit_hash')}",
     ]
+    assurance = meta.get("photo_assurance")
+    if assurance:
+        line = f"Witness photo assurance: {assurance['assurance']}"
+        if assurance["assurance"] == "reduced":
+            line += f" ({assurance['reason']})"
+        lines.append(line)
     for line in lines:
         page.insert_text((MARGIN, y), line, fontsize=10, fontname="helv")
         y += 18
@@ -81,4 +109,5 @@ def build_signed_pdf(
         color=(0.4, 0.4, 0.4),
     )
 
+    _apply_free_tier_watermark(doc)
     return doc.tobytes()

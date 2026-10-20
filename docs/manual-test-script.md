@@ -30,17 +30,25 @@ This script covers those by hand.
    - ✅ **Rotate the phone mid-signature**: drawing stays 1:1 with your
      finger (no stretching/doubling), and ink drawn before rotating is
      still there.
-8. **Take photo** (camera should open). Confirm the preview, or **Skip**.
+8. **Take photo** — first check the consent box ("I consent to having my
+   photo captured…"); the **Take photo** button stays disabled until you do.
+   Take the photo (camera should open). Confirm the preview, or **Skip**.
+   - ✅ No checkbox → no camera. Photo without consent is rejected (400).
 9. **Submit** → ✅ **Signed. Seen. Sealed.** screen with an audit seal.
 10. **Download signed PDF** — open it and check the last page:
     - ✅ Signature image is visible and right-side up.
     - ✅ Witness photo is visible and correctly oriented (portrait photos
       are the tricky case — see §E).
     - ✅ Metadata lines present: signer, UTC timestamp, document/session
-      IDs, audit seal.
+      IDs, audit seal, **Witness photo assurance: full**.
+    - ✅ Every page carries a light diagonal "Signed with SignSeen"
+      watermark (free-tier mark).
 11. Audit trail: `GET http://localhost:8000/api/sessions/<token>/events/`
     - ✅ `chain_valid: true`, three events:
       `session.created` → `signature.submitted` → `document.sealed`.
+    - ✅ `signature.submitted` payload includes `photo_assurance`
+      (`assurance: "full"`, `reason: "timestamp_match"`) and
+      `photo_consent: true`.
 
 ## C. Intake breadth
 
