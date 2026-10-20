@@ -283,3 +283,37 @@ describe("stale sender token handling", () => {
     expect(getAuthToken()).toBeNull();
   });
 });
+
+describe("setSignerEmail", () => {
+  const store: Record<string, string> = {};
+  beforeEach(() => {
+    for (const k of Object.keys(store)) delete store[k];
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (k: string) => store[k] ?? null,
+        setItem: (k: string, v: string) => {
+          store[k] = v;
+        },
+        removeItem: (k: string) => {
+          delete store[k];
+        },
+      },
+    });
+  });
+
+  it("posts the exact email body to the signer-email endpoint, with no Authorization header", async () => {
+    const { setSignerEmail, setAuthToken } = await import("./api");
+    setAuthToken("stale-token");
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({ status: "ok", signer_email: "jane@example.com" })
+    );
+    const result = await setSignerEmail("sess-1", "jane@example.com");
+    expect(result.signer_email).toBe("jane@example.com");
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toContain("/api/sessions/sess-1/signer-email/");
+    expect(JSON.parse(init?.body as string)).toEqual({
+      email: "jane@example.com",
+    });
+    expect(init?.headers.get("Authorization")).toBeNull();
+  });
+});

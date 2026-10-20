@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { signup } from "../../lib/api";
 
@@ -38,6 +38,14 @@ export default function SignupPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // Arriving from a signing done screen ("Create a free account" after
+  // leaving an email at completion): pre-fill that email so the new
+  // account matches the signer's archive.
+  useEffect(() => {
+    const param = new URLSearchParams(window.location.search).get("email");
+    if (param) setEmail(param);
+  }, []);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();

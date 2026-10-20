@@ -21,6 +21,8 @@ from django.conf import settings
 from django.core.files.base import ContentFile
 from django.db import transaction
 from django.http import FileResponse
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
@@ -48,7 +50,7 @@ from .limits import (
     storage_used_bytes,
     wants_watermark,
 )
-from .notifications import send_sealed_notifications
+from .notifications import send_sealed_notifications, send_signer_copy
 from .trust import assess_photo, normalize_photo
 from .models import AuditEvent, Document, SigningSession
 from .pdf import build_signed_pdf
@@ -463,3 +465,41 @@ def submit_signature(request, token):
             "chain_valid": verify_chain(session),
         }
     )
+
+
+@api_view(["POST"])
+@parser_classes([JSONParser])
+@authentication_classes([])
+def set_signer_email(request, token):
+    """Completion step (scope §3.3/§3.10): after sealing, the signer may
+    leave an email to receive a copy of the executed document.
+
+    This is what links the signed document to a later account: the
+    dashboard archive matches on the session's signer_email, and the
+    ceremony itself never collects one. Signed sessions only — the
+    address is recorded in the audit trail and the copy is emailed.
+    """
+    session = get_object_or_404(SigningSession, token=token)
+    if session.status != SigningSession.Status.SIGNED:
+        return _error("signer email can only be added after signing", 409)
+    email = (request.data.get("email") or "").strip()
+    try:
+        validate_email(email)
+    except ValidationError:
+        return _error("a valid email is required")
+
+    session.signer_email = email
+    session.save(update_fields=["signer_email"])
+    record_event(session, "signer.email_provided", {"signer_email": email})
+
+    sealed = (
+        session.events.filter(event_type="document.sealed")
+        .order_by("-created_at")
+        .first()
+    )
+    try:
+        send_signer_copy(session.document, session, sealed.hash if sealed else "")
+    except Exception:
+        log.exception("signer-copy email failed")
+
+    return Response({"status": "ok", "signer_email": email})

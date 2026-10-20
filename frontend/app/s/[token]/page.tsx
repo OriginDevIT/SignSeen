@@ -8,6 +8,7 @@ import {
   collectDeviceInfo,
   getSession,
   mediaUrl,
+  setSignerEmail,
   sessionDocumentUrl,
   submitSignature,
   type SessionInfo,
@@ -84,6 +85,9 @@ export default function SignPage() {
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [photoConsent, setPhotoConsent] = useState(false);
   const [result, setResult] = useState<SignResult | null>(null);
+  const [copyEmail, setCopyEmail] = useState("");
+  const [copyState, setCopyState] = useState<"idle" | "sending" | "sent">("idle");
+  const [copyError, setCopyError] = useState("");
 
   const padRef = useRef<SignaturePadHandle>(null);
   const photoInputRef = useRef<HTMLInputElement>(null);
@@ -155,7 +159,27 @@ export default function SignPage() {
     );
   }
 
+  const submitCopyEmail = async () => {
+    setCopyError("");
+    setCopyState("sending");
+    try {
+      await setSignerEmail(token, copyEmail.trim());
+      setCopyState("sent");
+    } catch (err) {
+      setCopyError(err instanceof ApiError ? err.message : "Could not send the copy.");
+      setCopyState("idle");
+    }
+  };
+
   const signedPdfUrl = result ? mediaUrl(result.document.signed_file) : null;
+  // The email that links this document to a later account: one the
+  // signer just left at completion, or the one the sender addressed
+  // the session to (their copy already went out at seal time).
+  const archiveEmail =
+    copyState === "sent" ? copyEmail.trim() : session?.signer_email || "";
+  const signupHref = archiveEmail
+    ? `/signup?email=${encodeURIComponent(archiveEmail)}`
+    : "/signup";
 
   return (
     <main style={shell}>
@@ -316,9 +340,53 @@ export default function SignPage() {
               Download signed PDF
             </a>
           )}
+          {session?.signer_email ? (
+            <p style={{ fontSize: "0.9rem", opacity: 0.65, margin: 0 }}>
+              A copy was emailed to {session.signer_email}.
+            </p>
+          ) : copyState === "sent" ? (
+            <p style={{ fontSize: "0.9rem", opacity: 0.65, margin: 0 }}>
+              Copy sent to {copyEmail.trim()} — check your inbox.
+            </p>
+          ) : (
+            <div style={{ display: "grid", gap: "0.5rem", textAlign: "left" }}>
+              <label style={{ fontSize: "0.9rem", fontWeight: 600 }}>
+                Get a copy by email <span style={{ opacity: 0.6, fontWeight: 400 }}>(optional, no account needed)</span>
+                <input
+                  type="email"
+                  value={copyEmail}
+                  onChange={(e) => setCopyEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  style={{
+                    width: "100%",
+                    padding: "0.65rem 0.8rem",
+                    border: "1px solid #d1d5db",
+                    borderRadius: 8,
+                    fontSize: "1rem",
+                    boxSizing: "border-box",
+                    marginTop: "0.35rem",
+                  }}
+                />
+              </label>
+              {copyError && (
+                <p style={{ color: "#b91c1c", fontSize: "0.9rem", margin: 0 }}>{copyError}</p>
+              )}
+              <button
+                onClick={submitCopyEmail}
+                disabled={copyState === "sending" || !copyEmail.trim()}
+                style={{
+                  ...ghostBtn,
+                  opacity: copyEmail.trim() ? 1 : 0.5,
+                  cursor: copyEmail.trim() ? "pointer" : "not-allowed",
+                }}
+              >
+                {copyState === "sending" ? "Sending…" : "Email me a copy"}
+              </button>
+            </div>
+          )}
           <p style={{ fontSize: "0.9rem", opacity: 0.65, margin: 0 }}>
             Want to keep this document in your own library?{" "}
-            <a href="/signup">Create a free account</a> — you&apos;ll find the
+            <a href={signupHref}>Create a free account</a> — you&apos;ll find the
             documents you&apos;ve sent and received there.
           </p>
         </section>

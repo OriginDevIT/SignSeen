@@ -24,6 +24,11 @@ urlpatterns = [
         name="session-sign",
     ),
     path(
+        "sessions/<str:token>/signer-email/",
+        views.set_signer_email,
+        name="session-signer-email",
+    ),
+    path(
         "sessions/<str:token>/events/",
         views.get_session_events,
         name="session-events",
