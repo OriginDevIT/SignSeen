@@ -430,6 +430,7 @@ def submit_signature(request, token):
                 "photo_assurance": photo_assurance,
             },
             watermark=wants_watermark(doc),
+            brand_name=(doc.owner.brand_name or "") if doc.owner else "",
         )
         doc.signed_file.save(f"signed-{doc.id}.pdf", ContentFile(signed_bytes))
         doc.status = Document.Status.SIGNED

@@ -125,3 +125,85 @@ def test_auth_endpoints_ignore_stale_sender_token():
     )
     assert good.status_code == 200
     assert good.json()["token"]
+
+
+# ---------------------------------------------------------------------------
+# Custom branding (premium; issue #10 / scope §3.6)
+# ---------------------------------------------------------------------------
+
+from django.core.files.uploadedfile import SimpleUploadedFile
+
+TINY_PNG_BYTES = (
+    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+    b"\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01"
+    b"\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+)
+
+
+def _account_client(email, tier=Account.Tier.FREE):
+    account = Account.objects.create_user(email=email, password="longpassword1")
+    if tier != Account.Tier.FREE:
+        account.tier = tier
+        account.save(update_fields=["tier"])
+    token, _ = Token.objects.get_or_create(user=account)
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+    return client, account
+
+
+@pytest.mark.django_db
+def test_branding_requires_auth_and_get_returns_defaults():
+    assert APIClient().get("/api/auth/branding/").status_code == 401
+    client, _ = _account_client("free@example.com")
+    body = client.get("/api/auth/branding/").json()
+    assert body == {"brand_name": "", "brand_color": "", "brand_logo": None}
+
+
+@pytest.mark.django_db
+def test_branding_patch_is_premium_only():
+    client, account = _account_client("free2@example.com")
+    response = client.patch(
+        "/api/auth/branding/", {"brand_name": "Acme"}, format="json"
+    )
+    assert response.status_code == 403
+    account.refresh_from_db()
+    assert account.brand_name == ""
+
+
+@pytest.mark.django_db
+def test_branding_premium_patch_persists_name_color_and_logo():
+    client, account = _account_client("pro@example.com", tier=Account.Tier.PREMIUM)
+    response = client.patch(
+        "/api/auth/branding/",
+        {"brand_name": "Acme Legal", "brand_color": "#1a2B3c"},
+        format="json",
+    )
+    assert response.status_code == 200
+    assert response.json()["brand_name"] == "Acme Legal"
+    assert response.json()["brand_color"] == "#1a2B3c"
+    account.refresh_from_db()
+    assert account.brand_name == "Acme Legal"
+    assert account.brand_color == "#1a2B3c"
+
+    logo = SimpleUploadedFile("logo.png", TINY_PNG_BYTES, content_type="image/png")
+    response = client.patch(
+        "/api/auth/branding/", {"brand_logo": logo}, format="multipart"
+    )
+    assert response.status_code == 200
+    assert "branding/" in response.json()["brand_logo"]
+    account.refresh_from_db()
+    assert account.brand_logo.name.startswith("branding/")
+    # The name/color set earlier survive a logo-only PATCH.
+    assert account.brand_name == "Acme Legal"
+
+
+@pytest.mark.django_db
+def test_branding_patch_rejects_invalid_color():
+    client, account = _account_client("pro2@example.com", tier=Account.Tier.PREMIUM)
+    for bad in ("blue", "#12345", "#1234567", "123456", "#gggggg"):
+        response = client.patch(
+            "/api/auth/branding/", {"brand_color": bad}, format="json"
+        )
+        assert response.status_code == 400, bad
+    account.refresh_from_db()
+    assert account.brand_color == ""

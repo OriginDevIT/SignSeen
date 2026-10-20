@@ -23,6 +23,12 @@ export interface DocumentInfo {
   updated_at: string;
 }
 
+export interface SessionBranding {
+  name: string;
+  color: string;
+  logo: string | null;
+}
+
 export interface SessionInfo {
   id: string;
   document: string;
@@ -33,6 +39,7 @@ export interface SessionInfo {
   signer_email: string;
   status: string;
   usable: boolean;
+  branding: SessionBranding;
   expires_at: string;
   created_at: string;
   signing_url: string;
@@ -295,6 +302,48 @@ export async function logout(): Promise<void> {
 
 export function myAccount(): Promise<AccountInfo> {
   return req<AccountInfo>("/api/auth/me/");
+}
+
+/* ------------------------------------------------------------------ */
+/* Custom branding (premium accounts).                                 */
+/* ------------------------------------------------------------------ */
+
+export interface BrandingInfo {
+  brand_name: string;
+  brand_color: string;
+  brand_logo: string | null;
+}
+
+export function getBranding(): Promise<BrandingInfo> {
+  return req<BrandingInfo>("/api/auth/branding/");
+}
+
+/** Update branding. Sends multipart when a logo file is included
+ * (files can't ride JSON), plain JSON otherwise. Only the fields
+ * provided are sent — the API leaves the rest untouched. */
+export function updateBranding(input: {
+  brandName?: string;
+  brandColor?: string;
+  logoFile?: File | null;
+}): Promise<BrandingInfo> {
+  if (input.logoFile) {
+    const form = new FormData();
+    if (input.brandName !== undefined) form.append("brand_name", input.brandName);
+    if (input.brandColor !== undefined) form.append("brand_color", input.brandColor);
+    form.append("brand_logo", input.logoFile);
+    return req<BrandingInfo>("/api/auth/branding/", {
+      method: "PATCH",
+      body: form,
+    });
+  }
+  const body: Record<string, string> = {};
+  if (input.brandName !== undefined) body.brand_name = input.brandName;
+  if (input.brandColor !== undefined) body.brand_color = input.brandColor;
+  return req<BrandingInfo>("/api/auth/branding/", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 }
 
 export function requestPasswordReset(email: string): Promise<void> {

@@ -4,6 +4,8 @@ Tokens are DRF authtokens (``Authorization: Token <key>``), which work
 cross-origin for the Next.js app without cookie/CORS plumbing.
 """
 
+import re
+
 from django.contrib.auth import authenticate
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.core.mail import send_mail
@@ -12,7 +14,8 @@ from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from rest_framework import status
 from rest_framework.authtoken.models import Token
-from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.decorators import api_view, authentication_classes, parser_classes, permission_classes
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
 
@@ -83,6 +86,55 @@ def login(request):
     _claim_documents(account)
     token, _ = Token.objects.get_or_create(user=account)
     return Response({"token": token.key, "account": _account_payload(account)})
+
+
+BRAND_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def _branding_payload(account: Account) -> dict:
+    return {
+        "brand_name": account.brand_name,
+        "brand_color": account.brand_color,
+        "brand_logo": account.brand_logo.url if account.brand_logo else None,
+    }
+
+
+@api_view(["GET", "PATCH"])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser, JSONParser])
+def branding(request):
+    """Custom branding (premium; scope §3.6).
+
+    GET returns the account's current branding for any signed-in
+    account. PATCH is premium-only and accepts multipart (with a logo
+    file) or JSON: brand_name, brand_color (#RRGGBB), brand_logo.
+    Only the fields present in the request are changed; an empty
+    name/color clears that field back to the SignSeen default.
+    """
+    account = request.user
+    if request.method == "GET":
+        return Response(_branding_payload(account))
+
+    if not account.is_premium:
+        return _error("custom branding is a premium feature", 403)
+
+    update_fields = []
+    if "brand_name" in request.data:
+        account.brand_name = (request.data.get("brand_name") or "").strip()
+        update_fields.append("brand_name")
+    if "brand_color" in request.data:
+        color = (request.data.get("brand_color") or "").strip()
+        if color and not BRAND_COLOR_RE.match(color):
+            return _error("brand_color must be a hex color like #2563eb")
+        account.brand_color = color
+        update_fields.append("brand_color")
+    logo = request.FILES.get("brand_logo") or request.data.get("brand_logo")
+    if logo is not None and hasattr(logo, "read"):
+        account.brand_logo = logo
+        update_fields.append("brand_logo")
+    if update_fields:
+        account.save(update_fields=update_fields)
+    return Response(_branding_payload(account))
 
 
 @api_view(["POST"])

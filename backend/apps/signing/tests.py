@@ -912,3 +912,79 @@ def test_signer_email_rejected_before_signing_and_when_invalid():
     )
     assert bad.status_code == 400
     assert SigningSession.objects.get(token=signed_token).signer_email == ""
+
+
+# ---------------------------------------------------------------------------
+# Custom branding payload + outputs (issue #10 / scope §3.6)
+# ---------------------------------------------------------------------------
+
+
+def _branded_account(email="branded@example.com"):
+    account = _make_account(email=email, tier=Account.Tier.PREMIUM)
+    account.brand_name = "Acme Legal"
+    account.brand_color = "#123abc"
+    account.save(update_fields=["brand_name", "brand_color"])
+    return account
+
+
+@pytest.mark.django_db
+def test_session_payload_exposes_owner_branding():
+    account = _branded_account()
+    client = _auth_client(account)
+    doc_id = upload_document(client, email=account.email).json()["id"]
+    token = client.post(
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Jane"}, format="json"
+    ).json()["token"]
+    body = APIClient().get(f"/api/sessions/{token}/").json()
+    assert body["branding"] == {"name": "Acme Legal", "color": "#123abc", "logo": None}
+
+
+@pytest.mark.django_db
+def test_session_payload_branding_empty_for_anonymous_and_unbranded():
+    anon = APIClient()
+    doc_id = upload_document(anon).json()["id"]
+    token = anon.post(
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Jane"}, format="json"
+    ).json()["token"]
+    body = APIClient().get(f"/api/sessions/{token}/").json()
+    assert body["branding"] == {"name": "", "color": "", "logo": None}
+
+    # An owned document whose account set no branding gets the same empties.
+    account = _make_account(email="plain@example.com", tier=Account.Tier.PREMIUM)
+    client = _auth_client(account)
+    doc_id = upload_document(client, email=account.email).json()["id"]
+    token = client.post(
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Jane"}, format="json"
+    ).json()["token"]
+    body = APIClient().get(f"/api/sessions/{token}/").json()
+    assert body["branding"] == {"name": "", "color": "", "logo": None}
+
+
+@pytest.mark.django_db
+def test_sealed_pdf_certificate_shows_brand_name():
+    account = _branded_account(email="pdf-brand@example.com")
+    client = _auth_client(account)
+    doc_id = upload_document(client, email=account.email).json()["id"]
+    text, _doc = _sign_and_get_pdf_text(client, doc_id)
+    assert "via Acme Legal" in text
+
+
+@pytest.mark.django_db
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+def test_sealed_email_opens_with_brand_name():
+    from django.core import mail
+
+    account = _branded_account(email="mail-brand@example.com")
+    client = _auth_client(account)
+    doc_id = upload_document(client, email=account.email).json()["id"]
+    token = client.post(
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "J"}, format="json"
+    ).json()["token"]
+    assert client.post(
+        f"/api/sessions/{token}/sign/",
+        {"signature": SIG_DATA_URL, "device_info": {}},
+        format="json",
+    ).status_code == 200
+    assert mail.outbox
+    for message in mail.outbox:
+        assert message.body.startswith("Acme Legal — signed document via SignSeen")
