@@ -912,3 +912,148 @@ def test_signer_email_rejected_before_signing_and_when_invalid():
     )
     assert bad.status_code == 400
     assert SigningSession.objects.get(token=signed_token).signer_email == ""
+
+
+# ---------------------------------------------------------------------------
+# Multi-signer flow (premium, strictly sequential): the document seals
+# once, only when every signer in order has signed.
+# ---------------------------------------------------------------------------
+
+
+def _premium_multi_doc(names=("Signer One", "Signer Two", "Signer Three")):
+    account = _make_account(
+        email="multi@example.com", tier=Account.Tier.PREMIUM
+    )
+    client = _auth_client(account)
+    doc_id = upload_document(client, email=account.email).json()["id"]
+    tokens = []
+    for name in names:
+        resp = client.post(
+            f"/api/documents/{doc_id}/sessions/",
+            {"signer_name": name},
+            format="json",
+        )
+        assert resp.status_code == 201, resp.content
+        tokens.append(resp.json()["token"])
+    return client, doc_id, tokens
+
+
+def _sign(token, client=None):
+    return (client or APIClient()).post(
+        f"/api/sessions/{token}/sign/",
+        {"signature": SIG_DATA_URL, "device_info": {}},
+        format="json",
+    )
+
+
+@pytest.mark.django_db
+def test_premium_sessions_get_sequential_orders():
+    _, doc_id, _ = _premium_multi_doc()
+    sessions = list(
+        SigningSession.objects.filter(document_id=doc_id).order_by("order")
+    )
+    assert [s.order for s in sessions] == [0, 1, 2]
+    assert [s.signer_name for s in sessions] == [
+        "Signer One",
+        "Signer Two",
+        "Signer Three",
+    ]
+
+
+@pytest.mark.django_db
+def test_free_account_document_still_rejects_second_session():
+    account = _make_account(email="free-acct@example.com")
+    client = _auth_client(account)
+    doc_id = upload_document(client, email=account.email).json()["id"]
+    assert client.post(
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "One"}, format="json"
+    ).status_code == 201
+    second = client.post(
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Two"}, format="json"
+    )
+    assert second.status_code == 409
+
+
+@pytest.mark.django_db
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+def test_three_signer_document_seals_once_in_order():
+    from django.core import mail
+
+    _, doc_id, tokens = _premium_multi_doc()
+    anon = APIClient()
+
+    # Signer 2's link is not active until signer 1 signs.
+    detail = anon.get(f"/api/sessions/{tokens[1]}/").json()
+    assert detail["usable"] is False
+    assert detail["waiting"] is True
+    assert _sign(tokens[1], anon).status_code == 410
+
+    # Signer 1 signs: recorded, but the document is NOT final.
+    first = _sign(tokens[0], anon)
+    assert first.status_code == 200
+    assert first.json()["status"] == "signed"
+    assert first.json()["document_final"] is False
+    doc = Document.objects.get(pk=doc_id)
+    assert doc.status == Document.Status.PENDING
+    assert not doc.signed_file
+    assert anon.get(f"/api/documents/{doc_id}/").json()["signed_file"] is None
+    # The per-session document endpoint still serves the ORIGINAL pdf —
+    # nothing partially signed is downloadable as final.
+    served = anon.get(f"/api/sessions/{tokens[0]}/document/")
+    assert served.status_code == 200
+    assert b"SIGNATURE CERTIFICATE" not in b"".join(served.streaming_content)
+    assert len(mail.outbox) == 0  # no seal notifications yet
+
+    # Signer 2 activates and signs; still not final.
+    assert anon.get(f"/api/sessions/{tokens[1]}/").json()["usable"] is True
+    second = _sign(tokens[1], anon)
+    assert second.json()["document_final"] is False
+    doc.refresh_from_db()
+    assert doc.status == Document.Status.PENDING
+    assert not doc.signed_file
+    assert len(mail.outbox) == 0
+
+    # Signer 3 seals the document, exactly once.
+    third = _sign(tokens[2], anon)
+    assert third.status_code == 200
+    assert third.json()["document_final"] is True
+    doc.refresh_from_db()
+    assert doc.status == Document.Status.SIGNED
+    assert doc.signed_file
+    assert len(mail.outbox) == 1  # sender copy, at final seal only
+    assert mail.outbox[0].to == ["multi@example.com"]
+
+    # The certificate lists all three signers.
+    pdf = pymupdf.open(stream=doc.signed_file.read())
+    text = "".join(page.get_text() for page in pdf)
+    for name in ("Signer One", "Signer Two", "Signer Three"):
+        assert name in text
+
+    # Audit: three signature.submitted events in signing order, one
+    # document.sealed, and every session chain verifies.
+    submitted = [
+        e
+        for e in AuditEvent.objects.filter(
+            session__document_id=doc_id
+        ).order_by("created_at")
+        if e.event_type == "signature.submitted"
+    ]
+    assert [e.session.signer_name for e in submitted] == [
+        "Signer One",
+        "Signer Two",
+        "Signer Three",
+    ]
+    sealed = AuditEvent.objects.filter(
+        session__document_id=doc_id, event_type="document.sealed"
+    )
+    assert sealed.count() == 1
+    for session in SigningSession.objects.filter(document_id=doc_id):
+        assert verify_chain(session) is True
+
+    # Document payload carries the per-signer state for the sender.
+    detail = anon.get(f"/api/documents/{doc_id}/").json()
+    assert [(s["signer_name"], s["status"], s["order"]) for s in detail["sessions"]] == [
+        ("Signer One", "signed", 0),
+        ("Signer Two", "signed", 1),
+        ("Signer Three", "signed", 2),
+    ]

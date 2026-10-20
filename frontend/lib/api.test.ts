@@ -317,3 +317,36 @@ describe("setSignerEmail", () => {
     expect(init?.headers.get("Authorization")).toBeNull();
   });
 });
+
+describe("multi-signer shapes", () => {
+  it("createSession surfaces the session order and waiting flag", async () => {
+    const { createSession } = await import("./api");
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({ token: "tok-2", order: 1, waiting: true, usable: false }, 201)
+    );
+    const sess = await createSession("doc-1", "Second Signer", "");
+    expect(sess.order).toBe(1);
+    expect(sess.waiting).toBe(true);
+    expect(sess.usable).toBe(false);
+  });
+
+  it("submitSignature surfaces document_final=false for intermediate signers", async () => {
+    const { submitSignature } = await import("./api");
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({ status: "signed", document_final: false })
+    );
+    const result = await submitSignature("tok123", {
+      signature: "data:image/png;base64,AAA",
+      deviceInfo: {
+        userAgent: "ua",
+        platform: "p",
+        language: "en",
+        screenWidth: 1,
+        screenHeight: 2,
+        timezoneOffsetMinutes: 0,
+      },
+    });
+    expect(result.status).toBe("signed");
+    expect(result.document_final).toBe(false);
+  });
+});

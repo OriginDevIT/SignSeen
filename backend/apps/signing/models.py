@@ -73,6 +73,10 @@ class SigningSession(models.Model):
     token = models.CharField(max_length=64, unique=True, default=generate_token)
     signer_name = models.CharField(max_length=255, blank=True, default="")
     signer_email = models.EmailField(blank=True, default="")
+    # Position in the document's signing order (multi-signer, premium).
+    # Sessions sign strictly sequentially: order N becomes usable only
+    # once every lower-order session for the document has signed.
+    order = models.PositiveIntegerField(default=0)
     status = models.CharField(
         max_length=16, choices=Status.choices, default=Status.PENDING
     )
@@ -85,11 +89,30 @@ class SigningSession(models.Model):
     webauthn_credential_id = models.CharField(max_length=255, blank=True, default="")
     created_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        ordering = ["order", "created_at"]
+
+    def predecessors_signed(self) -> bool:
+        """True iff every lower-order session for this document signed."""
+        return not (
+            SigningSession.objects.filter(
+                document_id=self.document_id, order__lt=self.order
+            )
+            .exclude(status=self.Status.SIGNED)
+            .exists()
+        )
+
+    def is_waiting(self) -> bool:
+        """Pending, but an earlier signer in the sequence hasn't signed."""
+        return self.status == self.Status.PENDING and not self.predecessors_signed()
+
     def is_usable(self) -> bool:
-        """A session can accept a signature iff pending and unexpired."""
+        """A session can accept a signature iff pending, unexpired, and
+        activated (all earlier signers in the sequence have signed)."""
         return (
             self.status == self.Status.PENDING
             and timezone.now() < self.expires_at
+            and self.predecessors_signed()
         )
 
     def __str__(self) -> str:

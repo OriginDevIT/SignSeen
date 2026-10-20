@@ -13,12 +13,21 @@ export class ApiError extends Error {
   }
 }
 
+export interface SessionSummary {
+  id: string;
+  signer_name: string;
+  signer_email: string;
+  status: string;
+  order: number;
+}
+
 export interface DocumentInfo {
   id: string;
   title: string;
   status: string;
   sender_email: string;
   signed_file: string | null;
+  sessions?: SessionSummary[];
   created_at: string;
   updated_at: string;
 }
@@ -32,7 +41,10 @@ export interface SessionInfo {
   signer_name: string;
   signer_email: string;
   status: string;
+  order: number;
   usable: boolean;
+  /** True while an earlier signer in the sequence has not signed. */
+  waiting: boolean;
   expires_at: string;
   created_at: string;
   signing_url: string;
@@ -40,6 +52,10 @@ export interface SessionInfo {
 
 export interface SignResult {
   status: string;
+  /** False when this signer's part is done but the document still
+   * awaits the remaining signer(s) (multi-signer); the document has
+   * no signed file until the final signature seals it. */
+  document_final: boolean;
   document: DocumentInfo;
   audit_seal: string;
   chain_valid: boolean;

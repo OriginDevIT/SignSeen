@@ -23,10 +23,14 @@ export default function SendPage() {
   const [signerName, setSignerName] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [pageUrl, setPageUrl] = useState("");
-  const [session, setSession] = useState<SessionInfo | null>(null);
+  const [sessions, setSessions] = useState<SessionInfo[]>([]);
+  const [docId, setDocId] = useState<string | null>(null);
   const [error, setError] = useState("");
-  const [copied, setCopied] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [accountEmail, setAccountEmail] = useState<string | null>(null);
+  const [isPremium, setIsPremium] = useState(false);
+  const [nextSignerName, setNextSignerName] = useState("");
+  const [addingSigner, setAddingSigner] = useState(false);
 
   // Logged-in senders: prefill their email and attach documents to the
   // account (the API does this from the token automatically).
@@ -36,6 +40,7 @@ export default function SendPage() {
       .then((account) => {
         setAccountEmail(account.email);
         setSenderEmail(account.email);
+        setIsPremium(account.is_premium);
       })
       .catch(() => {});
   }, []);
@@ -55,7 +60,8 @@ export default function SendPage() {
               senderEmail.trim()
             );
       const sess = await createSession(doc.id, signerName.trim(), "");
-      setSession(sess);
+      setSessions([sess]);
+      setDocId(doc.id);
       setPhase("done");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong.");
@@ -63,11 +69,28 @@ export default function SendPage() {
     }
   };
 
-  const copyLink = async () => {
-    if (!session) return;
-    await navigator.clipboard.writeText(session.signing_url);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+  const copyLink = async (sess: SessionInfo) => {
+    await navigator.clipboard.writeText(sess.signing_url);
+    setCopiedId(sess.id);
+    setTimeout(() => setCopiedId(null), 2000);
+  };
+
+  // Premium senders can add more signers to the same document. Sessions
+  // sign strictly in order: signer 2's link activates only after
+  // signer 1 has signed, and the document seals at the final signature.
+  const addSigner = async () => {
+    if (!docId) return;
+    setError("");
+    setAddingSigner(true);
+    try {
+      const sess = await createSession(docId, nextSignerName.trim(), "");
+      setSessions((prev) => [...prev, sess]);
+      setNextSignerName("");
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Something went wrong.");
+    } finally {
+      setAddingSigner(false);
+    }
   };
 
   const inputStyle: React.CSSProperties = {
@@ -224,7 +247,7 @@ export default function SendPage() {
         </form>
       )}
 
-      {phase === "done" && session && (
+      {phase === "done" && sessions.length > 0 && (
         <section style={{ display: "grid", gap: "1.25rem" }}>
           <div
             style={{
@@ -235,66 +258,118 @@ export default function SendPage() {
               textAlign: "center",
             }}
           >
-            <h2 style={{ margin: "0 0 1rem" }}>Ready to sign</h2>
-            <div
-              style={{
-                display: "inline-block",
-                background: "#fff",
-                padding: 12,
-                borderRadius: 8,
-              }}
-            >
-              <QRCodeSVG value={session.signing_url} size={200} />
-            </div>
-            <p style={{ opacity: 0.7, margin: "1rem 0 0.25rem" }}>
-              On a phone? Open the link directly. On a computer? Scan the QR
-              code with your phone.
+            <h2 style={{ margin: "0 0 0.5rem" }}>Ready to sign</h2>
+            <p style={{ opacity: 0.7, margin: 0 }}>
+              {sessions.length > 1
+                ? "Signers sign in order — each link activates after the previous signer has signed, and the document seals at the final signature."
+                : "On a phone? Open the link directly. On a computer? Scan the QR code with your phone."}
             </p>
           </div>
-          <div
-            style={{
-              display: "flex",
-              gap: "0.5rem",
-              alignItems: "center",
-              background: "#f9fafb",
-              border: "1px solid #e5e7eb",
-              borderRadius: 8,
-              padding: "0.75rem",
-            }}
-          >
-            <code
+          {sessions.map((sess) => (
+            <div
+              key={sess.id}
               style={{
-                flex: 1,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-                fontSize: "0.85rem",
+                border: "1px solid #e5e7eb",
+                borderRadius: 12,
+                padding: "1.25rem",
+                display: "grid",
+                gap: "0.75rem",
+                justifyItems: "center",
+                textAlign: "center",
               }}
             >
-              {session.signing_url}
-            </code>
-            <button
-              onClick={copyLink}
-              style={{
-                padding: "0.5rem 0.9rem",
-                borderRadius: 8,
-                border: "1px solid #d1d5db",
-                background: "#fff",
-                cursor: "pointer",
-                whiteSpace: "nowrap",
-              }}
-            >
-              {copied ? "Copied!" : "Copy link"}
-            </button>
-          </div>
+              <div style={{ fontWeight: 600 }}>
+                Signer {sess.order + 1}
+                {sess.signer_name ? ` — ${sess.signer_name}` : ""}
+              </div>
+              <div
+                style={{
+                  display: "inline-block",
+                  background: "#fff",
+                  padding: 12,
+                  borderRadius: 8,
+                  border: "1px solid #e5e7eb",
+                }}
+              >
+                <QRCodeSVG value={sess.signing_url} size={160} />
+              </div>
+              <div
+                style={{
+                  display: "flex",
+                  gap: "0.5rem",
+                  alignItems: "center",
+                  background: "#f9fafb",
+                  border: "1px solid #e5e7eb",
+                  borderRadius: 8,
+                  padding: "0.75rem",
+                  width: "100%",
+                  boxSizing: "border-box",
+                }}
+              >
+                <code
+                  style={{
+                    flex: 1,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    fontSize: "0.85rem",
+                    textAlign: "left",
+                  }}
+                >
+                  {sess.signing_url}
+                </code>
+                <button
+                  onClick={() => copyLink(sess)}
+                  style={{
+                    padding: "0.5rem 0.9rem",
+                    borderRadius: 8,
+                    border: "1px solid #d1d5db",
+                    background: "#fff",
+                    cursor: "pointer",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {copiedId === sess.id ? "Copied!" : "Copy link"}
+                </button>
+              </div>
+            </div>
+          ))}
           <p style={{ opacity: 0.6, fontSize: "0.9rem", margin: 0 }}>
-            This link expires in 30 days. Send it to your signer by email or
-            text — no account needed on their end.
+            These links expire in 30 days. Send each signer their link by
+            email or text — no account needed on their end.
           </p>
+          {isPremium && (
+            <div style={{ display: "grid", gap: "0.5rem" }}>
+              <label style={{ display: "grid", gap: "0.35rem" }}>
+                Add another signer <span style={{ opacity: 0.6 }}>(premium — signs after the signer(s) above, in order)</span>
+                <input
+                  style={inputStyle}
+                  value={nextSignerName}
+                  onChange={(e) => setNextSignerName(e.target.value)}
+                  placeholder="Next signer name (optional)"
+                />
+              </label>
+              <button
+                onClick={addSigner}
+                disabled={addingSigner}
+                style={{
+                  padding: "0.6rem",
+                  borderRadius: 8,
+                  border: "1px solid #d1d5db",
+                  background: "#fff",
+                  cursor: addingSigner ? "wait" : "pointer",
+                  fontWeight: 600,
+                }}
+              >
+                {addingSigner ? "Adding…" : "Add another signer"}
+              </button>
+            </div>
+          )}
           <button
             onClick={() => {
               setPhase("form");
-              setSession(null);
+              setSessions([]);
+              setDocId(null);
               setFile(null);
               setTitle("");
             }}

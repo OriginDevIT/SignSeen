@@ -16,7 +16,7 @@ import {
 } from "../../../lib/api";
 import { CEREMONY_STEPS } from "../../../lib/ceremony";
 
-type Step = "loading" | "intro" | "sign" | "photo" | "submitting" | "done" | "unavailable";
+type Step = "loading" | "intro" | "sign" | "photo" | "submitting" | "done" | "waiting" | "unavailable";
 
 const shell: React.CSSProperties = {
   maxWidth: 560,
@@ -96,7 +96,7 @@ export default function SignPage() {
     getSession(token)
       .then((s) => {
         setSession(s);
-        setStep(s.usable ? "intro" : "unavailable");
+        setStep(s.usable ? "intro" : s.waiting ? "waiting" : "unavailable");
       })
       .catch((err) => {
         setError(err instanceof ApiError ? err.message : "Could not load this signing session.");
@@ -143,6 +143,19 @@ export default function SignPage() {
     return (
       <main style={shell}>
         <p style={{ textAlign: "center", opacity: 0.6 }}>Loading signing session…</p>
+      </main>
+    );
+  }
+
+  if (step === "waiting") {
+    return (
+      <main style={shell}>
+        <h1 style={{ textAlign: "center" }}>This link isn&apos;t active yet</h1>
+        <p style={{ textAlign: "center", opacity: 0.65 }}>
+          This document is signed in order, and an earlier signer
+          hasn&apos;t signed yet. Your link activates as soon as they do —
+          please check back later.
+        </p>
       </main>
     );
   }
@@ -310,11 +323,24 @@ export default function SignPage() {
       {step === "done" && result && (
         <section style={{ display: "grid", gap: "1rem", textAlign: "center" }}>
           <div style={{ fontSize: "3rem" }}>✓</div>
-          <h1 style={{ margin: 0 }}>Signed. Seen. Sealed.</h1>
-          <p style={{ opacity: 0.7, margin: 0 }}>
-            Your signature is stamped on the document with a tamper-evident
-            audit trail.
-          </p>
+          {result.document_final ? (
+            <>
+              <h1 style={{ margin: 0 }}>Signed. Seen. Sealed.</h1>
+              <p style={{ opacity: 0.7, margin: 0 }}>
+                Your signature is stamped on the document with a tamper-evident
+                audit trail.
+              </p>
+            </>
+          ) : (
+            <>
+              <h1 style={{ margin: 0 }}>Signature recorded</h1>
+              <p style={{ opacity: 0.7, margin: 0 }}>
+                Your signature is recorded — this document is waiting for
+                the remaining signer(s). It will be sealed once everyone
+                in the signing order has signed.
+              </p>
+            </>
+          )}
           <div
             style={{
               background: "#f9fafb",
@@ -342,11 +368,15 @@ export default function SignPage() {
           )}
           {session?.signer_email ? (
             <p style={{ fontSize: "0.9rem", opacity: 0.65, margin: 0 }}>
-              A copy was emailed to {session.signer_email}.
+              {result.document_final
+                ? `A copy was emailed to ${session.signer_email}.`
+                : `A copy will be emailed to ${session.signer_email} when the document is fully signed.`}
             </p>
           ) : copyState === "sent" ? (
             <p style={{ fontSize: "0.9rem", opacity: 0.65, margin: 0 }}>
-              Copy sent to {copyEmail.trim()} — check your inbox.
+              {result.document_final
+                ? `Copy sent to ${copyEmail.trim()} — check your inbox.`
+                : `Thanks — your copy will be emailed to ${copyEmail.trim()} when the document is fully signed.`}
             </p>
           ) : (
             <div style={{ display: "grid", gap: "0.5rem", textAlign: "left" }}>

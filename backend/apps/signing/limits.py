@@ -2,9 +2,9 @@
 
 Identity = the logged-in account when present, else the sender email (free
 one-off sends, scope §3.10). Free tier: 1 pending document at a time,
-100 MB total storage, 1 signer per document. Premium raises the storage cap
-and drops the watermark; the multi-signer *flow* is a deferred follow-up, so
-one signing session per document holds for every tier until then.
+100 MB total storage, 1 signer per document. Premium raises the storage cap,
+drops the watermark, and lifts the per-document signer cap (multi-signer
+flow: sessions sign strictly sequentially by order).
 """
 
 from django.conf import settings
@@ -78,9 +78,14 @@ def check_storage_limit(account, sender_email, additional_bytes: int) -> None:
 
 
 def check_can_create_session(document: Document) -> None:
-    """One signing session per document until the multi-signer flow lands."""
-    if document.sessions.exists():
-        raise LimitExceeded("This document already has a signing session.")
+    """One signing session per document; premium documents may add more
+    signers (each new session takes the next position in signing order)."""
+    if not document.sessions.exists():
+        return
+    owner = document.owner
+    if owner is not None and getattr(owner, "is_premium", False):
+        return
+    raise LimitExceeded("This document already has a signing session.")
 
 
 def wants_watermark(document: Document) -> bool:
