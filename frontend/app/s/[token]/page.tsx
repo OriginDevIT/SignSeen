@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import SignaturePad, { type SignaturePadHandle } from "../../../components/SignaturePad";
+import WitnessCamera from "../../../components/WitnessCamera";
+import { isCameraSupported } from "../../../lib/camera";
 import {
   ApiError,
   collectDeviceInfo,
@@ -84,6 +86,7 @@ export default function SignPage() {
   const [signatureUrl, setSignatureUrl] = useState("");
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [photoConsent, setPhotoConsent] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
   const [result, setResult] = useState<SignResult | null>(null);
   const [copyEmail, setCopyEmail] = useState("");
   const [copyState, setCopyState] = useState<"idle" | "sending" | "sent">("idle");
@@ -111,6 +114,18 @@ export default function SignPage() {
     if (!pad || pad.isEmpty()) return;
     setSignatureUrl(pad.toDataURL());
     setStep("photo");
+  };
+
+  // "Take photo": prefer the in-app camera (defaults to the front
+  // camera for real, unlike the capture="user" hint some phones
+  // ignore); fall back to the file picker where getUserMedia is
+  // unavailable. Denial inside the camera also lands on the fallback.
+  const openPhotoCapture = () => {
+    if (isCameraSupported()) {
+      setCameraOpen(true);
+    } else {
+      photoInputRef.current?.click();
+    }
   };
 
   const onPhotoPicked = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -242,7 +257,19 @@ export default function SignPage() {
             onChange={onPhotoPicked}
             style={{ display: "none" }}
           />
-          {photoUrl ? (
+          {cameraOpen ? (
+            <WitnessCamera
+              onCapture={(url) => {
+                setPhotoUrl(url);
+                setCameraOpen(false);
+              }}
+              onFallback={() => {
+                setCameraOpen(false);
+                photoInputRef.current?.click();
+              }}
+              onCancel={() => setCameraOpen(false)}
+            />
+          ) : photoUrl ? (
             <img
               src={photoUrl}
               alt="Witness photo preview"
@@ -285,7 +312,7 @@ export default function SignPage() {
           </label>
           <div style={{ display: "flex", gap: "0.75rem" }}>
             <button
-              onClick={() => photoInputRef.current?.click()}
+              onClick={openPhotoCapture}
               disabled={!photoConsent}
               style={{
                 ...ghostBtn,
