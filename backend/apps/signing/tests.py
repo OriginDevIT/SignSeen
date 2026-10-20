@@ -758,3 +758,76 @@ def test_signer_archive_shows_documents_they_signed():
     body = client.get("/api/documents/mine/").json()
     assert [d["id"] for d in body["signed_documents"]] == [doc_id]
     assert body["documents"] == []
+
+
+# ---------------------------------------------------------------------------
+# Stale sender tokens must not break public / signer endpoints.
+#
+# A browser keeps its sender token in localStorage after the server has
+# deleted it (logout on another device, password reset, DB reset). DRF
+# TokenAuthentication rejects unknown tokens before permission checks,
+# so these endpoints either ignore the Authorization header entirely
+# (token-addressed signer endpoints, public document view) or degrade
+# an invalid token to anonymous (optionally-authenticated sender ones).
+# ---------------------------------------------------------------------------
+
+STALE = "Token stale-token-no-longer-in-db"
+
+
+def _stale_client():
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION=STALE)
+    return client
+
+
+@pytest.mark.django_db
+def test_signer_endpoints_ignore_stale_sender_token():
+    anon = APIClient()
+    doc_id = upload_document(anon).json()["id"]
+    token = anon.post(
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Jane"}, format="json"
+    ).json()["token"]
+
+    stale = _stale_client()
+    session = stale.get(f"/api/sessions/{token}/")
+    assert session.status_code == 200
+    assert session.json()["usable"] is True
+
+    document = stale.get(f"/api/sessions/{token}/document/")
+    assert document.status_code == 200
+
+    events = stale.get(f"/api/sessions/{token}/events/")
+    assert events.status_code == 200
+    assert events.json()["chain_valid"] is True
+
+    signed = stale.post(
+        f"/api/sessions/{token}/sign/",
+        {"signature": SIG_DATA_URL, "device_info": {}},
+        format="json",
+    )
+    assert signed.status_code == 200
+    assert signed.json()["status"] == "signed"
+
+
+@pytest.mark.django_db
+def test_public_document_view_ignores_stale_sender_token():
+    anon = APIClient()
+    doc_id = upload_document(anon).json()["id"]
+    response = _stale_client().get(f"/api/documents/{doc_id}/")
+    assert response.status_code == 200
+    assert response.json()["id"] == doc_id
+
+
+@pytest.mark.django_db
+def test_anonymous_upload_with_stale_token_degrades_to_anonymous():
+    stale = _stale_client()
+    response = upload_document(stale)
+    assert response.status_code == 201
+    assert Document.objects.get(pk=response.json()["id"]).owner is None
+    # Session creation on that document works the same way.
+    session = stale.post(
+        f"/api/documents/{response.json()['id']}/sessions/",
+        {"signer_name": "Jane"},
+        format="json",
+    )
+    assert session.status_code == 201

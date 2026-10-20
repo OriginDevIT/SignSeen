@@ -24,10 +24,17 @@ from django.http import FileResponse
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
-from rest_framework.decorators import api_view, parser_classes, permission_classes
+from rest_framework.decorators import (
+    api_view,
+    authentication_classes,
+    parser_classes,
+    permission_classes,
+)
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+
+from apps.core.authentication import OptionalTokenAuthentication
 
 from .hashing import record_event, verify_chain
 from .convert import ConversionError, convert_office_to_pdf, render_url_to_pdf
@@ -131,6 +138,7 @@ def _normalize_device_info(raw: dict) -> dict:
 
 @api_view(["POST"])
 @parser_classes([MultiPartParser, FormParser])
+@authentication_classes([OptionalTokenAuthentication])
 def create_document(request):
     validated = _validate_sender_fields(request.data)
     if isinstance(validated, Response):
@@ -177,6 +185,7 @@ def create_document(request):
 
 @api_view(["POST"])
 @parser_classes([JSONParser, FormParser, MultiPartParser])
+@authentication_classes([OptionalTokenAuthentication])
 def create_document_from_url(request):
     """Web-page signing: render a URL to PDF, then it flows like any upload."""
     validated = _validate_sender_fields(request.data)
@@ -247,6 +256,7 @@ def my_documents(request):
 
 
 @api_view(["GET"])
+@authentication_classes([])
 def get_document(request, doc_id):
     doc = get_object_or_404(Document, pk=doc_id)
     return Response(DocumentSerializer(doc).data)
@@ -254,6 +264,7 @@ def get_document(request, doc_id):
 
 @api_view(["POST"])
 @parser_classes([JSONParser, FormParser, MultiPartParser])
+@authentication_classes([OptionalTokenAuthentication])
 def create_session(request, doc_id):
     doc = get_object_or_404(Document, pk=doc_id)
     if doc.status != Document.Status.PENDING:
@@ -281,6 +292,7 @@ def create_session(request, doc_id):
 
 
 @api_view(["GET"])
+@authentication_classes([])
 def get_session_events(request, token):
     """Tamper-evident audit trail for a session (public, token-addressed)."""
     session = get_object_or_404(SigningSession, token=token)
@@ -299,12 +311,14 @@ def get_session_events(request, token):
 
 
 @api_view(["GET"])
+@authentication_classes([])
 def get_session(request, token):
     session = get_object_or_404(SigningSession, token=token)
     return Response(SigningSessionSerializer(session).data)
 
 
 @api_view(["GET"])
+@authentication_classes([])
 def session_document(request, token):
     """Serve the PDF under review. Possession of the token is the auth."""
     session = get_object_or_404(SigningSession, token=token)
@@ -316,6 +330,7 @@ def session_document(request, token):
 
 @api_view(["POST"])
 @parser_classes([JSONParser])
+@authentication_classes([])
 def submit_signature(request, token):
     session = get_object_or_404(SigningSession, token=token)
     if not session.is_usable():
