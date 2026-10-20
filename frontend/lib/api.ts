@@ -244,6 +244,7 @@ export interface AccountInfo {
   email: string;
   tier: "free" | "premium";
   is_premium: boolean;
+  alerts_enabled: boolean;
 }
 
 interface AuthResult {
@@ -295,6 +296,15 @@ export async function logout(): Promise<void> {
 
 export function myAccount(): Promise<AccountInfo> {
   return req<AccountInfo>("/api/auth/me/");
+}
+
+/** Toggle signing alerts (viewed / expiring-soon emails) for this account. */
+export function setAlertsEnabled(enabled: boolean): Promise<AccountInfo> {
+  return req<AccountInfo>("/api/auth/me/", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ alerts_enabled: enabled }),
+  });
 }
 
 export function requestPasswordReset(email: string): Promise<void> {

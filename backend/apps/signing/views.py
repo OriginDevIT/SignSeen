@@ -50,7 +50,11 @@ from .limits import (
     storage_used_bytes,
     wants_watermark,
 )
-from .notifications import send_sealed_notifications, send_signer_copy
+from .notifications import (
+    send_sealed_notifications,
+    send_signer_copy,
+    send_viewed_alert,
+)
 from .trust import assess_photo, normalize_photo
 from .models import AuditEvent, Document, SigningSession
 from .pdf import build_signed_pdf
@@ -316,6 +320,25 @@ def get_session_events(request, token):
 @authentication_classes([])
 def get_session(request, token):
     session = get_object_or_404(SigningSession, token=token)
+    if session.is_usable() and session.viewed_at is None:
+        # First view of a live pending session (signing.viewed alert):
+        # stamp it and add the audit event for every session; the email
+        # itself is premium + opt-in gated inside the notification
+        # helper. Best-effort — alerting must never fail the view.
+        session.viewed_at = timezone.now()
+        session.save(update_fields=["viewed_at"])
+        record_event(
+            session,
+            "signing.viewed",
+            {
+                "document_id": str(session.document_id),
+                "viewed_at": session.viewed_at.isoformat(),
+            },
+        )
+        try:
+            send_viewed_alert(session.document, session)
+        except Exception:
+            log.exception("viewed-alert email failed")
     return Response(SigningSessionSerializer(session).data)
 
 

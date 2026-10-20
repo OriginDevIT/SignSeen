@@ -317,3 +317,45 @@ describe("setSignerEmail", () => {
     expect(init?.headers.get("Authorization")).toBeNull();
   });
 });
+
+describe("setAlertsEnabled", () => {
+  const store: Record<string, string> = {};
+  beforeEach(() => {
+    for (const k of Object.keys(store)) delete store[k];
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (k: string) => store[k] ?? null,
+        setItem: (k: string, v: string) => {
+          store[k] = v;
+        },
+        removeItem: (k: string) => {
+          delete store[k];
+        },
+      },
+    });
+  });
+
+  it("PATCHes /api/auth/me/ with the exact alerts_enabled body", async () => {
+    const { setAlertsEnabled, setAuthToken } = await import("./api");
+    setAuthToken("tok-abc");
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({
+        id: "1",
+        email: "a@example.com",
+        tier: "premium",
+        is_premium: true,
+        alerts_enabled: false,
+      })
+    );
+    const account = await setAlertsEnabled(false);
+    expect(account.alerts_enabled).toBe(false);
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toContain("/api/auth/me/");
+    expect(init?.method).toBe("PATCH");
+    expect(JSON.parse(init?.body as string)).toEqual({
+      alerts_enabled: false,
+    });
+    expect(init?.headers.get("Authorization")).toBe("Token tok-abc");
+    setAuthToken(null);
+  });
+});

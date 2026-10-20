@@ -125,3 +125,28 @@ def test_auth_endpoints_ignore_stale_sender_token():
     )
     assert good.status_code == 200
     assert good.json()["token"]
+
+
+@pytest.mark.django_db
+def test_me_includes_alerts_enabled_and_patch_toggles_it():
+    client = APIClient()
+    token = signup(client).json()["token"]
+    client.credentials(HTTP_AUTHORIZATION=f"Token {token}")
+
+    body = client.get("/api/auth/me/").json()
+    assert body["alerts_enabled"] is True
+
+    patched = client.patch(
+        "/api/auth/me/", {"alerts_enabled": False}, format="json"
+    )
+    assert patched.status_code == 200
+    assert patched.json()["alerts_enabled"] is False
+    assert client.get("/api/auth/me/").json()["alerts_enabled"] is False
+
+    bad = client.patch(
+        "/api/auth/me/", {"alerts_enabled": "yes"}, format="json"
+    )
+    assert bad.status_code == 400
+
+    back = client.patch("/api/auth/me/", {"alerts_enabled": True}, format="json")
+    assert back.json()["alerts_enabled"] is True

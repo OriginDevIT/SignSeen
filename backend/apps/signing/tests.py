@@ -912,3 +912,101 @@ def test_signer_email_rejected_before_signing_and_when_invalid():
     )
     assert bad.status_code == 400
     assert SigningSession.objects.get(token=signed_token).signer_email == ""
+
+
+# ---------------------------------------------------------------------------
+# Signing alerts (issue #9): viewed + expiring-soon emails. Premium
+# owners with alerts enabled only; the record is the audit event +
+# the session timestamp fields.
+# ---------------------------------------------------------------------------
+
+
+def _owned_session(account_client, email):
+    doc_id = upload_document(account_client, email=email).json()["id"]
+    token = account_client.post(
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Jane"}, format="json"
+    ).json()["token"]
+    return doc_id, token
+
+
+@pytest.mark.django_db
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+def test_viewed_alert_fires_exactly_once_for_premium_owner():
+    from django.core import mail
+
+    account = _make_account(email="prem@example.com", tier=Account.Tier.PREMIUM)
+    client = _auth_client(account)
+    _, token = _owned_session(client, account.email)
+
+    anon = APIClient()
+    assert anon.get(f"/api/sessions/{token}/").status_code == 200
+    session = SigningSession.objects.get(token=token)
+    assert session.viewed_at is not None
+    assert session.events.filter(event_type="signing.viewed").count() == 1
+    assert verify_chain(session) is True
+    assert [m.to for m in mail.outbox] == [["prem@example.com"]]
+    assert mail.outbox[0].subject.startswith("Viewed:")
+
+    assert anon.get(f"/api/sessions/{token}/").status_code == 200
+    session.refresh_from_db()
+    assert session.events.filter(event_type="signing.viewed").count() == 1
+    assert len(mail.outbox) == 1
+
+
+@pytest.mark.django_db
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+def test_viewed_alert_suppressed_when_opted_out_free_or_ownerless():
+    from django.core import mail
+
+    # Premium but opted out: the view is still recorded, no email.
+    opted = _make_account(email="optout@example.com", tier=Account.Tier.PREMIUM)
+    opted.alerts_enabled = False
+    opted.save(update_fields=["alerts_enabled"])
+    _, token1 = _owned_session(_auth_client(opted), opted.email)
+
+    # Free-tier owner: no email.
+    free = _make_account(email="free@example.com", tier=Account.Tier.FREE)
+    _, token2 = _owned_session(_auth_client(free), free.email)
+
+    # Ownerless document: no email.
+    anon = APIClient()
+    _, token3 = _owned_session(anon, "nobody@example.com")
+
+    for token in (token1, token2, token3):
+        assert anon.get(f"/api/sessions/{token}/").status_code == 200
+        session = SigningSession.objects.get(token=token)
+        assert session.viewed_at is not None
+        assert session.events.filter(event_type="signing.viewed").count() == 1
+    assert mail.outbox == []
+
+
+@pytest.mark.django_db
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+def test_expiry_alert_command_sends_stamps_and_does_not_resend():
+    from django.core import mail
+    from django.core.management import call_command
+
+    account = _make_account(email="prem2@example.com", tier=Account.Tier.PREMIUM)
+    _, token = _owned_session(_auth_client(account), account.email)
+    session = SigningSession.objects.get(token=token)
+    session.expires_at = timezone.now() + timedelta(hours=12)
+    session.save(update_fields=["expires_at"])
+
+    # A second session expiring well outside the window stays quiet.
+    _, far_token = _owned_session(_auth_client(account), account.email)
+    far = SigningSession.objects.get(token=far_token)
+    far.expires_at = timezone.now() + timedelta(hours=48)
+    far.save(update_fields=["expires_at"])
+
+    call_command("send_expiry_alerts")
+    session.refresh_from_db()
+    far.refresh_from_db()
+    assert session.expiry_alert_sent_at is not None
+    assert far.expiry_alert_sent_at is None
+    assert len(mail.outbox) == 1
+    assert mail.outbox[0].to == ["prem2@example.com"]
+    assert mail.outbox[0].subject.startswith("Expiring soon:")
+    assert "/d/" in mail.outbox[0].body
+
+    call_command("send_expiry_alerts")
+    assert len(mail.outbox) == 1
