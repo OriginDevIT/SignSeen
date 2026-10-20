@@ -218,8 +218,22 @@ def create_document_from_url(request):
 @api_view(["GET"])
 @permission_classes([IsAuthenticated])
 def my_documents(request):
-    """Sender dashboard: this account's documents + storage usage."""
+    """Sender dashboard: this account's documents + storage usage.
+
+    Documents the account sent (owned), plus documents the account *signed*
+    as a signer — the signer enters their email at completion, and creating
+    an account with that email gives them a personal archive (scope §3.10).
+    """
     docs = Document.objects.filter(owner=request.user).order_by("-created_at")
+    signed_docs = (
+        Document.objects.filter(
+            sessions__signer_email__iexact=request.user.email,
+            sessions__status=SigningSession.Status.SIGNED,
+        )
+        .exclude(owner=request.user)
+        .distinct()
+        .order_by("-created_at")
+    )
     return Response(
         {
             "tier": request.user.tier,
@@ -227,6 +241,7 @@ def my_documents(request):
             "storage_used_bytes": storage_used_bytes(request.user, ""),
             "storage_limit_bytes": storage_limit_bytes(request.user),
             "documents": DocumentSerializer(docs, many=True).data,
+            "signed_documents": DocumentSerializer(signed_docs, many=True).data,
         }
     )
 

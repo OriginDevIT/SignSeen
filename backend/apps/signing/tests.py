@@ -708,3 +708,53 @@ def test_pending_limit_is_keyed_on_email_across_account_and_anonymous():
     authed2 = _auth_client(account2)
     assert upload_document(authed2, email="other@example.com").status_code == 201
     assert upload_document(anon, email="other@example.com").status_code == 409
+
+
+@pytest.mark.django_db
+def test_login_claims_previously_anonymous_documents():
+    # Sent anonymously (ownerless, keyed by email only)...
+    anon = APIClient()
+    doc_id = upload_document(anon, email="claim@example.com").json()["id"]
+    assert Document.objects.get(pk=doc_id).owner is None
+    # ...then the sender creates an account with the same email: the
+    # document is claimed and appears on their dashboard.
+    client = APIClient()
+    token = client.post(
+        "/api/auth/signup/",
+        {"email": "claim@example.com", "password": "longpassword1"},
+        format="json",
+    ).json()["token"]
+    client.credentials(HTTP_AUTHORIZATION=f"Token {token}")
+    assert Document.objects.get(pk=doc_id).owner is not None
+    body = client.get("/api/documents/mine/").json()
+    assert [d["id"] for d in body["documents"]] == [doc_id]
+
+
+@pytest.mark.django_db
+def test_signer_archive_shows_documents_they_signed():
+    # Someone else sends; our signer signs and leaves their email.
+    sender = APIClient()
+    doc_id = upload_document(sender, email="sender2@example.com").json()["id"]
+    token = sender.post(
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Sig"}, format="json"
+    ).json()["token"]
+    assert sender.post(
+        f"/api/sessions/{token}/sign/",
+        {
+            "signature": SIG_DATA_URL,
+            "device_info": {},
+            "signer_email": "sig@example.com",
+        },
+        format="json",
+    ).status_code == 200
+    # The signer creates an account with that email post-signing.
+    client = APIClient()
+    auth = client.post(
+        "/api/auth/signup/",
+        {"email": "sig@example.com", "password": "longpassword1"},
+        format="json",
+    ).json()["token"]
+    client.credentials(HTTP_AUTHORIZATION=f"Token {auth}")
+    body = client.get("/api/documents/mine/").json()
+    assert [d["id"] for d in body["signed_documents"]] == [doc_id]
+    assert body["documents"] == []

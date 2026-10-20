@@ -206,6 +206,42 @@ export default function DashboardPage() {
           ))}
         </div>
       )}
+
+      {dash.signed_documents.length > 0 && (
+        <>
+          <h2 style={{ margin: "0.5rem 0 0", fontSize: "1.25rem" }}>
+            Documents you&apos;ve signed
+          </h2>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+            {dash.signed_documents.map((d) => (
+              <a
+                key={d.id}
+                href={`/d/${d.id}`}
+                style={{ ...card, textDecoration: "none", color: "inherit" }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem" }}>
+                  <div style={{ fontWeight: 600 }}>{d.title}</div>
+                  <div
+                    style={{
+                      fontSize: "0.8rem",
+                      padding: "0.2rem 0.6rem",
+                      borderRadius: "999px",
+                      background: "#dcfce7",
+                      whiteSpace: "nowrap",
+                      height: "fit-content",
+                    }}
+                  >
+                    signed
+                  </div>
+                </div>
+                <div style={{ fontSize: "0.85rem", opacity: 0.6, marginTop: "0.25rem" }}>
+                  {new Date(d.created_at).toLocaleString()} · sent by {d.sender_email}
+                </div>
+              </a>
+            ))}
+          </div>
+        </>
+      )}
     </main>
   );
 }

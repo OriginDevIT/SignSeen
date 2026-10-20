@@ -280,6 +280,8 @@ export interface DashboardData {
   storage_used_bytes: number;
   storage_limit_bytes: number;
   documents: DocumentInfo[];
+  /** Documents this account signed as a signer (by email match). */
+  signed_documents: DocumentInfo[];
 }
 
 export function myDashboard(): Promise<DashboardData> {
