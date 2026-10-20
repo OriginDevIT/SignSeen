@@ -87,7 +87,9 @@ This script covers those by hand.
     server log for the link when SMTP is unset) → set new password → login.
 22. **Dashboard**: send a doc while logged in → it appears on `/dashboard`
     with status `pending`; storage meter shows usage; sender email is
-    prefilled on `/send` with a "Signed in as …" note.
+    prefilled on `/send` with a "Signed in as …" note. **Claim check**: send
+    a doc WITHOUT logging in first, then sign up/log in with the same
+    sender email → it appears on `/dashboard` (claimed by email).
 23. **Seal email**: complete a ceremony with a signer email entered. Check
     both the sender and signer inboxes for the signed PDF + audit seal.
     (Without SMTP configured, check the API server log instead — the
@@ -99,6 +101,8 @@ This script covers those by hand.
     testable only with Stripe keys configured; see §I.)
 26. **Done-screen offer**: after sealing, the confirmation page offers
     "Create a free account" → `/signup`. Factual wording, no upsell copy.
+    After signup with the signer's email, `/dashboard` shows the document
+    under "Documents you've signed".
 
 ## F. Billing (Stripe test mode — needs keys)
 
