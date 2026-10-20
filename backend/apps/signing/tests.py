@@ -8,11 +8,13 @@ from datetime import timedelta
 
 import pymupdf
 import pytest
+from PIL import Image
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
 from rest_framework.test import APIClient
 
 from .hashing import GENESIS_HASH, verify_chain
+from .trust import assess_photo, normalize_photo
 from .models import AuditEvent, Document, SigningSession
 
 # 1x1 transparent PNG — stands in for a drawn signature / camera photo.
@@ -105,6 +107,7 @@ def test_full_ceremony_signs_seals_and_verifies():
         {
             "signature": SIG_DATA_URL,
             "photo": SIG_DATA_URL,
+            "photo_consent": True,
             "device_info": {"ua": "test", "platform": "test"},
         },
         format="json",
@@ -321,3 +324,197 @@ def test_from_url_rejects_bad_scheme():
         format="json",
     )
     assert response.status_code == 400
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: trust hardening
+# ---------------------------------------------------------------------------
+
+
+def _exif_jpeg(dt_str=None, offset=None, orientation=None, size=(100, 50)):
+    """Build a JPEG with controlled EXIF tags for anti-spoof tests."""
+    img = Image.new("RGB", size, (180, 40, 40))
+    exif = Image.Exif()
+    if dt_str:
+        exif[36867] = dt_str  # DateTimeOriginal
+    if offset:
+        exif[36881] = offset  # OffsetTimeOriginal
+    if orientation:
+        exif[274] = orientation
+    buf = io.BytesIO()
+    img.save(buf, "JPEG", exif=exif)
+    return buf.getvalue()
+
+
+def _exif_str(dt):
+    return dt.strftime("%Y:%m:%d %H:%M:%S")
+
+
+def test_exif_match_gives_full_assurance():
+    now = timezone.now()
+    photo = _exif_jpeg(_exif_str(now), offset="+00:00")
+    report = assess_photo(photo, now, tz_offset_minutes=0)
+    assert report["assurance"] == "full"
+    assert report["reason"] == "timestamp_match"
+    assert report["exif_present"] is True
+
+
+def test_exif_match_via_client_timezone_offset():
+    # Naive EXIF (no offset tag); client reports UTC-5 (Chicago, offset 300).
+    now = timezone.now()
+    local = now - timedelta(hours=5)
+    photo = _exif_jpeg(_exif_str(local))
+    report = assess_photo(photo, now, tz_offset_minutes=300)
+    assert report["assurance"] == "full"
+    assert report["reason"] == "timestamp_match"
+
+
+def test_exif_missing_gives_reduced_assurance():
+    photo = _exif_jpeg()
+    report = assess_photo(photo, timezone.now(), tz_offset_minutes=0)
+    assert report["assurance"] == "reduced"
+    assert report["reason"] == "exif_timestamp_missing"
+
+
+def test_exif_mismatch_gives_reduced_assurance():
+    now = timezone.now()
+    old = now - timedelta(hours=2)
+    photo = _exif_jpeg(_exif_str(old), offset="+00:00")
+    report = assess_photo(photo, now, tz_offset_minutes=0)
+    assert report["assurance"] == "reduced"
+    assert report["reason"] == "exif_timestamp_mismatch"
+    assert report["delta_seconds"] == pytest.approx(7200, abs=5)
+
+
+def test_exif_unparseable_gives_reduced_assurance():
+    photo = _exif_jpeg("not-a-date", offset="+00:00")
+    report = assess_photo(photo, timezone.now(), tz_offset_minutes=0)
+    assert report["assurance"] == "reduced"
+    assert report["reason"] == "exif_timestamp_unparseable"
+
+
+def test_exif_naive_without_zone_gives_reduced_assurance():
+    now = timezone.now()
+    photo = _exif_jpeg(_exif_str(now))
+    report = assess_photo(photo, now, tz_offset_minutes=None)
+    assert report["assurance"] == "reduced"
+    assert report["reason"] == "exif_timezone_unknown"
+
+
+def test_exif_assessment_never_raises_on_garbage():
+    report = assess_photo(b"definitely not an image", timezone.now(), 0)
+    assert report["assurance"] == "reduced"
+
+
+def test_normalize_photo_applies_exif_orientation():
+    # Orientation 6 = stored rotated 90° CW; output must be transposed.
+    photo = _exif_jpeg(orientation=6, size=(100, 50))
+    out = normalize_photo(photo)
+    assert Image.open(io.BytesIO(out)).size == (50, 100)
+
+
+def _sign_with_photo(client, photo_bytes, consent=True, device_info=None):
+    doc_id = upload_document(client).json()["id"]
+    token = client.post(
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Jane"}, format="json"
+    ).json()["token"]
+    payload = {
+        "signature": SIG_DATA_URL,
+        "photo": "data:image/jpeg;base64,"
+        + base64.b64encode(photo_bytes).decode(),
+        "device_info": device_info or {},
+    }
+    if consent:
+        payload["photo_consent"] = True
+    response = client.post(f"/api/sessions/{token}/sign/", payload, format="json")
+    return doc_id, token, response
+
+
+@pytest.mark.django_db
+def test_photo_requires_consent():
+    client = APIClient()
+    _, _, response = _sign_with_photo(client, _exif_jpeg(), consent=False)
+    assert response.status_code == 400
+    assert "photo_consent" in response.json()["error"]
+
+
+@pytest.mark.django_db
+def test_submit_records_device_evidence_and_photo_assurance():
+    client = APIClient()
+    now = timezone.now()
+    photo = _exif_jpeg(_exif_str(now), offset="+00:00")
+    doc_id, token, response = _sign_with_photo(
+        client,
+        photo,
+        device_info={
+            "userAgent": "test-ua",
+            "platform": "test-os",
+            "language": "en",
+            "screenWidth": 390,
+            "screenHeight": 844,
+            "timezoneOffsetMinutes": 0,
+        },
+    )
+    assert response.status_code == 200
+
+    session = SigningSession.objects.get(token=token)
+    assert session.device_evidence["user_agent"] == "test-ua"
+    assert session.device_evidence["screen"] == {"width": 390, "height": 844}
+    assert session.device_evidence["timezone_offset_minutes"] == 0
+
+    submitted = session.events.get(event_type="signature.submitted")
+    assert submitted.payload["photo_consent"] is True
+    assurance = submitted.payload["photo_assurance"]
+    assert assurance["assurance"] == "full"
+    assert assurance["reason"] == "timestamp_match"
+
+    # The certificate page carries the assurance line.
+    doc = Document.objects.get(pk=doc_id)
+    pdf = pymupdf.open(stream=doc.signed_file.read())
+    assert "Witness photo assurance: full" in pdf[-1].get_text()
+
+
+@pytest.mark.django_db
+def test_sealed_pdf_carries_free_tier_watermark():
+    client = APIClient()
+    doc_id = upload_document(client).json()["id"]
+    token = client.post(
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "J"}, format="json"
+    ).json()["token"]
+    response = client.post(
+        f"/api/sessions/{token}/sign/",
+        {"signature": SIG_DATA_URL, "device_info": {}},
+        format="json",
+    )
+    assert response.status_code == 200
+    doc = Document.objects.get(pk=doc_id)
+    pdf = pymupdf.open(stream=doc.signed_file.read())
+    assert len(pdf) == 2  # original page + certificate page
+    for page in pdf:
+        assert "Signed with SignSeen" in page.get_text()
+
+
+@pytest.mark.django_db
+def test_cleanup_expired_marks_stale_sessions():
+    from django.core.management import call_command
+
+    client = APIClient()
+    doc_id = upload_document(client).json()["id"]
+    stale_token = client.post(
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Old"}, format="json"
+    ).json()["token"]
+    fresh_token = client.post(
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "New"}, format="json"
+    ).json()["token"]
+    stale = SigningSession.objects.get(token=stale_token)
+    stale.expires_at = timezone.now() - timedelta(seconds=1)
+    stale.save(update_fields=["expires_at"])
+
+    call_command("cleanup_expired")
+
+    stale.refresh_from_db()
+    fresh = SigningSession.objects.get(token=fresh_token)
+    assert stale.status == SigningSession.Status.EXPIRED
+    assert fresh.status == SigningSession.Status.PENDING
+    # The document stays pending: it still has a live session.
+    assert Document.objects.get(pk=doc_id).status == Document.Status.PENDING

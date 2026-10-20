@@ -121,6 +121,8 @@ export interface DeviceInfo {
   language: string;
   screenWidth: number;
   screenHeight: number;
+  /** getTimezoneOffset(): minutes to add to local time to get UTC. */
+  timezoneOffsetMinutes: number;
 }
 
 export function collectDeviceInfo(): DeviceInfo {
@@ -130,6 +132,7 @@ export function collectDeviceInfo(): DeviceInfo {
     language: navigator.language,
     screenWidth: window.screen?.width ?? 0,
     screenHeight: window.screen?.height ?? 0,
+    timezoneOffsetMinutes: new Date().getTimezoneOffset(),
   };
 }
 
@@ -139,6 +142,7 @@ export function submitSignature(
   payload: {
     signature: string;
     photo?: string;
+    photoConsent?: boolean;
     deviceInfo: DeviceInfo;
     signerEmail?: string;
   }

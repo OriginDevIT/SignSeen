@@ -82,6 +82,7 @@ export default function SignPage() {
   const [error, setError] = useState("");
   const [signatureUrl, setSignatureUrl] = useState("");
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
+  const [photoConsent, setPhotoConsent] = useState(false);
   const [result, setResult] = useState<SignResult | null>(null);
 
   const padRef = useRef<SignaturePadHandle>(null);
@@ -123,6 +124,7 @@ export default function SignPage() {
       const res = await submitSignature(token, {
         signature: signatureUrl,
         photo: photoUrl ?? undefined,
+        photoConsent: photoUrl ? photoConsent : undefined,
         deviceInfo: collectDeviceInfo(),
       });
       setResult(res);
@@ -237,8 +239,37 @@ export default function SignPage() {
               No photo yet
             </div>
           )}
+          <label
+            style={{
+              display: "flex",
+              gap: "0.5rem",
+              alignItems: "flex-start",
+              fontSize: "0.9rem",
+              cursor: "pointer",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={photoConsent}
+              onChange={(e) => setPhotoConsent(e.target.checked)}
+              style={{ marginTop: "0.2rem" }}
+            />
+            <span>
+              I consent to having my photo captured as a witness to this
+              signature. The photo is stamped into the signed document.
+            </span>
+          </label>
           <div style={{ display: "flex", gap: "0.75rem" }}>
-            <button onClick={() => photoInputRef.current?.click()} style={{ ...ghostBtn, flex: 1 }}>
+            <button
+              onClick={() => photoInputRef.current?.click()}
+              disabled={!photoConsent}
+              style={{
+                ...ghostBtn,
+                flex: 1,
+                opacity: photoConsent ? 1 : 0.45,
+                cursor: photoConsent ? "pointer" : "not-allowed",
+              }}
+            >
               {photoUrl ? "Retake" : "Take photo"}
             </button>
             <button onClick={submit} style={{ ...primaryBtn, flex: 2 }}>
