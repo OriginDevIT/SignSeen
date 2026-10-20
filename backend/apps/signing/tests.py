@@ -912,3 +912,88 @@ def test_signer_email_rejected_before_signing_and_when_invalid():
     )
     assert bad.status_code == 400
     assert SigningSession.objects.get(token=signed_token).signer_email == ""
+
+
+# ---------------------------------------------------------------------------
+# Issue #15: signing link + QR for pending documents. The dashboard and
+# the tracking page need the active session's signing URL — but the
+# token is a credential, so it is exposed to the document owner only.
+# ---------------------------------------------------------------------------
+
+
+def _owned_doc_with_session(account):
+    client = _auth_client(account)
+    doc_id = upload_document(client, email=account.email).json()["id"]
+    session = client.post(
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Jane"}, format="json"
+    ).json()
+    return client, doc_id, session
+
+
+@pytest.mark.django_db
+def test_dashboard_includes_signing_url_for_pending_owned_document():
+    account = _make_account(email="dash@example.com")
+    client, doc_id, session = _owned_doc_with_session(account)
+    body = client.get("/api/documents/mine/").json()
+    (doc,) = body["documents"]
+    assert doc["id"] == doc_id
+    assert doc["signing_url"] == session["signing_url"]
+    assert doc["signing_url"].endswith(f"/s/{session['token']}")
+
+
+@pytest.mark.django_db
+def test_dashboard_signing_url_is_null_without_usable_session():
+    # No session yet.
+    account = _make_account(email="nosession@example.com")
+    client = _auth_client(account)
+    upload_document(client, email=account.email)
+    (doc,) = client.get("/api/documents/mine/").json()["documents"]
+    assert doc["signing_url"] is None
+
+    # Session exists but expired.
+    account2 = _make_account(email="expired@example.com")
+    client2, _, session2 = _owned_doc_with_session(account2)
+    SigningSession.objects.filter(pk=session2["id"]).update(
+        expires_at=timezone.now() - timedelta(days=1)
+    )
+    (doc2,) = client2.get("/api/documents/mine/").json()["documents"]
+    assert doc2["signing_url"] is None
+
+    # Session already signed.
+    account3 = _make_account(email="signed3@example.com")
+    client3, _, session3 = _owned_doc_with_session(account3)
+    assert APIClient().post(
+        f"/api/sessions/{session3['token']}/sign/",
+        {"signature": SIG_DATA_URL, "device_info": {}},
+        format="json",
+    ).status_code == 200
+    (doc3,) = client3.get("/api/documents/mine/").json()["documents"]
+    assert doc3["signing_url"] is None
+
+
+@pytest.mark.django_db
+def test_document_view_exposes_signing_url_only_to_owner():
+    account = _make_account(email="viewer@example.com")
+    client, doc_id, session = _owned_doc_with_session(account)
+    token = session["token"]
+
+    # Owner: signing_url present and pointing at the session token.
+    owner_body = client.get(f"/api/documents/{doc_id}/").json()
+    assert owner_body["signing_url"] == session["signing_url"]
+    assert owner_body["signing_url"].endswith(f"/s/{token}")
+
+    # Anonymous: no signing URL field, and the token leaks nowhere.
+    anon_response = APIClient().get(f"/api/documents/{doc_id}/")
+    assert anon_response.status_code == 200
+    assert "signing_url" not in anon_response.json()
+    assert token not in anon_response.content.decode()
+
+    # Stale-token requester degrades to anonymous (OptionalToken auth).
+    stale_response = _stale_client().get(f"/api/documents/{doc_id}/")
+    assert stale_response.status_code == 200
+    assert "signing_url" not in stale_response.json()
+
+    # A different authenticated account is not the owner.
+    other = _auth_client(_make_account(email="other@example.com"))
+    other_body = other.get(f"/api/documents/{doc_id}/").json()
+    assert "signing_url" not in other_body

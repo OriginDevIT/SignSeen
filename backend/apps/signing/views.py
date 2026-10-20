@@ -235,13 +235,18 @@ def my_documents(request):
     as a signer — the signer enters their email at completion, and creating
     an account with that email gives them a personal archive (scope §3.10).
     """
-    docs = Document.objects.filter(owner=request.user).order_by("-created_at")
+    docs = (
+        Document.objects.filter(owner=request.user)
+        .prefetch_related("sessions")
+        .order_by("-created_at")
+    )
     signed_docs = (
         Document.objects.filter(
             sessions__signer_email__iexact=request.user.email,
             sessions__status=SigningSession.Status.SIGNED,
         )
         .exclude(owner=request.user)
+        .prefetch_related("sessions")
         .distinct()
         .order_by("-created_at")
     )
@@ -251,17 +256,39 @@ def my_documents(request):
             "is_premium": request.user.is_premium,
             "storage_used_bytes": storage_used_bytes(request.user, ""),
             "storage_limit_bytes": storage_limit_bytes(request.user),
-            "documents": DocumentSerializer(docs, many=True).data,
-            "signed_documents": DocumentSerializer(signed_docs, many=True).data,
+            # The request context is what lets the serializer expose
+            # each owned document's signing_url (owner-only; the
+            # signed_documents below belong to other senders and
+            # serialize with signing_url=None).
+            "documents": DocumentSerializer(
+                docs, many=True, context={"request": request}
+            ).data,
+            "signed_documents": DocumentSerializer(
+                signed_docs, many=True, context={"request": request}
+            ).data,
         }
     )
 
 
 @api_view(["GET"])
-@authentication_classes([])
+@authentication_classes([OptionalTokenAuthentication])
 def get_document(request, doc_id):
+    """Public tracking view of a document.
+
+    Anonymous and stale-token requesters get the public fields only.
+    An authenticated owner additionally gets the document's
+    signing_url (the active session's link, or None) so the tracking
+    page can offer the same copy-link/QR actions as the dashboard;
+    for everyone else the field is omitted entirely.
+    """
     doc = get_object_or_404(Document, pk=doc_id)
-    return Response(DocumentSerializer(doc).data)
+    data = DocumentSerializer(doc, context={"request": request}).data
+    is_owner = (
+        request.user.is_authenticated and doc.owner_id == request.user.pk
+    )
+    if not is_owner:
+        data.pop("signing_url", None)
+    return Response(data)
 
 
 @api_view(["POST"])
