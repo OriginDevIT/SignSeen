@@ -15,7 +15,6 @@ test("happy path: send -> sign with photo -> sealed, audit chain valid", async (
   const id = runId();
   const title = `E2E Agreement ${id}`;
   const senderEmail = `e2e-sender-${id}@example.com`;
-  const signerName = "E2E Signer";
 
   // --- Sender (desktop) -------------------------------------------------
   await page.goto("/send");
@@ -68,10 +67,11 @@ test("happy path: send -> sign with photo -> sealed, audit chain valid", async (
   await signer
     .locator('input[type="file"]')
     .setInputFiles(samplePhoto());
-  await expect(signer.getByAltText("Your photo")).toBeVisible();
+  await expect(signer.getByAltText("Witness photo preview")).toBeVisible();
   await shot(signer, "04-photo-step.png");
 
-  await signer.getByPlaceholder("Your full name").fill(signerName);
+  // The ceremony has no name field — the signer's name comes from the
+  // session (optionally set by the sender), so sealing is one tap.
   await signer.getByRole("button", { name: /Seal it/ }).click();
   await expect(signer.getByText("Signed. Seen. Sealed.")).toBeVisible();
   await expect(signer.getByText(/Audit seal/)).toBeVisible();
