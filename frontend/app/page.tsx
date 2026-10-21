@@ -37,6 +37,10 @@ export default function Home() {
       >
         Send a document for signature
       </a>
+      <p style={{ marginTop: "2.5rem", fontSize: "0.875rem", opacity: 0.55 }}>
+        <a href="/terms">Terms of Service</a> ·{" "}
+        <a href="/privacy">Privacy Policy</a>
+      </p>
     </main>
   );
 }

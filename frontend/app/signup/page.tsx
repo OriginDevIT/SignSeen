@@ -92,6 +92,11 @@ export default function SignupPage() {
           {busy ? "Creating…" : "Create account"}
         </button>
       </form>
+      <p style={{ fontSize: "0.85rem", opacity: 0.65, marginTop: "1rem" }}>
+        By creating an account you agree to the{" "}
+        <a href="/terms">Terms of Service</a> and{" "}
+        <a href="/privacy">Privacy Policy</a>.
+      </p>
       <GoogleSignIn onError={setError} />
       <p style={{ fontSize: "0.9rem", opacity: 0.7, margin: 0 }}>
         Already have one? <a href="/login">Log in</a>
