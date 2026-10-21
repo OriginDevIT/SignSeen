@@ -34,6 +34,17 @@ class Account(AbstractBaseUser, PermissionsMixin):
         FREE = "free", "Free"
         PREMIUM = "premium", "Premium"
 
+    class BillingStatus(models.TextChoices):
+        ACTIVE = "active", "Active"
+        # Payment failed: premium features suspended, documents kept.
+        # 180 days suspended -> expired (see enforce_billing_lifecycle).
+        SUSPENDED = "suspended", "Suspended (payment failed)"
+        # Account holder paused the subscription: features off, data
+        # kept, no expiry clock.
+        PAUSED = "paused", "Paused"
+        # Premium ended: documents kept 180 more days, then purged.
+        EXPIRED = "expired", "Expired"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     email = models.EmailField(unique=True)
     tier = models.CharField(
@@ -42,6 +53,16 @@ class Account(AbstractBaseUser, PermissionsMixin):
     stripe_customer_id = models.CharField(
         max_length=255, blank=True, default=""
     )
+    stripe_subscription_id = models.CharField(
+        max_length=255, blank=True, default=""
+    )
+    billing_status = models.CharField(
+        max_length=16,
+        choices=BillingStatus.choices,
+        default=BillingStatus.ACTIVE,
+    )
+    billing_suspended_at = models.DateTimeField(null=True, blank=True)
+    billing_expired_at = models.DateTimeField(null=True, blank=True)
     # Custom branding (premium; scope §3.6). Shown on the signing
     # ceremony, the sealed-PDF certificate page, and transactional
     # emails for documents this account owns. Blank = SignSeen defaults.
@@ -64,7 +85,16 @@ class Account(AbstractBaseUser, PermissionsMixin):
 
     @property
     def is_premium(self) -> bool:
-        return self.tier == self.Tier.PREMIUM
+        """Premium FEATURES gate: premium tier in good billing standing.
+
+        Suspended (payment failed) and paused accounts keep their tier
+        and their documents but lose premium features until they renew
+        or resume.
+        """
+        return (
+            self.tier == self.Tier.PREMIUM
+            and self.billing_status == self.BillingStatus.ACTIVE
+        )
 
     def __str__(self) -> str:
         return f"{self.email} ({self.tier})"

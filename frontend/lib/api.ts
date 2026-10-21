@@ -379,6 +379,7 @@ export interface AccountInfo {
   tier: "free" | "premium";
   is_premium: boolean;
   alerts_enabled: boolean;
+  billing_status: "active" | "suspended" | "paused" | "expired";
 }
 
 interface AuthResult {
@@ -559,11 +560,30 @@ export function getDocument(docId: string): Promise<DocumentInfo> {
 /* Billing (Stripe; disabled server-side when unconfigured).            */
 /* ------------------------------------------------------------------ */
 
-export async function startCheckout(): Promise<string> {
+export async function startCheckout(
+  plan: "monthly" | "annual" = "monthly",
+): Promise<string> {
   const { url } = await req<{ url: string }>("/api/billing/checkout/", {
     method: "POST",
+    body: JSON.stringify({ plan }),
   });
   return url;
+}
+
+export async function pauseBilling(): Promise<string> {
+  const { billing_status } = await req<{ billing_status: string }>(
+    "/api/billing/pause/",
+    { method: "POST" },
+  );
+  return billing_status;
+}
+
+export async function resumeBilling(): Promise<string> {
+  const { billing_status } = await req<{ billing_status: string }>(
+    "/api/billing/resume/",
+    { method: "POST" },
+  );
+  return billing_status;
 }
 
 export async function openBillingPortal(): Promise<string> {

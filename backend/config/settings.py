@@ -19,6 +19,7 @@ INSTALLED_APPS = [
     "apps.core",
     "apps.accounts",
     "apps.signing",
+    "apps.billing",
 ]
 
 MIDDLEWARE = [
@@ -78,8 +79,10 @@ REST_FRAMEWORK = {
 # --- Freemium limits (scope §3.6) -------------------------------------------
 FREE_PENDING_DOC_LIMIT = 1
 FREE_STORAGE_BYTES = 100 * 1024 * 1024  # 100 MB total
+# Premium storage cap: 5 GB default, sized for the $5/mo price
+# (documents are PDFs; 5 GB is thousands of typical documents).
 PREMIUM_STORAGE_BYTES = int(
-    os.environ.get("PREMIUM_STORAGE_BYTES", str(10 * 1024 * 1024 * 1024))
+    os.environ.get("PREMIUM_STORAGE_BYTES", str(5 * 1024 * 1024 * 1024))
 )
 
 # --- Email (transactional: signed copies, password resets) ------------------
@@ -104,11 +107,22 @@ ENABLE_E2E_FIXTURES = os.environ.get("ENABLE_E2E_FIXTURES", "0") == "1"
 # --- Stripe billing (premium tier) ------------------------------------------
 # All optional: with no keys set, billing endpoints answer 503 and the app
 # runs free-tier only. STRIPE_PRICE_ID is the Price created in the Stripe
-# dashboard; no amount is hardcoded here.
+# dashboard; no amount is hardcoded here. Premium is sold monthly and
+# annually (Matt, Oct 21: $5/mo, $50/yr) — one Stripe Price per plan;
+# STRIPE_PRICE_ID remains as the legacy monthly fallback.
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_PUBLISHABLE_KEY = os.environ.get("STRIPE_PUBLISHABLE_KEY", "")
 STRIPE_PRICE_ID = os.environ.get("STRIPE_PRICE_ID", "")
+STRIPE_PRICE_ID_MONTHLY = (
+    os.environ.get("STRIPE_PRICE_ID_MONTHLY", "") or STRIPE_PRICE_ID
+)
+STRIPE_PRICE_ID_ANNUAL = os.environ.get("STRIPE_PRICE_ID_ANNUAL", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+# Billing lifecycle (issue #36): days a payment-failed premium account
+# stays suspended before it expires, and days an expired account's
+# stored documents are kept before they are purged.
+BILLING_SUSPENSION_DAYS = int(os.environ.get("BILLING_SUSPENSION_DAYS", "180"))
+BILLING_PURGE_DAYS = int(os.environ.get("BILLING_PURGE_DAYS", "180"))
 
 # --- Google sign-in (OAuth for sender accounts, scope §3.10) ----------------
 # All optional: with no client ID set, /api/auth/google/ answers 503 and
