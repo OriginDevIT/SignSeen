@@ -13,6 +13,8 @@ import {
   myDashboard,
   openBillingPortal,
   setAlertsEnabled,
+  pauseBilling,
+  resumeBilling,
   startCheckout,
   updateBranding,
   type AccountInfo,
@@ -101,11 +103,11 @@ export default function DashboardPage() {
     })();
   }, [router]);
 
-  const upgrade = async () => {
+  const upgrade = async (plan: "monthly" | "annual" = "monthly") => {
     setBillingMsg("");
     setBusyBilling(true);
     try {
-      window.location.href = await startCheckout();
+      window.location.href = await startCheckout(plan);
     } catch (err) {
       setBillingMsg(err instanceof Error ? err.message : "Checkout failed");
       setBusyBilling(false);
@@ -131,6 +133,23 @@ export default function DashboardPage() {
       window.location.href = await openBillingPortal();
     } catch (err) {
       setBillingMsg(err instanceof Error ? err.message : "Portal failed");
+      setBusyBilling(false);
+    }
+  };
+
+  const togglePause = async () => {
+    setBillingMsg("");
+    setBusyBilling(true);
+    try {
+      if (account?.billing_status === "paused") {
+        await resumeBilling();
+      } else {
+        await pauseBilling();
+      }
+      setAccount(await myAccount());
+    } catch (err) {
+      setBillingMsg(err instanceof Error ? err.message : "Billing change failed");
+    } finally {
       setBusyBilling(false);
     }
   };
@@ -204,19 +223,65 @@ export default function DashboardPage() {
           <div>
             <div style={{ fontWeight: 600 }}>{account.email}</div>
             <div style={{ opacity: 0.6, fontSize: "0.9rem" }}>
-              {dash.is_premium ? "Premium plan" : "Free plan"}
+              {account.tier === "premium"
+                ? dash.is_premium
+                  ? "Premium plan"
+                  : account.billing_status === "paused"
+                    ? "Premium plan (paused)"
+                    : "Premium plan (suspended)"
+                : "Free plan"}
             </div>
           </div>
-          {dash.is_premium ? (
+          {account.billing_status === "suspended" ? (
             <button onClick={portal} disabled={busyBilling} style={ghost}>
               Manage billing
             </button>
+          ) : dash.is_premium ? (
+            <>
+              <button onClick={portal} disabled={busyBilling} style={ghost}>
+                Manage billing
+              </button>
+              <button onClick={togglePause} disabled={busyBilling} style={ghost}>
+                {busyBilling
+                  ? "…"
+                  : account.billing_status === "paused"
+                    ? "Resume subscription"
+                    : "Pause subscription"}
+              </button>
+            </>
           ) : (
-            <button onClick={upgrade} disabled={busyBilling} style={button}>
-              {busyBilling ? "…" : "Upgrade to premium"}
-            </button>
+            <>
+              <button
+                onClick={() => upgrade("monthly")}
+                disabled={busyBilling}
+                style={button}
+              >
+                {busyBilling ? "…" : "Premium — $5/mo"}
+              </button>
+              <button
+                onClick={() => upgrade("annual")}
+                disabled={busyBilling}
+                style={ghost}
+              >
+                {busyBilling ? "…" : "Premium — $50/yr"}
+              </button>
+            </>
           )}
         </div>
+        {account.billing_status === "suspended" && (
+          <p style={{ color: "#b91c1c", margin: "0.75rem 0 0" }}>
+            Premium is suspended — a payment failed. Update your payment
+            method to restore premium features. Accounts suspended for
+            180 days expire, and stored documents are removed 180 days
+            after expiry.
+          </p>
+        )}
+        {account.billing_status === "paused" && (
+          <p style={{ margin: "0.75rem 0 0", opacity: 0.75 }}>
+            Your subscription is paused — premium features are off, and
+            your documents are kept. Resume any time.
+          </p>
+        )}
         {billingMsg && (
           <p style={{ color: "#b91c1c", margin: "0.75rem 0 0" }}>{billingMsg}</p>
         )}
@@ -431,7 +496,7 @@ export default function DashboardPage() {
               >
                 View pending document
               </a>
-              <button onClick={upgrade} disabled={busyBilling} style={button}>
+              <button onClick={() => upgrade()} disabled={busyBilling} style={button}>
                 {busyBilling ? "…" : "Upgrade to premium"}
               </button>
               <button onClick={() => setShowLimitDialog(false)} style={ghost}>

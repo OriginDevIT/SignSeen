@@ -51,6 +51,7 @@ def _account_payload(account: Account) -> dict:
         "tier": account.tier,
         "is_premium": account.is_premium,
         "alerts_enabled": account.alerts_enabled,
+        "billing_status": account.billing_status,
     }
 
 
