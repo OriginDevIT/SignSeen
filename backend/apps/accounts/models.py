@@ -42,6 +42,17 @@ class Account(AbstractBaseUser, PermissionsMixin):
     stripe_customer_id = models.CharField(
         max_length=255, blank=True, default=""
     )
+    # Custom branding (premium; scope §3.6). Shown on the signing
+    # ceremony, the sealed-PDF certificate page, and transactional
+    # emails for documents this account owns. Blank = SignSeen defaults.
+    # brand_color is stored as #RRGGBB; the format is enforced by the
+    # branding API (a model validator alone does not run on save).
+    brand_name = models.CharField(max_length=120, blank=True, default="")
+    brand_color = models.CharField(max_length=7, blank=True, default="")
+    brand_logo = models.FileField(upload_to="branding/", null=True, blank=True)
+    # Signing alerts (viewed / expiring-soon emails) are a premium
+    # feature; accounts can opt out. Default on for premium accounts.
+    alerts_enabled = models.BooleanField(default=True)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)

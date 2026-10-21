@@ -125,3 +125,183 @@ def test_auth_endpoints_ignore_stale_sender_token():
     )
     assert good.status_code == 200
     assert good.json()["token"]
+
+
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Custom branding (premium; issue #10 / scope §3.6)
+# ---------------------------------------------------------------------------
+
+from django.core.files.uploadedfile import SimpleUploadedFile
+
+TINY_PNG_BYTES = (
+    b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+    b"\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01"
+    b"\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+)
+
+
+def _account_client(email, tier=Account.Tier.FREE):
+    account = Account.objects.create_user(email=email, password="longpassword1")
+    if tier != Account.Tier.FREE:
+        account.tier = tier
+        account.save(update_fields=["tier"])
+    token, _ = Token.objects.get_or_create(user=account)
+    client = APIClient()
+    client.credentials(HTTP_AUTHORIZATION=f"Token {token.key}")
+    return client, account
+
+
+@pytest.mark.django_db
+def test_branding_requires_auth_and_get_returns_defaults():
+    assert APIClient().get("/api/auth/branding/").status_code == 401
+    client, _ = _account_client("free@example.com")
+    body = client.get("/api/auth/branding/").json()
+    assert body == {"brand_name": "", "brand_color": "", "brand_logo": None}
+
+
+@pytest.mark.django_db
+def test_branding_patch_is_premium_only():
+    client, account = _account_client("free2@example.com")
+    response = client.patch(
+        "/api/auth/branding/", {"brand_name": "Acme"}, format="json"
+    )
+    assert response.status_code == 403
+    account.refresh_from_db()
+    assert account.brand_name == ""
+
+
+@pytest.mark.django_db
+def test_branding_premium_patch_persists_name_color_and_logo():
+    client, account = _account_client("pro@example.com", tier=Account.Tier.PREMIUM)
+    response = client.patch(
+        "/api/auth/branding/",
+        {"brand_name": "Acme Legal", "brand_color": "#1a2B3c"},
+        format="json",
+    )
+    assert response.status_code == 200
+    assert response.json()["brand_name"] == "Acme Legal"
+    assert response.json()["brand_color"] == "#1a2B3c"
+    account.refresh_from_db()
+    assert account.brand_name == "Acme Legal"
+    assert account.brand_color == "#1a2B3c"
+
+    logo = SimpleUploadedFile("logo.png", TINY_PNG_BYTES, content_type="image/png")
+    response = client.patch(
+        "/api/auth/branding/", {"brand_logo": logo}, format="multipart"
+    )
+    assert response.status_code == 200
+    assert "branding/" in response.json()["brand_logo"]
+    account.refresh_from_db()
+    assert account.brand_logo.name.startswith("branding/")
+    # The name/color set earlier survive a logo-only PATCH.
+    assert account.brand_name == "Acme Legal"
+
+
+@pytest.mark.django_db
+def test_branding_patch_rejects_invalid_color():
+    client, account = _account_client("pro2@example.com", tier=Account.Tier.PREMIUM)
+    for bad in ("blue", "#12345", "#1234567", "123456", "#gggggg"):
+        response = client.patch(
+            "/api/auth/branding/", {"brand_color": bad}, format="json"
+        )
+        assert response.status_code == 400, bad
+    account.refresh_from_db()
+    assert account.brand_color == ""
+
+@pytest.mark.django_db
+def test_me_includes_alerts_enabled_and_patch_toggles_it():
+    client = APIClient()
+    token = signup(client).json()["token"]
+    client.credentials(HTTP_AUTHORIZATION=f"Token {token}")
+
+    body = client.get("/api/auth/me/").json()
+    assert body["alerts_enabled"] is True
+
+    patched = client.patch(
+        "/api/auth/me/", {"alerts_enabled": False}, format="json"
+    )
+    assert patched.status_code == 200
+    assert patched.json()["alerts_enabled"] is False
+    assert client.get("/api/auth/me/").json()["alerts_enabled"] is False
+
+    bad = client.patch(
+        "/api/auth/me/", {"alerts_enabled": "yes"}, format="json"
+    )
+    assert bad.status_code == 400
+
+    back = client.patch("/api/auth/me/", {"alerts_enabled": True}, format="json")
+    assert back.json()["alerts_enabled"] is True
+
+# ---------------------------------------------------------------------------
+# Google sign-in: the verifier is stubbed (no network, no credentials).
+# ---------------------------------------------------------------------------
+
+
+def _stub_google(monkeypatch, email="g@example.com", name="G User"):
+    monkeypatch.setattr(
+        "apps.accounts.views.verify_google_id_token",
+        lambda token: {"email": email, "name": name},
+    )
+
+
+@pytest.mark.django_db
+def test_google_login_creates_account_with_working_token(settings, monkeypatch):
+    settings.GOOGLE_OAUTH_CLIENT_ID = "client-123"
+    _stub_google(monkeypatch)
+    client = APIClient()
+    response = client.post(
+        "/api/auth/google/", {"id_token": "fake-token"}, format="json"
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["account"]["email"] == "g@example.com"
+    assert body["account"]["tier"] == "free"
+    account = Account.objects.get(email="g@example.com")
+    assert not account.has_usable_password()
+    client.credentials(HTTP_AUTHORIZATION=f"Token {body['token']}")
+    assert client.get("/api/auth/me/").status_code == 200
+
+
+@pytest.mark.django_db
+def test_google_login_links_existing_password_account(settings, monkeypatch):
+    settings.GOOGLE_OAUTH_CLIENT_ID = "client-123"
+    client = APIClient()
+    password_id = signup(client).json()["account"]["id"]
+    _stub_google(monkeypatch, email="a@example.com")
+    response = client.post(
+        "/api/auth/google/", {"id_token": "fake-token"}, format="json"
+    )
+    assert response.status_code == 200
+    # Linked, not duplicated — and the password still works afterwards.
+    assert response.json()["account"]["id"] == password_id
+    assert Account.objects.filter(email="a@example.com").count() == 1
+    assert client.post(
+        "/api/auth/login/",
+        {"email": "a@example.com", "password": "longpassword1"},
+        format="json",
+    ).status_code == 200
+
+
+@pytest.mark.django_db
+def test_google_login_unconfigured_is_503(settings):
+    settings.GOOGLE_OAUTH_CLIENT_ID = ""
+    response = APIClient().post(
+        "/api/auth/google/", {"id_token": "fake-token"}, format="json"
+    )
+    assert response.status_code == 503
+
+
+@pytest.mark.django_db
+def test_google_login_invalid_token_is_401(settings, monkeypatch):
+    settings.GOOGLE_OAUTH_CLIENT_ID = "client-123"
+
+    def _boom(token):
+        raise ValueError("bad token")
+
+    monkeypatch.setattr("apps.accounts.views.verify_google_id_token", _boom)
+    response = APIClient().post(
+        "/api/auth/google/", {"id_token": "forged"}, format="json"
+    )
+    assert response.status_code == 401
+    assert Account.objects.count() == 0

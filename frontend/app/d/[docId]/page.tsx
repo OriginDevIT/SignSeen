@@ -1,6 +1,7 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
+import SigningLinkPanel from "../../../components/SigningLinkPanel";
 import { getDocument, mediaUrl, type DocumentInfo } from "../../../lib/api";
 
 const page: React.CSSProperties = {
@@ -81,8 +82,16 @@ export default function TrackDocumentPage({
             <div>{new Date(doc.created_at).toLocaleString()}</div>
           </div>
         </div>
+        {doc.status === "pending" && doc.signing_url && (
+          <SigningLinkPanel signingUrl={doc.signing_url} />
+        )}
         {doc.status === "signed" && signedUrl && (
-          <a href={signedUrl} style={{ ...button, marginTop: "1.25rem" }}>
+          <a
+            href={signedUrl}
+            target="_blank"
+            rel="noreferrer"
+            style={{ ...button, marginTop: "1.25rem" }}
+          >
             Download signed PDF
           </a>
         )}
