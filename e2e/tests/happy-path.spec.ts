@@ -36,7 +36,9 @@ test("happy path: send -> sign with photo -> sealed, audit chain valid", async (
   const signer = await signerContext.newPage();
   await signer.goto(signingUrl);
   await expect(signer.getByText(title)).toBeVisible();
-  await expect(signer.getByText("You've been asked to sign")).toBeVisible();
+  await expect(
+    signer.getByText(/Review the document, then sign with your finger or mouse/),
+  ).toBeVisible();
   await shot(signer, "02-signer-intro.png");
 
   // View document opens the PDF in a new tab.
