@@ -6,13 +6,17 @@ import SigningLinkPanel from "../../components/SigningLinkPanel";
 import {
   ApiError,
   getAuthToken,
+  getBranding,
   logout,
+  mediaUrl,
   myAccount,
   myDashboard,
   openBillingPortal,
   setAlertsEnabled,
   startCheckout,
+  updateBranding,
   type AccountInfo,
+  type BrandingInfo,
   type DashboardData,
 } from "../../lib/api";
 
@@ -58,6 +62,13 @@ export default function DashboardPage() {
   const [error, setError] = useState("");
   const [billingMsg, setBillingMsg] = useState("");
   const [busyBilling, setBusyBilling] = useState(false);
+  const [branding, setBranding] = useState<BrandingInfo | null>(null);
+  const [brandName, setBrandName] = useState("");
+  const [brandColor, setBrandColor] = useState("");
+  const [brandLogoFile, setBrandLogoFile] = useState<File | null>(null);
+  const [brandingMsg, setBrandingMsg] = useState("");
+  const [busyBranding, setBusyBranding] = useState(false);
+  const [logoInputKey, setLogoInputKey] = useState(0);
   const [alertsMsg, setAlertsMsg] = useState("");
   const [busyAlerts, setBusyAlerts] = useState(false);
   const [showLimitDialog, setShowLimitDialog] = useState(false);
@@ -71,6 +82,15 @@ export default function DashboardPage() {
       try {
         setAccount(await myAccount());
         setDash(await myDashboard());
+        try {
+          const b = await getBranding();
+          setBranding(b);
+          setBrandName(b.brand_name);
+          setBrandColor(b.brand_color);
+        } catch {
+          // Branding is a settings extra; a failure here shouldn't
+          // take down the whole dashboard.
+        }
       } catch (err) {
         if (err instanceof ApiError && err.status === 401) {
           router.replace("/login");
@@ -112,6 +132,28 @@ export default function DashboardPage() {
     } catch (err) {
       setBillingMsg(err instanceof Error ? err.message : "Portal failed");
       setBusyBilling(false);
+    }
+  };
+
+  const saveBranding = async () => {
+    setBrandingMsg("");
+    setBusyBranding(true);
+    try {
+      const b = await updateBranding({
+        brandName: brandName.trim(),
+        brandColor: brandColor.trim(),
+        logoFile: brandLogoFile,
+      });
+      setBranding(b);
+      setBrandName(b.brand_name);
+      setBrandColor(b.brand_color);
+      setBrandLogoFile(null);
+      setLogoInputKey((k) => k + 1);
+      setBrandingMsg("Branding saved.");
+    } catch (err) {
+      setBrandingMsg(err instanceof Error ? err.message : "Could not save branding");
+    } finally {
+      setBusyBranding(false);
     }
   };
 
@@ -228,6 +270,75 @@ export default function DashboardPage() {
           </label>
           {alertsMsg && (
             <p style={{ color: "#b91c1c", margin: "0.5rem 0 0" }}>{alertsMsg}</p>
+          )}
+        </div>
+      </div>
+
+      <div style={card}>
+        <h2 style={{ margin: "0 0 0.25rem", fontSize: "1.15rem" }}>Branding</h2>
+        <p style={{ opacity: 0.65, margin: "0 0 1rem", fontSize: "0.9rem" }}>
+          Your brand on the signing page, the sealed-PDF certificate, and
+          signed-copy emails for documents you send.
+          {!dash.is_premium && " Premium feature — upgrade to enable it."}
+        </p>
+        <div style={{ display: "grid", gap: "0.9rem", maxWidth: "26rem" }}>
+          <label style={{ display: "grid", gap: "0.35rem", fontSize: "0.9rem" }}>
+            Brand name
+            <input
+              type="text"
+              value={brandName}
+              disabled={!dash.is_premium || busyBranding}
+              onChange={(e) => setBrandName(e.target.value)}
+              placeholder="e.g. Acme Legal"
+              style={{ padding: "0.6rem 0.7rem", border: "1px solid #d1d5db", borderRadius: 8, fontSize: "1rem" }}
+            />
+          </label>
+          <label style={{ display: "grid", gap: "0.35rem", fontSize: "0.9rem" }}>
+            Accent color
+            <span style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+              <input
+                type="color"
+                value={brandColor || "#2563eb"}
+                disabled={!dash.is_premium || busyBranding}
+                onChange={(e) => setBrandColor(e.target.value)}
+                style={{ width: "3rem", height: "2.4rem", padding: 0, border: "1px solid #d1d5db", borderRadius: 8, background: "#fff" }}
+              />
+              <input
+                type="text"
+                value={brandColor}
+                disabled={!dash.is_premium || busyBranding}
+                onChange={(e) => setBrandColor(e.target.value)}
+                placeholder="#2563eb"
+                style={{ flex: 1, padding: "0.6rem 0.7rem", border: "1px solid #d1d5db", borderRadius: 8, fontSize: "1rem" }}
+              />
+            </span>
+          </label>
+          <label style={{ display: "grid", gap: "0.35rem", fontSize: "0.9rem" }}>
+            Logo
+            {branding?.brand_logo && (
+              <img
+                src={mediaUrl(branding.brand_logo) ?? ""}
+                alt="Current brand logo"
+                style={{ maxHeight: 56, maxWidth: 180, objectFit: "contain", alignSelf: "start" }}
+              />
+            )}
+            <input
+              key={logoInputKey}
+              type="file"
+              accept="image/*"
+              disabled={!dash.is_premium || busyBranding}
+              onChange={(e) => setBrandLogoFile(e.target.files?.[0] ?? null)}
+            />
+          </label>
+          <div>
+            <button onClick={saveBranding} disabled={!dash.is_premium || busyBranding} style={{ ...button, opacity: dash.is_premium ? 1 : 0.5, cursor: dash.is_premium ? "pointer" : "not-allowed" }}>
+              {busyBranding ? "Saving…" : "Save branding"}
+            </button>
+          </div>
+          {brandingMsg && (
+            <p style={{ margin: 0, fontSize: "0.9rem", color: brandingMsg === "Branding saved." ? "#15803d" : "#b91c1c" }}>
+              {brandingMsg}
+            </p>
           )}
         </div>
       </div>

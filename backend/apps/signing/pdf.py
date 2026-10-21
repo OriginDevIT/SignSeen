@@ -41,6 +41,7 @@ def build_signed_pdf(
     photo_png: bytes | None,
     meta: dict,
     watermark: bool = True,
+    brand_name: str = "",
 ) -> bytes:
     doc = pymupdf.open(original_path)
     page = doc.new_page(width=PAGE_WIDTH, height=PAGE_HEIGHT)
@@ -50,9 +51,16 @@ def build_signed_pdf(
         (MARGIN, y), "SIGNATURE CERTIFICATE", fontsize=22, fontname="helv"
     )
     y += 28
+    # Sender branding (premium): the owner's brand takes the product
+    # line's place in the header; SignSeen stays named as the platform.
+    product_line = (
+        f"Signed via {brand_name} with SignSeen — Signed. Seen. Sealed."
+        if brand_name
+        else "Signed with SignSeen — Signed. Seen. Sealed."
+    )
     page.insert_text(
         (MARGIN, y),
-        "Signed with SignSeen — Signed. Seen. Sealed.",
+        product_line,
         fontsize=11,
         fontname="helv",
         color=(0.35, 0.35, 0.35),
