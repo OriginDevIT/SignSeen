@@ -19,6 +19,11 @@ export interface DocumentInfo {
   status: string;
   sender_email: string;
   signed_file: string | null;
+  /** The active signing session's URL. Returned to the document's
+   * owner only: present (URL or null) in dashboard payloads and in
+   * the single-document view for an authenticated owner; omitted
+   * entirely from the public document view for everyone else. */
+  signing_url?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -353,11 +358,13 @@ export function myDashboard(): Promise<DashboardData> {
   return req<DashboardData>("/api/documents/mine/");
 }
 
-/** Public tracking page data for a document (status + signed download). */
+/** Tracking page data for a document (status + signed download).
+ * Sends the stored sender token when there is one: the server
+ * returns the owner-only signing_url to the document's owner and
+ * the public fields to everyone else (anonymous or stale-token
+ * requests included). */
 export function getDocument(docId: string): Promise<DocumentInfo> {
-  return req<DocumentInfo>(`/api/documents/${docId}/`, undefined, {
-    auth: false,
-  });
+  return req<DocumentInfo>(`/api/documents/${docId}/`);
 }
 
 /* ------------------------------------------------------------------ */
