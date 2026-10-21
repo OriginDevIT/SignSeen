@@ -11,6 +11,7 @@ DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
 ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "*").split(",")
 
 INSTALLED_APPS = [
+    "corsheaders",
     "django.contrib.contenttypes",
     "django.contrib.auth",
     "rest_framework",
@@ -21,8 +22,23 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.middleware.common.CommonMiddleware",
+]
+
+# The web app is served from a different origin than this API in the
+# compose dev stack (localhost:3000 -> localhost:8000), and browsers
+# refuse those calls without CORS permission. Same-origin deployments
+# (one proxy in front of both) don't need it and are unaffected.
+# Comma-separated env override, e.g. for a split-origin deployment.
+CORS_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get(
+        "CORS_ALLOWED_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000",
+    ).split(",")
+    if origin.strip()
 ]
 
 ROOT_URLCONF = "config.urls"
