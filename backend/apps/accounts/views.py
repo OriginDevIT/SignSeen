@@ -9,6 +9,7 @@ import re
 from django.contrib.auth import authenticate
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.core.mail import send_mail
+from django.core.cache import cache
 from django.conf import settings
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
@@ -76,16 +77,34 @@ def signup(request):
     )
 
 
+def _login_failure_key(request, email: str) -> str:
+    ip = request.META.get("REMOTE_ADDR", "")
+    return f"login-fail:{email}:{ip}"
+
+
 @api_view(["POST"])
 @permission_classes([AllowAny])
 @authentication_classes([])
 def login(request):
     email = (request.data.get("email") or "").strip().lower()
+    # Brute-force guard (issue #39): after LOGIN_MAX_FAILED_ATTEMPTS
+    # failures for this email+IP inside the window, refuse attempts
+    # (even with the right password) until the window lapses. A
+    # successful login clears the counter.
+    fail_key = _login_failure_key(request, email)
+    failures = cache.get(fail_key, 0)
+    if failures >= settings.LOGIN_MAX_FAILED_ATTEMPTS:
+        return _error("too many failed login attempts — try again later", 429)
     password = request.data.get("password") or ""
     account = authenticate(request, username=email, password=password)
     if account is None:
+        cache.set(
+            fail_key, failures + 1,
+            timeout=settings.LOGIN_FAILURE_WINDOW_SECONDS,
+        )
         # Same message for unknown email vs wrong password (no enumeration).
         return _error("invalid email or password", 401)
+    cache.delete(fail_key)
     _claim_documents(account)
     token, _ = Token.objects.get_or_create(user=account)
     return Response({"token": token.key, "account": _account_payload(account)})

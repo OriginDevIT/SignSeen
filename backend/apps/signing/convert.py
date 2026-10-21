@@ -7,12 +7,16 @@
 Both paths are verified against real binaries (see tests).
 """
 
+import ipaddress
 import os
+import socket
 import subprocess
 import tempfile
 from urllib.parse import urlparse
 
+from django.conf import settings
 from weasyprint import HTML
+from weasyprint.urls import URLFetcher
 
 SOFFICE_TIMEOUT_SECONDS = 120
 
@@ -61,18 +65,65 @@ def convert_office_to_pdf(data: bytes, filename: str) -> bytes:
             return f.read()
 
 
-def render_url_to_pdf(url: str) -> bytes:
-    """Render a web page URL to PDF.
+def validate_public_url(url: str) -> None:
+    """SSRF guard for server-side URL fetching (issue #39).
 
-    NOTE (self-host): this fetches a remote URL server-side. The hosted
-    deployment should add SSRF egress controls (Phase 4 hardening); the
-    scheme allowlist below is the Phase 2 minimum.
+    The URL must be http(s) and EVERY address its host resolves to must
+    be a public address — loopback, private, link-local (cloud metadata
+    lives there), multicast, reserved, and unspecified addresses are
+    refused. Local development against a local server can opt out with
+    URL_FETCH_ALLOW_PRIVATE=1; never set that in production. Residual
+    risk: DNS answers can change between this check and the fetch
+    (rebinding); the self-hosting guide recommends egress rules as the
+    outer layer.
     """
     parsed = urlparse(url.strip())
-    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
         raise ConversionError("url must be an http(s) address")
+    if getattr(settings, "URL_FETCH_ALLOW_PRIVATE", False):
+        return
     try:
-        return HTML(url=url).write_pdf()
+        infos = socket.getaddrinfo(
+            parsed.hostname, None, proto=socket.IPPROTO_TCP
+        )
+    except OSError:
+        raise ConversionError("url host could not be resolved")
+    if not infos:
+        raise ConversionError("url host could not be resolved")
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0])
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_multicast
+            or ip.is_reserved
+            or ip.is_unspecified
+        ):
+            raise ConversionError("url must point to a public address")
+
+
+class _GuardedURLFetcher(URLFetcher):
+    """WeasyPrint fetcher that validates every fetched URL (including
+    subresources) and refuses redirects — a public page redirecting to
+    an internal address is the classic SSRF bypass, so the URL given
+    must be the final one."""
+
+    def __init__(self):
+        super().__init__(
+            allow_redirects=False, allowed_protocols={"http", "https"}
+        )
+
+    def fetch(self, url, headers=None):
+        validate_public_url(url)
+        return super().fetch(url, headers=headers)
+
+
+def render_url_to_pdf(url: str) -> bytes:
+    """Render a web page URL to PDF (SSRF-guarded; see above)."""
+    validate_public_url(url)
+    try:
+        return HTML(url=url, url_fetcher=_GuardedURLFetcher()).write_pdf()
     except ConversionError:
         raise
     except Exception as exc:

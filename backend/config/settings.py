@@ -26,7 +26,40 @@ MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.middleware.common.CommonMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
+
+# The app is never meant to be framed by another site.
+X_FRAME_OPTIONS = "DENY"
+
+# --- Production hardening (issue #39) ----------------------------------------
+# All opt-in via env so local development is unaffected; the
+# self-hosting guide (docs/self-hosting.md) sets them for production.
+# Behind the Caddy TLS proxy, tell Django the original scheme so secure
+# redirects and absolute URLs are correct.
+if os.environ.get("DJANGO_BEHIND_TLS_PROXY", "0") == "1":
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+# Secure cookies default ON when DEBUG is off; override explicitly if a
+# deployment terminates TLS elsewhere.
+_secure_cookies = os.environ.get("DJANGO_SECURE_COOKIES")
+if _secure_cookies is None:
+    SESSION_COOKIE_SECURE = not DEBUG
+    CSRF_COOKIE_SECURE = not DEBUG
+else:
+    SESSION_COOKIE_SECURE = _secure_cookies == "1"
+    CSRF_COOKIE_SECURE = _secure_cookies == "1"
+SECURE_HSTS_SECONDS = int(os.environ.get("DJANGO_HSTS_SECONDS", "0"))
+SECURE_HSTS_INCLUDE_SUBDOMAINS = SECURE_HSTS_SECONDS > 0
+# Login brute-force guard (apps.accounts): failed attempts allowed per
+# email+IP inside the window before the login endpoint answers 429.
+LOGIN_MAX_FAILED_ATTEMPTS = int(
+    os.environ.get("LOGIN_MAX_FAILED_ATTEMPTS", "10")
+)
+LOGIN_FAILURE_WINDOW_SECONDS = int(
+    os.environ.get("LOGIN_FAILURE_WINDOW_SECONDS", "900")
+)
+# SSRF guard escape hatch for local development only (issue #39).
+URL_FETCH_ALLOW_PRIVATE = os.environ.get("URL_FETCH_ALLOW_PRIVATE", "0") == "1"
 
 # The web app is served from a different origin than this API in the
 # compose dev stack (localhost:3000 -> localhost:8000), and browsers
