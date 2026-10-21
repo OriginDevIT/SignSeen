@@ -49,6 +49,7 @@ def _account_payload(account: Account) -> dict:
         "email": account.email,
         "tier": account.tier,
         "is_premium": account.is_premium,
+        "alerts_enabled": account.alerts_enabled,
     }
 
 
@@ -144,9 +145,16 @@ def logout(request):
     return Response({"status": "logged out"})
 
 
-@api_view(["GET"])
+@api_view(["GET", "PATCH"])
 @permission_classes([IsAuthenticated])
 def me(request):
+    if request.method == "PATCH":
+        # The one self-service setting: signing alerts opt-out/in.
+        if "alerts_enabled" in request.data:
+            if not isinstance(request.data["alerts_enabled"], bool):
+                return _error("alerts_enabled must be a boolean")
+            request.user.alerts_enabled = request.data["alerts_enabled"]
+            request.user.save(update_fields=["alerts_enabled"])
     return Response(_account_payload(request.user))
 
 

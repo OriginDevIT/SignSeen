@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import SigningLinkPanel from "../../components/SigningLinkPanel";
 import {
   ApiError,
   getAuthToken,
@@ -11,6 +12,7 @@ import {
   myAccount,
   myDashboard,
   openBillingPortal,
+  setAlertsEnabled,
   startCheckout,
   updateBranding,
   type AccountInfo,
@@ -67,6 +69,9 @@ export default function DashboardPage() {
   const [brandingMsg, setBrandingMsg] = useState("");
   const [busyBranding, setBusyBranding] = useState(false);
   const [logoInputKey, setLogoInputKey] = useState(0);
+  const [alertsMsg, setAlertsMsg] = useState("");
+  const [busyAlerts, setBusyAlerts] = useState(false);
+  const [showLimitDialog, setShowLimitDialog] = useState(false);
 
   useEffect(() => {
     if (!getAuthToken()) {
@@ -104,6 +109,18 @@ export default function DashboardPage() {
     } catch (err) {
       setBillingMsg(err instanceof Error ? err.message : "Checkout failed");
       setBusyBilling(false);
+    }
+  };
+
+  const toggleAlerts = async (enabled: boolean) => {
+    setAlertsMsg("");
+    setBusyAlerts(true);
+    try {
+      setAccount(await setAlertsEnabled(enabled));
+    } catch (err) {
+      setAlertsMsg(err instanceof Error ? err.message : "Could not save");
+    } finally {
+      setBusyAlerts(false);
     }
   };
 
@@ -152,12 +169,25 @@ export default function DashboardPage() {
     (dash.storage_used_bytes / dash.storage_limit_bytes) * 100
   );
 
+  // Free tier: 1 document pending signature at a time (server enforces
+  // with a 409 on send; this check just saves the wasted trip to /send
+  // and the filled-in form when the limit is already hit).
+  const pendingDoc = dash.documents.find((d) => d.status === "pending");
+  const atPendingLimit = !dash.is_premium && pendingDoc !== undefined;
+
+  const onSendClick = (e: React.MouseEvent) => {
+    if (atPendingLimit) {
+      e.preventDefault();
+      setShowLimitDialog(true);
+    }
+  };
+
   return (
     <main style={page}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
         <h1 style={{ margin: 0 }}>Your documents</h1>
         <div style={{ display: "flex", gap: "0.5rem" }}>
-          <a href="/send" style={{ ...button, textDecoration: "none" }}>
+          <a href="/send" onClick={onSendClick} style={{ ...button, textDecoration: "none" }}>
             Send a document
           </a>
           <button
@@ -211,6 +241,36 @@ export default function DashboardPage() {
               }}
             />
           </div>
+        </div>
+        <div style={{ marginTop: "1rem" }}>
+          <label
+            style={{
+              display: "flex",
+              gap: "0.5rem",
+              alignItems: "flex-start",
+              fontSize: "0.9rem",
+              cursor: "pointer",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={account.alerts_enabled}
+              disabled={busyAlerts}
+              onChange={(e) => toggleAlerts(e.target.checked)}
+              style={{ marginTop: "0.2rem" }}
+            />
+            <span>
+              <span style={{ fontWeight: 600 }}>Signing alerts</span>
+              <br />
+              <span style={{ opacity: 0.65 }}>
+                Email when a signer views a document or a signing link is
+                about to expire. Premium accounts only.
+              </span>
+            </span>
+          </label>
+          {alertsMsg && (
+            <p style={{ color: "#b91c1c", margin: "0.5rem 0 0" }}>{alertsMsg}</p>
+          )}
         </div>
       </div>
 
@@ -290,31 +350,95 @@ export default function DashboardPage() {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
           {dash.documents.map((d) => (
-            <a
-              key={d.id}
-              href={`/d/${d.id}`}
-              style={{ ...card, textDecoration: "none", color: "inherit" }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem" }}>
-                <div style={{ fontWeight: 600 }}>{d.title}</div>
-                <div
-                  style={{
-                    fontSize: "0.8rem",
-                    padding: "0.2rem 0.6rem",
-                    borderRadius: "999px",
-                    background: d.status === "signed" ? "#dcfce7" : "#fef3c7",
-                    whiteSpace: "nowrap",
-                    height: "fit-content",
-                  }}
-                >
-                  {d.status}
+            <div key={d.id} style={card}>
+              <a
+                href={`/d/${d.id}`}
+                style={{ textDecoration: "none", color: "inherit", display: "block" }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem" }}>
+                  <div style={{ fontWeight: 600 }}>{d.title}</div>
+                  <div
+                    style={{
+                      fontSize: "0.8rem",
+                      padding: "0.2rem 0.6rem",
+                      borderRadius: "999px",
+                      background: d.status === "signed" ? "#dcfce7" : "#fef3c7",
+                      whiteSpace: "nowrap",
+                      height: "fit-content",
+                    }}
+                  >
+                    {d.status}
+                  </div>
                 </div>
-              </div>
-              <div style={{ fontSize: "0.85rem", opacity: 0.6, marginTop: "0.25rem" }}>
-                {new Date(d.created_at).toLocaleString()} · {d.sender_email}
-              </div>
-            </a>
+                <div style={{ fontSize: "0.85rem", opacity: 0.6, marginTop: "0.25rem" }}>
+                  {new Date(d.created_at).toLocaleString()} · {d.sender_email}
+                </div>
+              </a>
+              {d.status === "pending" && d.signing_url && (
+                <SigningLinkPanel signingUrl={d.signing_url} />
+              )}
+            </div>
           ))}
+        </div>
+      )}
+
+      {showLimitDialog && pendingDoc && (
+        <div
+          onClick={() => setShowLimitDialog(false)}
+          style={{
+            position: "fixed",
+            inset: 0,
+            background: "rgba(0, 0, 0, 0.45)",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: "1rem",
+            zIndex: 50,
+          }}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pending-limit-title"
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: "#fff",
+              borderRadius: "0.5rem",
+              padding: "1.5rem",
+              maxWidth: "28rem",
+              width: "100%",
+              display: "flex",
+              flexDirection: "column",
+              gap: "1rem",
+            }}
+          >
+            <h2 id="pending-limit-title" style={{ margin: 0, fontSize: "1.25rem" }}>
+              Free plan limit reached
+            </h2>
+            <p style={{ margin: 0, opacity: 0.75 }}>
+              The free plan allows 1 document pending signature at a time.{" "}
+              <strong>{pendingDoc.title}</strong> is still pending — you can
+              send another document once it has been signed or expires, or
+              upgrade to premium to send more now.
+            </p>
+            {billingMsg && (
+              <p style={{ color: "#b91c1c", margin: 0 }}>{billingMsg}</p>
+            )}
+            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+              <a
+                href={`/d/${pendingDoc.id}`}
+                style={{ ...button, textDecoration: "none" }}
+              >
+                View pending document
+              </a>
+              <button onClick={upgrade} disabled={busyBilling} style={button}>
+                {busyBilling ? "…" : "Upgrade to premium"}
+              </button>
+              <button onClick={() => setShowLimitDialog(false)} style={ghost}>
+                Dismiss
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

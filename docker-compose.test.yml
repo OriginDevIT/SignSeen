@@ -1,0 +1,19 @@
+# Test override: mail capture + E2E fixture seeding for the Playwright
+# suite in e2e/. Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.test.yml up --build -d
+#   docker compose -f docker-compose.yml -f docker-compose.test.yml exec api python manage.py seed_e2e
+# Mailpit UI/API: http://localhost:8025 (SMTP on 1025, internal).
+services:
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "8025:8025"
+      - "1025:1025"
+
+  api:
+    environment:
+      EMAIL_BACKEND: django.core.mail.backends.smtp.EmailBackend
+      EMAIL_HOST: mailpit
+      EMAIL_PORT: "1025"
+      EMAIL_USE_TLS: "0"
+      ENABLE_E2E_FIXTURES: "1"
