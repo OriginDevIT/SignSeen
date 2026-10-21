@@ -92,7 +92,7 @@ test("happy path: send -> sign with photo -> sealed, audit chain valid", async (
 
   const sessionRes = await api.get(`/api/sessions/${token}/`);
   const session = await sessionRes.json();
-  const docRes = await api.get(`/api/documents/${session.document.id}/`);
+  const docRes = await api.get(`/api/documents/${session.document}/`);
   expect(docRes.ok()).toBeTruthy();
   const doc = await docRes.json();
   expect(doc.status).toBe("signed");
