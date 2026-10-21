@@ -86,6 +86,7 @@ test("happy path: send -> sign with photo -> sealed, audit chain valid", async (
   expect(events.chain_valid).toBe(true);
   expect(events.events.map((e: { event_type: string }) => e.event_type)).toEqual([
     "session.created",
+    "signing.viewed",
     "signature.submitted",
     "document.sealed",
   ]);

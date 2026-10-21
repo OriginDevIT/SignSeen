@@ -42,6 +42,9 @@ class Account(AbstractBaseUser, PermissionsMixin):
     stripe_customer_id = models.CharField(
         max_length=255, blank=True, default=""
     )
+    # Signing alerts (viewed / expiring-soon emails) are a premium
+    # feature; accounts can opt out. Default on for premium accounts.
+    alerts_enabled = models.BooleanField(default=True)
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)

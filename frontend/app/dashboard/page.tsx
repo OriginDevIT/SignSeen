@@ -10,6 +10,7 @@ import {
   myAccount,
   myDashboard,
   openBillingPortal,
+  setAlertsEnabled,
   startCheckout,
   type AccountInfo,
   type DashboardData,
@@ -57,6 +58,8 @@ export default function DashboardPage() {
   const [error, setError] = useState("");
   const [billingMsg, setBillingMsg] = useState("");
   const [busyBilling, setBusyBilling] = useState(false);
+  const [alertsMsg, setAlertsMsg] = useState("");
+  const [busyAlerts, setBusyAlerts] = useState(false);
   const [showLimitDialog, setShowLimitDialog] = useState(false);
 
   useEffect(() => {
@@ -86,6 +89,18 @@ export default function DashboardPage() {
     } catch (err) {
       setBillingMsg(err instanceof Error ? err.message : "Checkout failed");
       setBusyBilling(false);
+    }
+  };
+
+  const toggleAlerts = async (enabled: boolean) => {
+    setAlertsMsg("");
+    setBusyAlerts(true);
+    try {
+      setAccount(await setAlertsEnabled(enabled));
+    } catch (err) {
+      setAlertsMsg(err instanceof Error ? err.message : "Could not save");
+    } finally {
+      setBusyAlerts(false);
     }
   };
 
@@ -184,6 +199,36 @@ export default function DashboardPage() {
               }}
             />
           </div>
+        </div>
+        <div style={{ marginTop: "1rem" }}>
+          <label
+            style={{
+              display: "flex",
+              gap: "0.5rem",
+              alignItems: "flex-start",
+              fontSize: "0.9rem",
+              cursor: "pointer",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={account.alerts_enabled}
+              disabled={busyAlerts}
+              onChange={(e) => toggleAlerts(e.target.checked)}
+              style={{ marginTop: "0.2rem" }}
+            />
+            <span>
+              <span style={{ fontWeight: 600 }}>Signing alerts</span>
+              <br />
+              <span style={{ opacity: 0.65 }}>
+                Email when a signer views a document or a signing link is
+                about to expire. Premium accounts only.
+              </span>
+            </span>
+          </label>
+          {alertsMsg && (
+            <p style={{ color: "#b91c1c", margin: "0.5rem 0 0" }}>{alertsMsg}</p>
+          )}
         </div>
       </div>
 
