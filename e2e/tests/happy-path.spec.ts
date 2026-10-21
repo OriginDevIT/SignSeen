@@ -49,7 +49,7 @@ test("happy path: send -> sign with photo -> sealed, audit chain valid", async (
     signerContext.waitForEvent("page"),
     signer.getByRole("link", { name: /View document/ }).click(),
   ]);
-  expect(docTab.url()).toContain("/document/");
+  await docTab.waitForURL(/\/document\//);
   const api = await request.newContext({ baseURL: API_URL });
   const docFileRes = await api.get(docTab.url());
   expect(docFileRes.ok()).toBeTruthy();
