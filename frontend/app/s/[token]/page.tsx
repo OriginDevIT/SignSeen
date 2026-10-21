@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import SignaturePad, { type SignaturePadHandle } from "../../../components/SignaturePad";
+import WitnessCamera from "../../../components/WitnessCamera";
+import { isCameraSupported } from "../../../lib/camera";
 import {
   ApiError,
   collectDeviceInfo,
@@ -84,6 +86,7 @@ export default function SignPage() {
   const [signatureUrl, setSignatureUrl] = useState("");
   const [photoUrl, setPhotoUrl] = useState<string | null>(null);
   const [photoConsent, setPhotoConsent] = useState(false);
+  const [cameraOpen, setCameraOpen] = useState(false);
   const [result, setResult] = useState<SignResult | null>(null);
   const [copyEmail, setCopyEmail] = useState("");
   const [copyState, setCopyState] = useState<"idle" | "sending" | "sent">("idle");
@@ -111,6 +114,18 @@ export default function SignPage() {
     if (!pad || pad.isEmpty()) return;
     setSignatureUrl(pad.toDataURL());
     setStep("photo");
+  };
+
+  // "Take photo": prefer the in-app camera (defaults to the front
+  // camera for real, unlike the capture="user" hint some phones
+  // ignore); fall back to the file picker where getUserMedia is
+  // unavailable. Denial inside the camera also lands on the fallback.
+  const openPhotoCapture = () => {
+    if (isCameraSupported()) {
+      setCameraOpen(true);
+    } else {
+      photoInputRef.current?.click();
+    }
   };
 
   const onPhotoPicked = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -172,6 +187,13 @@ export default function SignPage() {
   };
 
   const signedPdfUrl = result ? mediaUrl(result.document.signed_file) : null;
+  // Sender branding (premium accounts): logo/name header + the accent
+  // color on primary actions. All-empty branding = SignSeen defaults.
+  const branding = session.branding;
+  const hasBranding = !!(branding && (branding.name || branding.logo));
+  const brandBtn: React.CSSProperties = branding?.color
+    ? { ...primaryBtn, background: branding.color }
+    : primaryBtn;
   // The email that links this document to a later account: one the
   // signer just left at completion, or the one the sender addressed
   // the session to (their copy already went out at seal time).
@@ -183,6 +205,36 @@ export default function SignPage() {
 
   return (
     <main style={shell}>
+      {hasBranding && (
+        <header
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "0.75rem",
+            justifyContent: "center",
+            marginBottom: "1.25rem",
+          }}
+        >
+          {branding.logo && (
+            <img
+              src={mediaUrl(branding.logo) ?? ""}
+              alt={branding.name || "Sender logo"}
+              style={{ maxHeight: 48, maxWidth: 160, objectFit: "contain" }}
+            />
+          )}
+          {branding.name && (
+            <div
+              style={{
+                fontWeight: 700,
+                fontSize: "1.15rem",
+                ...(branding.color ? { color: branding.color } : {}),
+              }}
+            >
+              {branding.name}
+            </div>
+          )}
+        </header>
+      )}
       {step !== "done" && <StepDots active={step === "intro" ? 0 : step === "sign" ? 0 : step === "photo" ? 1 : 2} />}
 
       {error && (
@@ -207,7 +259,7 @@ export default function SignPage() {
           >
             View document (PDF)
           </a>
-          <button onClick={startSigning} style={primaryBtn}>
+          <button onClick={startSigning} style={brandBtn}>
             Start signing
           </button>
         </section>
@@ -221,7 +273,7 @@ export default function SignPage() {
             <button onClick={() => padRef.current?.clear()} style={{ ...ghostBtn, width: "auto", flex: 1 }}>
               Clear
             </button>
-            <button onClick={confirmSignature} style={{ ...primaryBtn, width: "auto", flex: 2 }}>
+            <button onClick={confirmSignature} style={{ ...brandBtn, width: "auto", flex: 2 }}>
               Looks good — continue
             </button>
           </div>
@@ -242,7 +294,19 @@ export default function SignPage() {
             onChange={onPhotoPicked}
             style={{ display: "none" }}
           />
-          {photoUrl ? (
+          {cameraOpen ? (
+            <WitnessCamera
+              onCapture={(url) => {
+                setPhotoUrl(url);
+                setCameraOpen(false);
+              }}
+              onFallback={() => {
+                setCameraOpen(false);
+                photoInputRef.current?.click();
+              }}
+              onCancel={() => setCameraOpen(false)}
+            />
+          ) : photoUrl ? (
             <img
               src={photoUrl}
               alt="Witness photo preview"
@@ -285,7 +349,7 @@ export default function SignPage() {
           </label>
           <div style={{ display: "flex", gap: "0.75rem" }}>
             <button
-              onClick={() => photoInputRef.current?.click()}
+              onClick={openPhotoCapture}
               disabled={!photoConsent}
               style={{
                 ...ghostBtn,
@@ -296,7 +360,7 @@ export default function SignPage() {
             >
               {photoUrl ? "Retake" : "Take photo"}
             </button>
-            <button onClick={submit} style={{ ...primaryBtn, flex: 2 }}>
+            <button onClick={submit} style={{ ...brandBtn, flex: 2 }}>
               {photoUrl ? "Seal it — submit" : "Skip photo & submit"}
             </button>
           </div>
@@ -335,7 +399,7 @@ export default function SignPage() {
               href={signedPdfUrl}
               target="_blank"
               rel="noreferrer"
-              style={{ ...primaryBtn, textDecoration: "none", boxSizing: "border-box" }}
+              style={{ ...brandBtn, textDecoration: "none", boxSizing: "border-box" }}
             >
               Download signed PDF
             </a>

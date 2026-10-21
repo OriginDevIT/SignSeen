@@ -19,8 +19,19 @@ export interface DocumentInfo {
   status: string;
   sender_email: string;
   signed_file: string | null;
+  /** The active signing session's URL. Returned to the document's
+   * owner only: present (URL or null) in dashboard payloads and in
+   * the single-document view for an authenticated owner; omitted
+   * entirely from the public document view for everyone else. */
+  signing_url?: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface SessionBranding {
+  name: string;
+  color: string;
+  logo: string | null;
 }
 
 export interface SessionInfo {
@@ -33,6 +44,7 @@ export interface SessionInfo {
   signer_email: string;
   status: string;
   usable: boolean;
+  branding: SessionBranding;
   expires_at: string;
   created_at: string;
   signing_url: string;
@@ -244,6 +256,7 @@ export interface AccountInfo {
   email: string;
   tier: "free" | "premium";
   is_premium: boolean;
+  alerts_enabled: boolean;
 }
 
 interface AuthResult {
@@ -314,6 +327,57 @@ export function myAccount(): Promise<AccountInfo> {
   return req<AccountInfo>("/api/auth/me/");
 }
 
+/* ------------------------------------------------------------------ */
+/* Custom branding (premium accounts).                                 */
+/* ------------------------------------------------------------------ */
+
+export interface BrandingInfo {
+  brand_name: string;
+  brand_color: string;
+  brand_logo: string | null;
+}
+
+export function getBranding(): Promise<BrandingInfo> {
+  return req<BrandingInfo>("/api/auth/branding/");
+}
+
+/** Update branding. Sends multipart when a logo file is included
+ * (files can't ride JSON), plain JSON otherwise. Only the fields
+ * provided are sent — the API leaves the rest untouched. */
+export function updateBranding(input: {
+  brandName?: string;
+  brandColor?: string;
+  logoFile?: File | null;
+}): Promise<BrandingInfo> {
+  if (input.logoFile) {
+    const form = new FormData();
+    if (input.brandName !== undefined) form.append("brand_name", input.brandName);
+    if (input.brandColor !== undefined) form.append("brand_color", input.brandColor);
+    form.append("brand_logo", input.logoFile);
+    return req<BrandingInfo>("/api/auth/branding/", {
+      method: "PATCH",
+      body: form,
+    });
+  }
+  const body: Record<string, string> = {};
+  if (input.brandName !== undefined) body.brand_name = input.brandName;
+  if (input.brandColor !== undefined) body.brand_color = input.brandColor;
+  return req<BrandingInfo>("/api/auth/branding/", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+/** Toggle signing alerts (viewed / expiring-soon emails) for this account. */
+export function setAlertsEnabled(enabled: boolean): Promise<AccountInfo> {
+  return req<AccountInfo>("/api/auth/me/", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ alerts_enabled: enabled }),
+  });
+}
+
 export function requestPasswordReset(email: string): Promise<void> {
   return req(
     "/api/auth/password-reset/",
@@ -360,11 +424,13 @@ export function myDashboard(): Promise<DashboardData> {
   return req<DashboardData>("/api/documents/mine/");
 }
 
-/** Public tracking page data for a document (status + signed download). */
+/** Tracking page data for a document (status + signed download).
+ * Sends the stored sender token when there is one: the server
+ * returns the owner-only signing_url to the document's owner and
+ * the public fields to everyone else (anonymous or stale-token
+ * requests included). */
 export function getDocument(docId: string): Promise<DocumentInfo> {
-  return req<DocumentInfo>(`/api/documents/${docId}/`, undefined, {
-    auth: false,
-  });
+  return req<DocumentInfo>(`/api/documents/${docId}/`);
 }
 
 /* ------------------------------------------------------------------ */
