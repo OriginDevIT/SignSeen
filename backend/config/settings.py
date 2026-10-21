@@ -110,6 +110,12 @@ STRIPE_PUBLISHABLE_KEY = os.environ.get("STRIPE_PUBLISHABLE_KEY", "")
 STRIPE_PRICE_ID = os.environ.get("STRIPE_PRICE_ID", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 
+# --- Google sign-in (OAuth for sender accounts, scope §3.10) ----------------
+# All optional: with no client ID set, /api/auth/google/ answers 503 and
+# password accounts are the only login. The web app uses the same client
+# ID as NEXT_PUBLIC_GOOGLE_CLIENT_ID.
+GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
+
 # File storage for uploads, evidence images, and sealed PDFs.
 # (Object storage like GCS comes with the hosted deployment; local disk is
 # the self-host default.)

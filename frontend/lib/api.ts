@@ -298,6 +298,23 @@ export async function login(
   return result;
 }
 
+/** Sign up / log in with a Google ID token (verified server-side).
+ * The account is keyed by the verified Google email, so this links to
+ * an existing password account with the same email. */
+export async function loginWithGoogle(idToken: string): Promise<AuthResult> {
+  const result = await req<AuthResult>(
+    "/api/auth/google/",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id_token: idToken }),
+    },
+    { auth: false }
+  );
+  setAuthToken(result.token);
+  return result;
+}
+
 export async function logout(): Promise<void> {
   try {
     await req("/api/auth/logout/", { method: "POST" });

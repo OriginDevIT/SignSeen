@@ -128,6 +128,7 @@ def test_auth_endpoints_ignore_stale_sender_token():
 
 
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 # Custom branding (premium; issue #10 / scope §3.6)
 # ---------------------------------------------------------------------------
 
@@ -231,3 +232,76 @@ def test_me_includes_alerts_enabled_and_patch_toggles_it():
 
     back = client.patch("/api/auth/me/", {"alerts_enabled": True}, format="json")
     assert back.json()["alerts_enabled"] is True
+
+# ---------------------------------------------------------------------------
+# Google sign-in: the verifier is stubbed (no network, no credentials).
+# ---------------------------------------------------------------------------
+
+
+def _stub_google(monkeypatch, email="g@example.com", name="G User"):
+    monkeypatch.setattr(
+        "apps.accounts.views.verify_google_id_token",
+        lambda token: {"email": email, "name": name},
+    )
+
+
+@pytest.mark.django_db
+def test_google_login_creates_account_with_working_token(settings, monkeypatch):
+    settings.GOOGLE_OAUTH_CLIENT_ID = "client-123"
+    _stub_google(monkeypatch)
+    client = APIClient()
+    response = client.post(
+        "/api/auth/google/", {"id_token": "fake-token"}, format="json"
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["account"]["email"] == "g@example.com"
+    assert body["account"]["tier"] == "free"
+    account = Account.objects.get(email="g@example.com")
+    assert not account.has_usable_password()
+    client.credentials(HTTP_AUTHORIZATION=f"Token {body['token']}")
+    assert client.get("/api/auth/me/").status_code == 200
+
+
+@pytest.mark.django_db
+def test_google_login_links_existing_password_account(settings, monkeypatch):
+    settings.GOOGLE_OAUTH_CLIENT_ID = "client-123"
+    client = APIClient()
+    password_id = signup(client).json()["account"]["id"]
+    _stub_google(monkeypatch, email="a@example.com")
+    response = client.post(
+        "/api/auth/google/", {"id_token": "fake-token"}, format="json"
+    )
+    assert response.status_code == 200
+    # Linked, not duplicated — and the password still works afterwards.
+    assert response.json()["account"]["id"] == password_id
+    assert Account.objects.filter(email="a@example.com").count() == 1
+    assert client.post(
+        "/api/auth/login/",
+        {"email": "a@example.com", "password": "longpassword1"},
+        format="json",
+    ).status_code == 200
+
+
+@pytest.mark.django_db
+def test_google_login_unconfigured_is_503(settings):
+    settings.GOOGLE_OAUTH_CLIENT_ID = ""
+    response = APIClient().post(
+        "/api/auth/google/", {"id_token": "fake-token"}, format="json"
+    )
+    assert response.status_code == 503
+
+
+@pytest.mark.django_db
+def test_google_login_invalid_token_is_401(settings, monkeypatch):
+    settings.GOOGLE_OAUTH_CLIENT_ID = "client-123"
+
+    def _boom(token):
+        raise ValueError("bad token")
+
+    monkeypatch.setattr("apps.accounts.views.verify_google_id_token", _boom)
+    response = APIClient().post(
+        "/api/auth/google/", {"id_token": "forged"}, format="json"
+    )
+    assert response.status_code == 401
+    assert Account.objects.count() == 0

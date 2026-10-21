@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { login } from "../../lib/api";
+import GoogleSignIn from "../../components/GoogleSignIn";
 
 const card: React.CSSProperties = {
   maxWidth: "24rem",
@@ -81,6 +82,7 @@ export default function LoginPage() {
           {busy ? "Logging in…" : "Log in"}
         </button>
       </form>
+      <GoogleSignIn onError={setError} />
       <p style={{ fontSize: "0.9rem", opacity: 0.7, margin: 0 }}>
         <a href="/reset-password">Forgot your password?</a>
         {" · "}
