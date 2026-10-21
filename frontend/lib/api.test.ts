@@ -317,3 +317,72 @@ describe("setSignerEmail", () => {
     expect(init?.headers.get("Authorization")).toBeNull();
   });
 });
+
+describe("signing_url (owner-only, issue #15)", () => {
+  const store: Record<string, string> = {};
+  beforeEach(() => {
+    for (const k of Object.keys(store)) delete store[k];
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: (k: string) => store[k] ?? null,
+        setItem: (k: string, v: string) => {
+          store[k] = v;
+        },
+        removeItem: (k: string) => {
+          delete store[k];
+        },
+      },
+    });
+  });
+
+  it("getDocument sends the stored token and returns signing_url verbatim", async () => {
+    const { getDocument, setAuthToken } = await import("./api");
+    setAuthToken("owner-token");
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({
+        id: "d1",
+        title: "T",
+        status: "pending",
+        signing_url: "https://staging.getsignseen.com/s/tok-xyz",
+      })
+    );
+    const doc = await getDocument("d1");
+    expect(doc.signing_url).toBe("https://staging.getsignseen.com/s/tok-xyz");
+    const [, init] = vi.mocked(fetch).mock.calls[0];
+    expect(init?.headers.get("Authorization")).toBe("Token owner-token");
+    setAuthToken(null);
+  });
+
+  it("getDocument leaves signing_url undefined for an anonymous payload", async () => {
+    const { getDocument } = await import("./api");
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({ id: "d1", title: "T", status: "pending" })
+    );
+    const doc = await getDocument("d1");
+    expect(doc.signing_url).toBeUndefined();
+  });
+
+  it("myDashboard returns each document's signing_url (URL or null)", async () => {
+    const { myDashboard, setAuthToken } = await import("./api");
+    setAuthToken("owner-token");
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({
+        tier: "free",
+        is_premium: false,
+        storage_used_bytes: 0,
+        storage_limit_bytes: 100,
+        documents: [
+          { id: "d1", signing_url: "https://staging.getsignseen.com/s/abc" },
+          { id: "d2", signing_url: null },
+        ],
+        signed_documents: [],
+      })
+    );
+    const dash = await myDashboard();
+    expect(dash.documents[0].signing_url).toBe(
+      "https://staging.getsignseen.com/s/abc"
+    );
+    expect(dash.documents[1].signing_url).toBeNull();
+    setAuthToken(null);
+  });
+});

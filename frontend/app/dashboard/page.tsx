@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import SigningLinkPanel from "../../components/SigningLinkPanel";
 import {
   ApiError,
   getAuthToken,
@@ -193,30 +194,34 @@ export default function DashboardPage() {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
           {dash.documents.map((d) => (
-            <a
-              key={d.id}
-              href={`/d/${d.id}`}
-              style={{ ...card, textDecoration: "none", color: "inherit" }}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem" }}>
-                <div style={{ fontWeight: 600 }}>{d.title}</div>
-                <div
-                  style={{
-                    fontSize: "0.8rem",
-                    padding: "0.2rem 0.6rem",
-                    borderRadius: "999px",
-                    background: d.status === "signed" ? "#dcfce7" : "#fef3c7",
-                    whiteSpace: "nowrap",
-                    height: "fit-content",
-                  }}
-                >
-                  {d.status}
+            <div key={d.id} style={card}>
+              <a
+                href={`/d/${d.id}`}
+                style={{ textDecoration: "none", color: "inherit", display: "block" }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem" }}>
+                  <div style={{ fontWeight: 600 }}>{d.title}</div>
+                  <div
+                    style={{
+                      fontSize: "0.8rem",
+                      padding: "0.2rem 0.6rem",
+                      borderRadius: "999px",
+                      background: d.status === "signed" ? "#dcfce7" : "#fef3c7",
+                      whiteSpace: "nowrap",
+                      height: "fit-content",
+                    }}
+                  >
+                    {d.status}
+                  </div>
                 </div>
-              </div>
-              <div style={{ fontSize: "0.85rem", opacity: 0.6, marginTop: "0.25rem" }}>
-                {new Date(d.created_at).toLocaleString()} · {d.sender_email}
-              </div>
-            </a>
+                <div style={{ fontSize: "0.85rem", opacity: 0.6, marginTop: "0.25rem" }}>
+                  {new Date(d.created_at).toLocaleString()} · {d.sender_email}
+                </div>
+              </a>
+              {d.status === "pending" && d.signing_url && (
+                <SigningLinkPanel signingUrl={d.signing_url} />
+              )}
+            </div>
           ))}
         </div>
       )}
