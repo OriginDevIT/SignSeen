@@ -96,6 +96,24 @@ export default function TrackDocumentPage({
           </a>
         )}
       </div>
+      {doc.sessions && doc.sessions.length > 0 && (
+        <div style={card}>
+          <div style={{ fontWeight: 600, marginBottom: "0.75rem" }}>Signers</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem" }}>
+            {doc.sessions.map((s) => (
+              <div
+                key={s.id}
+                style={{ display: "flex", justifyContent: "space-between", gap: "1rem" }}
+              >
+                <span>
+                  {s.order + 1}. {s.signer_name || "Signer"}
+                </span>
+                <span style={{ opacity: 0.7 }}>{s.status}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </main>
   );
 }

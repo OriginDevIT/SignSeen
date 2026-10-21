@@ -57,7 +57,7 @@ from .notifications import (
 )
 from .trust import assess_photo, normalize_photo
 from .models import AuditEvent, Document, SigningSession
-from .pdf import build_signed_pdf
+from .pdf import build_signed_pdf_multi
 from .serializers import (
     AuditEventSerializer,
     DocumentSerializer,
@@ -311,6 +311,7 @@ def create_session(request, doc_id):
         document=doc,
         signer_name=(request.data.get("signer_name") or "").strip(),
         signer_email=(request.data.get("signer_email") or "").strip(),
+        order=doc.sessions.count(),
     )
     record_event(
         session,
@@ -319,6 +320,7 @@ def create_session(request, doc_id):
             "document_id": str(doc.id),
             "signer_name": session.signer_name,
             "signer_email": session.signer_email,
+            "order": session.order,
         },
     )
     return Response(SigningSessionSerializer(session).data, status=201)
@@ -465,54 +467,85 @@ def submit_signature(request, token):
             },
         )
 
-        # Seal: stamp the certificate page and store the signed PDF.
-        # Premium documents skip the free-tier watermark.
-        signed_bytes = build_signed_pdf(
-            doc.original_file.path,
-            signature_png,
-            photo_png,
-            {
-                "signer_name": session.signer_name,
-                "signed_at": submitted.created_at.isoformat(),
-                "document_id": str(doc.id),
-                "session_id": session_id,
-                "audit_hash": submitted.hash,
-                "photo_assurance": photo_assurance,
-            },
-            watermark=wants_watermark(doc),
-            brand_name=(doc.owner.brand_name or "") if doc.owner else "",
-        )
-        doc.signed_file.save(f"signed-{doc.id}.pdf", ContentFile(signed_bytes))
-        doc.status = Document.Status.SIGNED
-        doc.save(update_fields=["signed_file", "status", "updated_at"])
-
+        # This signer's ceremony is complete.
         session.status = SigningSession.Status.SIGNED
         if signer_email:
             session.signer_email = signer_email
         session.save(update_fields=["status", "signer_email", "device_evidence"])
 
-        sealed = record_event(
-            session,
-            "document.sealed",
-            {
-                "document_id": str(doc.id),
-                "signed_sha256": _sha256(signed_bytes),
-                "seal_event": str(submitted.id),
-            },
+        # The document seals only when EVERY session has signed
+        # (multi-signer, strictly sequential). Until then it stays
+        # pending with no signed file, so nothing partially signed can
+        # be downloaded as final.
+        all_sessions = list(doc.sessions.order_by("order", "created_at"))
+        document_final = all(
+            s.status == SigningSession.Status.SIGNED for s in all_sessions
         )
+        sealed = None
+        if document_final:
+            signers = []
+            for s in all_sessions:
+                event = s.events.filter(event_type="signature.submitted").first()
+                payload = event.payload
+                with open(
+                    os.path.join(settings.MEDIA_ROOT, payload["signature_file"]),
+                    "rb",
+                ) as f:
+                    sig_bytes = f.read()
+                photo_bytes = None
+                if payload.get("photo_file"):
+                    with open(
+                        os.path.join(settings.MEDIA_ROOT, payload["photo_file"]),
+                        "rb",
+                    ) as f:
+                        photo_bytes = f.read()
+                signers.append(
+                    {
+                        "signature_png": sig_bytes,
+                        "photo_png": photo_bytes,
+                        "signer_name": s.signer_name,
+                        "signed_at": event.created_at.isoformat(),
+                        "document_id": str(doc.id),
+                        "session_id": str(s.id),
+                        "audit_hash": event.hash,
+                        "photo_assurance": payload.get("photo_assurance"),
+                    }
+                )
+            # Premium documents skip the free-tier watermark.
+            signed_bytes = build_signed_pdf_multi(
+                doc.original_file.path,
+                signers,
+                watermark=wants_watermark(doc),
+                brand_name=(doc.owner.brand_name or "") if doc.owner else "",
+            )
+            doc.signed_file.save(f"signed-{doc.id}.pdf", ContentFile(signed_bytes))
+            doc.status = Document.Status.SIGNED
+            doc.save(update_fields=["signed_file", "status", "updated_at"])
+            sealed = record_event(
+                session,
+                "document.sealed",
+                {
+                    "document_id": str(doc.id),
+                    "signed_sha256": _sha256(signed_bytes),
+                    "seal_event": str(submitted.id),
+                },
+            )
 
-    # Outside the transaction: email the signed copies (best-effort; a mail
-    # failure must never fail a completed signing).
-    try:
-        send_sealed_notifications(doc, session, sealed.hash)
-    except Exception:
-        log.exception("sealed-notification email failed")
+    if sealed is not None:
+        # Outside the transaction: email the signed copies (best-effort;
+        # a mail failure must never fail a completed signing). Fires
+        # only at final seal, never for intermediate signers.
+        try:
+            send_sealed_notifications(doc, session, sealed.hash)
+        except Exception:
+            log.exception("sealed-notification email failed")
 
     return Response(
         {
             "status": "signed",
+            "document_final": document_final,
             "document": DocumentSerializer(doc).data,
-            "audit_seal": sealed.hash,
+            "audit_seal": sealed.hash if sealed is not None else submitted.hash,
             "chain_valid": verify_chain(session),
         }
     )

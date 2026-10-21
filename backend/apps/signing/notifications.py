@@ -48,12 +48,22 @@ def _email_copy(document, audit_seal: str, recipient: str) -> None:
 
 
 def send_sealed_notifications(document, session, audit_seal: str) -> None:
+    """Seal-time copies: the sender plus every signer who left an email
+    (multi-signer documents seal once, at the final signature, so all
+    signers' copies go out here — including signers who left their
+    email at their own completion step earlier in the sequence)."""
     recipients = []
     if document.sender_email:
         recipients.append(document.sender_email)
-    signer_email = (session.signer_email or "").strip()
-    if signer_email and signer_email.lower() != document.sender_email.lower():
-        recipients.append(signer_email)
+    seen = {r.lower() for r in recipients}
+    sessions = document.sessions.all()
+    if session is not None and all(s.pk != session.pk for s in sessions):
+        sessions = [session, *sessions]
+    for s in sessions:
+        signer_email = (s.signer_email or "").strip()
+        if signer_email and signer_email.lower() not in seen:
+            recipients.append(signer_email)
+            seen.add(signer_email.lower())
 
     for email in recipients:
         _email_copy(document, audit_seal, email)
@@ -123,7 +133,11 @@ def send_expiry_alert(document, session) -> bool:
 def send_signer_copy(document, session, audit_seal: str) -> None:
     """Email the signer their copy after they leave an email at completion
     (scope §3.3: the email step happens on the Sealed screen, after the
-    ceremony, so it cannot ride the seal-time notification)."""
+    ceremony, so it cannot ride the seal-time notification).
+
+    Multi-signer: if the document has not sealed yet there is no final
+    PDF to send — the copy goes out at final seal via
+    send_sealed_notifications, which covers every session's email."""
     signer_email = (session.signer_email or "").strip()
-    if signer_email:
+    if signer_email and document.signed_file:
         _email_copy(document, audit_seal, signer_email)

@@ -13,12 +13,21 @@ export class ApiError extends Error {
   }
 }
 
+export interface SessionSummary {
+  id: string;
+  signer_name: string;
+  signer_email: string;
+  status: string;
+  order: number;
+}
+
 export interface DocumentInfo {
   id: string;
   title: string;
   status: string;
   sender_email: string;
   signed_file: string | null;
+  sessions?: SessionSummary[];
   /** The active signing session's URL. Returned to the document's
    * owner only: present (URL or null) in dashboard payloads and in
    * the single-document view for an authenticated owner; omitted
@@ -43,7 +52,10 @@ export interface SessionInfo {
   signer_name: string;
   signer_email: string;
   status: string;
+  order: number;
   usable: boolean;
+  /** True while an earlier signer in the sequence has not signed. */
+  waiting: boolean;
   branding: SessionBranding;
   expires_at: string;
   created_at: string;
@@ -52,6 +64,10 @@ export interface SessionInfo {
 
 export interface SignResult {
   status: string;
+  /** False when this signer's part is done but the document still
+   * awaits the remaining signer(s) (multi-signer); the document has
+   * no signed file until the final signature seals it. */
+  document_final: boolean;
   document: DocumentInfo;
   audit_seal: string;
   chain_valid: boolean;
