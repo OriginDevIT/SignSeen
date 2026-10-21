@@ -80,6 +80,11 @@ DEFAULT_FROM_EMAIL = os.environ.get(
     "DEFAULT_FROM_EMAIL", "SignSeen <hello@getsignseen.com>"
 )
 
+# --- E2E fixtures -----------------------------------------------------------
+# Set only by docker-compose.test.yml. Gates the seed_e2e management
+# command, which creates known-password test accounts.
+ENABLE_E2E_FIXTURES = os.environ.get("ENABLE_E2E_FIXTURES", "0") == "1"
+
 # --- Stripe billing (premium tier) ------------------------------------------
 # All optional: with no keys set, billing endpoints answer 503 and the app
 # runs free-tier only. STRIPE_PRICE_ID is the Price created in the Stripe

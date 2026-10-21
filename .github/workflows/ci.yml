@@ -35,3 +35,43 @@ jobs:
         run: cd frontend && npm test
       - name: Build
         run: cd frontend && npm run build
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - name: Start the test stack
+        run: |
+          docker compose -f docker-compose.yml -f docker-compose.test.yml up --build -d
+          for i in $(seq 1 60); do
+            curl -sf http://localhost:8000/api/health/ >/dev/null && curl -sf http://localhost:3000 >/dev/null && break
+            sleep 5
+          done
+          curl -sf http://localhost:8000/api/health/
+          curl -sf http://localhost:3000 >/dev/null
+      - name: Seed E2E fixtures
+        run: docker compose -f docker-compose.yml -f docker-compose.test.yml exec -T api python manage.py seed_e2e
+      - name: Run Playwright suite
+        working-directory: e2e
+        env:
+          E2E_MAILPIT_URL: http://localhost:8025
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npm test
+      - name: Upload report and screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-results
+          path: |
+            e2e/playwright-report
+            e2e/screenshots
+            e2e/test-results
+          if-no-files-found: ignore
+      - name: Tear down the test stack
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.test.yml down -v
