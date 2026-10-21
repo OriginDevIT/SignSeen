@@ -19,13 +19,47 @@ INSTALLED_APPS = [
     "apps.core",
     "apps.accounts",
     "apps.signing",
+    "apps.billing",
 ]
 
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.middleware.common.CommonMiddleware",
+    "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
+
+# The app is never meant to be framed by another site.
+X_FRAME_OPTIONS = "DENY"
+
+# --- Production hardening (issue #39) ----------------------------------------
+# All opt-in via env so local development is unaffected; the
+# self-hosting guide (docs/self-hosting.md) sets them for production.
+# Behind the Caddy TLS proxy, tell Django the original scheme so secure
+# redirects and absolute URLs are correct.
+if os.environ.get("DJANGO_BEHIND_TLS_PROXY", "0") == "1":
+    SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+# Secure cookies default ON when DEBUG is off; override explicitly if a
+# deployment terminates TLS elsewhere.
+_secure_cookies = os.environ.get("DJANGO_SECURE_COOKIES")
+if _secure_cookies is None:
+    SESSION_COOKIE_SECURE = not DEBUG
+    CSRF_COOKIE_SECURE = not DEBUG
+else:
+    SESSION_COOKIE_SECURE = _secure_cookies == "1"
+    CSRF_COOKIE_SECURE = _secure_cookies == "1"
+SECURE_HSTS_SECONDS = int(os.environ.get("DJANGO_HSTS_SECONDS", "0"))
+SECURE_HSTS_INCLUDE_SUBDOMAINS = SECURE_HSTS_SECONDS > 0
+# Login brute-force guard (apps.accounts): failed attempts allowed per
+# email+IP inside the window before the login endpoint answers 429.
+LOGIN_MAX_FAILED_ATTEMPTS = int(
+    os.environ.get("LOGIN_MAX_FAILED_ATTEMPTS", "10")
+)
+LOGIN_FAILURE_WINDOW_SECONDS = int(
+    os.environ.get("LOGIN_FAILURE_WINDOW_SECONDS", "900")
+)
+# SSRF guard escape hatch for local development only (issue #39).
+URL_FETCH_ALLOW_PRIVATE = os.environ.get("URL_FETCH_ALLOW_PRIVATE", "0") == "1"
 
 # The web app is served from a different origin than this API in the
 # compose dev stack (localhost:3000 -> localhost:8000), and browsers
@@ -78,8 +112,10 @@ REST_FRAMEWORK = {
 # --- Freemium limits (scope §3.6) -------------------------------------------
 FREE_PENDING_DOC_LIMIT = 1
 FREE_STORAGE_BYTES = 100 * 1024 * 1024  # 100 MB total
+# Premium storage cap: 5 GB default, sized for the $5/mo price
+# (documents are PDFs; 5 GB is thousands of typical documents).
 PREMIUM_STORAGE_BYTES = int(
-    os.environ.get("PREMIUM_STORAGE_BYTES", str(10 * 1024 * 1024 * 1024))
+    os.environ.get("PREMIUM_STORAGE_BYTES", str(5 * 1024 * 1024 * 1024))
 )
 
 # --- Email (transactional: signed copies, password resets) ------------------
@@ -104,11 +140,22 @@ ENABLE_E2E_FIXTURES = os.environ.get("ENABLE_E2E_FIXTURES", "0") == "1"
 # --- Stripe billing (premium tier) ------------------------------------------
 # All optional: with no keys set, billing endpoints answer 503 and the app
 # runs free-tier only. STRIPE_PRICE_ID is the Price created in the Stripe
-# dashboard; no amount is hardcoded here.
+# dashboard; no amount is hardcoded here. Premium is sold monthly and
+# annually (Matt, Oct 21: $5/mo, $50/yr) — one Stripe Price per plan;
+# STRIPE_PRICE_ID remains as the legacy monthly fallback.
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_PUBLISHABLE_KEY = os.environ.get("STRIPE_PUBLISHABLE_KEY", "")
 STRIPE_PRICE_ID = os.environ.get("STRIPE_PRICE_ID", "")
+STRIPE_PRICE_ID_MONTHLY = (
+    os.environ.get("STRIPE_PRICE_ID_MONTHLY", "") or STRIPE_PRICE_ID
+)
+STRIPE_PRICE_ID_ANNUAL = os.environ.get("STRIPE_PRICE_ID_ANNUAL", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+# Billing lifecycle (issue #36): days a payment-failed premium account
+# stays suspended before it expires, and days an expired account's
+# stored documents are kept before they are purged.
+BILLING_SUSPENSION_DAYS = int(os.environ.get("BILLING_SUSPENSION_DAYS", "180"))
+BILLING_PURGE_DAYS = int(os.environ.get("BILLING_PURGE_DAYS", "180"))
 
 # --- Google sign-in (OAuth for sender accounts, scope §3.10) ----------------
 # All optional: with no client ID set, /api/auth/google/ answers 503 and

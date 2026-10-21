@@ -219,7 +219,30 @@ describe("auth", () => {
     const [reqUrl, init] = vi.mocked(fetch).mock.calls[0];
     expect(reqUrl).toContain("/api/billing/checkout/");
     expect(init?.method).toBe("POST");
+    expect(JSON.parse(String(init?.body))).toEqual({ plan: "monthly" });
     expect(url).toBe("https://checkout.stripe/x");
+  });
+
+  it("startCheckout sends the annual plan on the wire", async () => {
+    const { startCheckout } = await import("./api");
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({ url: "https://checkout.stripe/y" })
+    );
+    await startCheckout("annual");
+    const [, init] = vi.mocked(fetch).mock.calls[0];
+    expect(JSON.parse(String(init?.body))).toEqual({ plan: "annual" });
+  });
+
+  it("pauseBilling posts to the pause endpoint", async () => {
+    const { pauseBilling } = await import("./api");
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({ billing_status: "paused" })
+    );
+    const result = await pauseBilling();
+    const [reqUrl, init] = vi.mocked(fetch).mock.calls[0];
+    expect(reqUrl).toContain("/api/billing/pause/");
+    expect(init?.method).toBe("POST");
+    expect(result).toBe("paused");
   });
 });
 

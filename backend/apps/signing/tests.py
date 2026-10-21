@@ -1,4 +1,5 @@
 """End-to-end tests for the signing ceremony API."""
+from django.test import override_settings
 
 import base64
 import http.server
@@ -273,8 +274,13 @@ def test_upload_rejects_unsupported_extension():
 
 
 @pytest.mark.django_db
+@override_settings(URL_FETCH_ALLOW_PRIVATE=True)
 def test_from_url_renders_page_to_pdf():
-    """Real end-to-end: a local HTTP server stands in for the web page."""
+    """Real end-to-end: a local HTTP server stands in for the web page.
+
+    The SSRF guard (issue #39) refuses private addresses; this test is
+    the local-development case the URL_FETCH_ALLOW_PRIVATE hatch is for.
+    """
     html = b"<html><body><h1>Terms of Service</h1><p>These are the terms.</p></body></html>"
 
     class Handler(http.server.BaseHTTPRequestHandler):

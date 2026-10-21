@@ -229,6 +229,7 @@ out/
 .env
 .env.*
 !.env.staging.example
+!.env.prod.example
 
 # Editor
 .idea/
