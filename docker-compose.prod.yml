@@ -1,0 +1,82 @@
+# Production overlay: gunicorn API, built Next.js app, Caddy HTTPS,
+# production hardening env. Modeled on the staging overlay — the
+# deployment shape the hosted service itself uses.
+#
+# Usage (on the production host, from a repo checkout):
+#   cp .env.prod.example .env.prod   # and fill it in
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml \
+#     --env-file .env.prod up --build -d
+#
+# See docs/self-hosting.md for the full walkthrough, the daily cron
+# jobs, and the backup routine. Note: the Caddyfile reads the hostname
+# from a variable still named STAGING_DOMAIN (it predates this file);
+# the caddy service below maps DOMAIN onto it.
+
+services:
+  api:
+    # Production WSGI server (the base file's command is the dev server).
+    command: sh -c "python manage.py migrate && gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers 2 --timeout 180"
+    environment:
+      DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:?set DJANGO_SECRET_KEY in .env.prod}
+      DJANGO_DEBUG: "0"
+      DJANGO_ALLOWED_HOSTS: ${DOMAIN:?set DOMAIN in .env.prod}
+      DATABASE_URL: postgres://signseen:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.prod}@db:5432/signseen
+      FRONTEND_URL: https://${DOMAIN}
+      DJANGO_BEHIND_TLS_PROXY: "1"
+      DJANGO_HSTS_SECONDS: "31536000"
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
+      STRIPE_PRICE_ID_MONTHLY: ${STRIPE_PRICE_ID_MONTHLY:-}
+      STRIPE_PRICE_ID_ANNUAL: ${STRIPE_PRICE_ID_ANNUAL:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      PREMIUM_STORAGE_BYTES: ${PREMIUM_STORAGE_BYTES:-}
+      GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
+      EMAIL_BACKEND: ${EMAIL_BACKEND:-django.core.mail.backends.console.EmailBackend}
+      EMAIL_HOST: ${EMAIL_HOST:-}
+      EMAIL_PORT: ${EMAIL_PORT:-587}
+      EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}
+      EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
+      EMAIL_USE_TLS: ${EMAIL_USE_TLS:-1}
+      DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-}
+    volumes:
+      - ./backend:/app
+      - media:/app/media
+    restart: unless-stopped
+
+  web:
+    # Build the production bundle at startup, then serve it. (The repo
+    # checkout is mounted over the image, as in staging, so the build
+    # must happen here rather than in the Dockerfile alone.)
+    command: sh -c "npm run build && npm run start"
+    environment:
+      NEXT_PUBLIC_API_URL: https://${DOMAIN}
+      NEXT_PUBLIC_GOOGLE_CLIENT_ID: ${NEXT_PUBLIC_GOOGLE_CLIENT_ID:-}
+      NEXT_PUBLIC_GHL_CHAT_WIDGET_ID: ${NEXT_PUBLIC_GHL_CHAT_WIDGET_ID:-}
+    restart: unless-stopped
+
+  db:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.prod}
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - media:/srv/media:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      STAGING_DOMAIN: ${DOMAIN:?set DOMAIN in .env.prod}
+    restart: unless-stopped
+    depends_on:
+      - api
+      - web
+
+volumes:
+  media:
+  caddy_data:
+  caddy_config:

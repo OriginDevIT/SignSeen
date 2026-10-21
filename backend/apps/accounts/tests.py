@@ -305,3 +305,36 @@ def test_google_login_invalid_token_is_401(settings, monkeypatch):
     )
     assert response.status_code == 401
     assert Account.objects.count() == 0
+
+
+# --- Login brute-force guard (issue #39) -------------------------------------
+
+import pytest
+from django.core.cache import cache
+from django.test import override_settings
+from rest_framework.test import APIClient
+
+
+@pytest.mark.django_db
+@override_settings(LOGIN_MAX_FAILED_ATTEMPTS=3)
+def test_login_throttles_after_repeated_failures():
+    cache.clear()
+    Account.objects.create_user(
+        email="victim@example.com", password="<redacted>"
+    )
+    client = APIClient()
+    for _ in range(3):
+        response = client.post(
+            "/api/auth/login/",
+            {"email": "victim@example.com", "password": "wrong-password"},
+            format="json",
+        )
+        assert response.status_code == 401
+    # Even the correct password is refused while throttled.
+    response = client.post(
+        "/api/auth/login/",
+        {"email": "victim@example.com", "password": "<redacted>"},
+        format="json",
+    )
+    assert response.status_code == 429
+    cache.clear()
