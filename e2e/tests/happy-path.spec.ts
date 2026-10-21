@@ -41,13 +41,19 @@ test("happy path: send -> sign with photo -> sealed, audit chain valid", async (
   ).toBeVisible();
   await shot(signer, "02-signer-intro.png");
 
-  // View document opens the PDF in a new tab.
+  // View document opens the PDF in a new tab. The tab points straight
+  // at the API's PDF endpoint and headless Chromium has no PDF viewer
+  // (the navigation becomes a download, so no load state ever fires) —
+  // assert the URL, then verify the document itself over HTTP.
   const [docTab] = await Promise.all([
     signerContext.waitForEvent("page"),
     signer.getByRole("link", { name: /View document/ }).click(),
   ]);
-  await docTab.waitForLoadState("domcontentloaded");
   expect(docTab.url()).toContain("/document/");
+  const api = await request.newContext({ baseURL: API_URL });
+  const docFileRes = await api.get(docTab.url());
+  expect(docFileRes.ok()).toBeTruthy();
+  expect(docFileRes.headers()["content-type"]).toContain("application/pdf");
   await docTab.close();
 
   await signer.getByRole("button", { name: "Start signing" }).click();
@@ -74,7 +80,6 @@ test("happy path: send -> sign with photo -> sealed, audit chain valid", async (
 
   // --- Verify through the API -------------------------------------------
   const token = signingUrl.split("/s/")[1].split(/[?#]/)[0];
-  const api = await request.newContext({ baseURL: API_URL });
 
   const eventsRes = await api.get(`/api/sessions/${token}/events/`);
   expect(eventsRes.ok()).toBeTruthy();
