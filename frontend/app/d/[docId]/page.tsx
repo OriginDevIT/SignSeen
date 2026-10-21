@@ -86,7 +86,12 @@ export default function TrackDocumentPage({
           <SigningLinkPanel signingUrl={doc.signing_url} />
         )}
         {doc.status === "signed" && signedUrl && (
-          <a href={signedUrl} style={{ ...button, marginTop: "1.25rem" }}>
+          <a
+            href={signedUrl}
+            target="_blank"
+            rel="noreferrer"
+            style={{ ...button, marginTop: "1.25rem" }}
+          >
             Download signed PDF
           </a>
         )}
