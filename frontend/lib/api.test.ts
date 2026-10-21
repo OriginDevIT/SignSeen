@@ -558,3 +558,96 @@ describe("multi-signer shapes", () => {
     expect(result.document_final).toBe(false);
   });
 });
+
+describe("document fields (#13)", () => {
+  it("getDocumentFields fetches the placement list", async () => {
+    const { getDocumentFields } = await import("./api");
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({ page_count: 2, fields: [{ id: "f1", type: "text" }] })
+    );
+    const data = await getDocumentFields("doc-1");
+    const [url] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toContain("/api/documents/doc-1/fields/");
+    expect(data.page_count).toBe(2);
+    expect(data.fields[0].type).toBe("text");
+  });
+
+  it("createDocumentField posts the exact placement body", async () => {
+    const { createDocumentField } = await import("./api");
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({ id: "f1", type: "signature", page: 1, x: 0.1, y: 0.2 }, 201)
+    );
+    const field = await createDocumentField("doc-1", {
+      session_id: "sess-1",
+      type: "signature",
+      page: 1,
+      x: 0.1,
+      y: 0.2,
+    });
+    expect(field.id).toBe("f1");
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toContain("/api/documents/doc-1/fields/");
+    expect(init?.method).toBe("POST");
+    expect(JSON.parse(init?.body as string)).toEqual({
+      session_id: "sess-1",
+      type: "signature",
+      page: 1,
+      x: 0.1,
+      y: 0.2,
+    });
+  });
+
+  it("deleteDocumentField sends DELETE to the field URL", async () => {
+    const { deleteDocumentField } = await import("./api");
+    vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 204 }));
+    await deleteDocumentField("doc-1", "f1");
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toContain("/api/documents/doc-1/fields/f1/");
+    expect(init?.method).toBe("DELETE");
+  });
+
+  it("sessionPageUrl builds the token-addressed page image URL", async () => {
+    const { sessionPageUrl } = await import("./api");
+    expect(sessionPageUrl("tok123", 2)).toContain("/api/sessions/tok123/page/2.png");
+  });
+
+  it("uploadDocument sends the signing_mode in the form", async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse({ id: "doc-1" }, 201));
+    const file = new File(["%PDF-"], "contract.pdf", { type: "application/pdf" });
+    await uploadDocument(file, "Contract", "s@example.com", "parallel");
+    const [, init] = vi.mocked(fetch).mock.calls[0];
+    const form = init?.body as FormData;
+    expect(form.get("signing_mode")).toBe("parallel");
+  });
+
+  it("submitSignature sends field_values with the exact wire keys", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({ status: "signed", document_final: true })
+    );
+    await submitSignature("tok123", {
+      signature: "data:image/png;base64,AAA",
+      deviceInfo: {
+        userAgent: "ua",
+        platform: "p",
+        language: "en",
+        screenWidth: 1,
+        screenHeight: 2,
+        timezoneOffsetMinutes: 0,
+      },
+      fieldValues: [
+        { field_id: "f1", value: "data:image/png;base64,BBB" },
+        { field_id: "f2", value: true },
+        { field_id: "f3", value: "hello" },
+      ],
+    });
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toContain("/api/sessions/tok123/sign/");
+    const body = JSON.parse(init?.body as string);
+    expect(body.field_values).toEqual([
+      { field_id: "f1", value: "data:image/png;base64,BBB" },
+      { field_id: "f2", value: true },
+      { field_id: "f3", value: "hello" },
+    ]);
+    expect(init?.headers.get("Authorization")).toBeNull();
+  });
+});

@@ -10,6 +10,8 @@ import logging
 from django.conf import settings
 from django.core.mail import EmailMessage
 
+from .models import Document
+
 log = logging.getLogger(__name__)
 
 
@@ -141,3 +143,40 @@ def send_signer_copy(document, session, audit_seal: str) -> None:
     signer_email = (session.signer_email or "").strip()
     if signer_email and document.signed_file:
         _email_copy(document, audit_seal, signer_email)
+
+
+def send_signer_invite(document, session) -> None:
+    """Invite a pre-defined signer to their signing session (#13).
+
+    Complex documents are delivered by email: when a session with a
+    signer_email becomes active — at creation if it is already usable,
+    or when its predecessor signs in sequential mode — the signer gets
+    their own signing link. Best-effort, like every notification here.
+    """
+    signer_email = (session.signer_email or "").strip()
+    if not signer_email:
+        return
+    signing_url = f"{settings.FRONTEND_URL}/s/{session.token}"
+    order_note = (
+        " Signing happens in order; your link is active now."
+        if document.signing_mode == Document.SigningMode.SEQUENTIAL
+        and document.sessions.count() > 1
+        else ""
+    )
+    body = (
+        f"{session.signer_name or 'You'} are asked to sign "
+        f'"{document.title}".\n\n'
+        f"Your signing link: {signing_url}\n"
+        f"{order_note}\n"
+        "No account needed — open the link, complete your fields, and sign."
+    )
+    msg = EmailMessage(
+        subject=f"Please sign: {document.title}",
+        body=body,
+        from_email=settings.DEFAULT_FROM_EMAIL,
+        to=[signer_email],
+    )
+    try:
+        msg.send()
+    except Exception:
+        log.exception("failed to email signer invite to %s", signer_email)

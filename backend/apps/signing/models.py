@@ -31,6 +31,13 @@ class Document(models.Model):
         UPLOAD = "upload", "Upload"
         URL = "url", "URL"
 
+    class SigningMode(models.TextChoices):
+        # Complex documents (#13): the sender chooses whether signers
+        # sign strictly in order or all at once. Sequential is the
+        # #8 multi-signer default; parallel lifts the order gating.
+        SEQUENTIAL = "sequential", "Sequential"
+        PARALLEL = "parallel", "Parallel"
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     title = models.CharField(max_length=255)
     original_file = models.FileField(upload_to="originals/")
@@ -49,6 +56,11 @@ class Document(models.Model):
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
+    )
+    signing_mode = models.CharField(
+        max_length=16,
+        choices=SigningMode.choices,
+        default=SigningMode.SEQUENTIAL,
     )
     status = models.CharField(
         max_length=16, choices=Status.choices, default=Status.PENDING
@@ -97,7 +109,12 @@ class SigningSession(models.Model):
         ordering = ["order", "created_at"]
 
     def predecessors_signed(self) -> bool:
-        """True iff every lower-order session for this document signed."""
+        """True iff every lower-order session for this document signed.
+
+        Parallel signing mode (#13) has no order gating: every pending
+        session is active from creation."""
+        if self.document.signing_mode == Document.SigningMode.PARALLEL:
+            return True
         return not (
             SigningSession.objects.filter(
                 document_id=self.document_id, order__lt=self.order
@@ -121,6 +138,56 @@ class SigningSession(models.Model):
 
     def __str__(self) -> str:
         return f"session {self.id} for {self.document_id} ({self.status})"
+
+
+class DocumentField(models.Model):
+    """A sender-placed field on a document (complex documents, #13).
+
+    Placed on the converted/uploaded PDF at normalized coordinates
+    (x/y are fractions of the page size, 0-1), assigned to one signer
+    slot (session). Fixed render sizes per type in v1 (see pdf.py);
+    the sender controls position, type, assignment and required-ness.
+
+    Completion happens inside the signer's submit: text/date values
+    land in `value_text` (checkboxes as "true"/"false"), signature /
+    initials images are stored as files like ceremony evidence and
+    `value_file` carries the path. A field counts as completed iff
+    `completed_at` is set.
+    """
+
+    class Type(models.TextChoices):
+        SIGNATURE = "signature", "Signature"
+        INITIALS = "initials", "Initials"
+        CHECKBOX = "checkbox", "Checkbox"
+        TEXT = "text", "Text"
+        DATE = "date", "Date"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    document = models.ForeignKey(
+        Document, related_name="fields", on_delete=models.CASCADE
+    )
+    session = models.ForeignKey(
+        SigningSession, related_name="fields", on_delete=models.CASCADE
+    )
+    field_type = models.CharField(max_length=16, choices=Type.choices)
+    page = models.PositiveIntegerField()  # 1-based
+    x = models.FloatField()
+    y = models.FloatField()
+    required = models.BooleanField(default=True)
+    value_text = models.TextField(blank=True, default="")
+    value_file = models.FileField(upload_to="fields/", null=True, blank=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["page", "created_at"]
+
+    @property
+    def is_completed(self) -> bool:
+        return self.completed_at is not None
+
+    def __str__(self) -> str:
+        return f"{self.field_type} field p{self.page} for session {self.session_id}"
 
 
 class AuditEvent(models.Model):

@@ -21,6 +21,8 @@ export default function SendPage() {
   const [title, setTitle] = useState("");
   const [senderEmail, setSenderEmail] = useState("");
   const [signerName, setSignerName] = useState("");
+  const [signerEmail, setSignerEmail] = useState("");
+  const [signingMode, setSigningMode] = useState<"sequential" | "parallel">("sequential");
   const [file, setFile] = useState<File | null>(null);
   const [pageUrl, setPageUrl] = useState("");
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
@@ -30,6 +32,7 @@ export default function SendPage() {
   const [accountEmail, setAccountEmail] = useState<string | null>(null);
   const [isPremium, setIsPremium] = useState(false);
   const [nextSignerName, setNextSignerName] = useState("");
+  const [nextSignerEmail, setNextSignerEmail] = useState("");
   const [addingSigner, setAddingSigner] = useState(false);
 
   // Logged-in senders: prefill their email and attach documents to the
@@ -53,13 +56,14 @@ export default function SendPage() {
     try {
       const doc =
         intake === "file"
-          ? await uploadDocument(file!, title.trim(), senderEmail.trim())
+          ? await uploadDocument(file!, title.trim(), senderEmail.trim(), signingMode)
           : await createDocumentFromUrl(
               pageUrl.trim(),
               title.trim(),
-              senderEmail.trim()
+              senderEmail.trim(),
+              signingMode
             );
-      const sess = await createSession(doc.id, signerName.trim(), "");
+      const sess = await createSession(doc.id, signerName.trim(), signerEmail.trim());
       setSessions([sess]);
       setDocId(doc.id);
       setPhase("done");
@@ -83,9 +87,10 @@ export default function SendPage() {
     setError("");
     setAddingSigner(true);
     try {
-      const sess = await createSession(docId, nextSignerName.trim(), "");
+      const sess = await createSession(docId, nextSignerName.trim(), nextSignerEmail.trim());
       setSessions((prev) => [...prev, sess]);
       setNextSignerName("");
+      setNextSignerEmail("");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong.");
     } finally {
@@ -196,6 +201,27 @@ export default function SendPage() {
               placeholder="Jane Doe"
             />
           </label>
+          <label style={{ display: "grid", gap: "0.35rem" }}>
+            Signer email <span style={{ opacity: 0.6 }}>(optional — pre-defines the signer; they are emailed their signing link when their turn comes)</span>
+            <input
+              style={inputStyle}
+              type="email"
+              value={signerEmail}
+              onChange={(e) => setSignerEmail(e.target.value)}
+              placeholder="jane@example.com"
+            />
+          </label>
+          <label style={{ display: "grid", gap: "0.35rem" }}>
+            Signing order
+            <select
+              style={inputStyle}
+              value={signingMode}
+              onChange={(e) => setSigningMode(e.target.value as "sequential" | "parallel")}
+            >
+              <option value="sequential">Sequential — signers sign one after another, in order</option>
+              <option value="parallel">Parallel — all signers can sign in any order</option>
+            </select>
+          </label>
           {intake === "file" ? (
             <label style={{ display: "grid", gap: "0.35rem" }}>
               Document{" "}
@@ -261,7 +287,9 @@ export default function SendPage() {
             <h2 style={{ margin: "0 0 0.5rem" }}>Ready to sign</h2>
             <p style={{ opacity: 0.7, margin: 0 }}>
               {sessions.length > 1
-                ? "Signers sign in order — each link activates after the previous signer has signed, and the document seals at the final signature."
+                ? signingMode === "parallel"
+                  ? "Signers can sign in any order — the document seals when everyone has signed."
+                  : "Signers sign in order — each link activates after the previous signer has signed, and the document seals at the final signature."
                 : "On a phone? Open the link directly. On a computer? Scan the QR code with your phone."}
             </p>
           </div>
@@ -338,6 +366,15 @@ export default function SendPage() {
             These links expire in 30 days. Send each signer their link by
             email or text — no account needed on their end.
           </p>
+          {docId && (
+            <p style={{ fontSize: "0.95rem", margin: 0 }}>
+              <a href={`/place-fields/${docId}`}>Place fields on this document →</a>{" "}
+              <span style={{ opacity: 0.6 }}>
+                (signature / initials / checkbox / text / date fields, each
+                assigned to a signer — owner account required)
+              </span>
+            </p>
+          )}
           {isPremium && (
             <div style={{ display: "grid", gap: "0.5rem" }}>
               <label style={{ display: "grid", gap: "0.35rem" }}>
@@ -347,6 +384,13 @@ export default function SendPage() {
                   value={nextSignerName}
                   onChange={(e) => setNextSignerName(e.target.value)}
                   placeholder="Next signer name (optional)"
+                />
+                <input
+                  style={inputStyle}
+                  type="email"
+                  value={nextSignerEmail}
+                  onChange={(e) => setNextSignerEmail(e.target.value)}
+                  placeholder="Next signer email (optional — emailed their link on their turn)"
                 />
               </label>
               <button

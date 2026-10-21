@@ -12,15 +12,17 @@ Signer flow (token-addressed, no account):
 """
 
 import base64
+from datetime import datetime
 import binascii
 import hashlib
 import logging
 import os
 
+import pymupdf
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.db import transaction
-from django.http import FileResponse
+from django.http import FileResponse, HttpResponse
 from django.core.exceptions import ValidationError
 from django.core.validators import validate_email
 from django.shortcuts import get_object_or_404
@@ -53,13 +55,15 @@ from .limits import (
 from .notifications import (
     send_sealed_notifications,
     send_signer_copy,
+    send_signer_invite,
     send_viewed_alert,
 )
 from .trust import assess_photo, normalize_photo
-from .models import AuditEvent, Document, SigningSession
+from .models import AuditEvent, Document, DocumentField, SigningSession
 from .pdf import build_signed_pdf_multi
 from .serializers import (
     AuditEventSerializer,
+    DocumentFieldSerializer,
     DocumentSerializer,
     SigningSessionSerializer,
 )
@@ -80,6 +84,13 @@ def _validate_sender_fields(data) -> tuple[str, str] | Response:
     if not sender_email or "@" not in sender_email:
         return _error("a valid sender_email is required")
     return title, sender_email
+
+
+def _signing_mode(data) -> str | None:
+    """The sender's signing-order choice (#13), set at document
+    creation. Returns None for an invalid value."""
+    mode = (data.get("signing_mode") or Document.SigningMode.SEQUENTIAL).strip()
+    return mode if mode in Document.SigningMode.values else None
 
 
 def _error(message: str, code=status.HTTP_400_BAD_REQUEST) -> Response:
@@ -150,6 +161,9 @@ def create_document(request):
     if isinstance(validated, Response):
         return validated
     title, sender_email = validated
+    signing_mode = _signing_mode(request.data)
+    if signing_mode is None:
+        return _error("signing_mode must be 'sequential' or 'parallel'")
     upload = request.data.get("file")
 
     if upload is None:
@@ -184,6 +198,7 @@ def create_document(request):
         owner=account,
         original_filename=original_filename,
         source=Document.Source.UPLOAD,
+        signing_mode=signing_mode,
     )
     doc.original_file.save(f"document-{doc.id}.pdf", ContentFile(pdf_bytes))
     return Response(DocumentSerializer(doc).data, status=status.HTTP_201_CREATED)
@@ -198,6 +213,9 @@ def create_document_from_url(request):
     if isinstance(validated, Response):
         return validated
     title, sender_email = validated
+    signing_mode = _signing_mode(request.data)
+    if signing_mode is None:
+        return _error("signing_mode must be 'sequential' or 'parallel'")
     url = (request.data.get("url") or "").strip()
     if not url:
         return _error("url is required")
@@ -225,6 +243,7 @@ def create_document_from_url(request):
         original_filename="",
         source=Document.Source.URL,
         source_url=url,
+        signing_mode=signing_mode,
     )
     doc.original_file.save(f"document-{doc.id}.pdf", ContentFile(pdf_bytes))
     return Response(DocumentSerializer(doc).data, status=status.HTTP_201_CREATED)
@@ -295,6 +314,138 @@ def get_document(request, doc_id):
     return Response(data)
 
 
+# ---------------------------------------------------------------------------
+# Complex documents (#13): field placement + page rendering.
+#
+# Placement is owner-only: fields are the sender's instructions on
+# their own document. Signers interact with their assigned fields
+# through the token-addressed ceremony endpoints instead.
+# ---------------------------------------------------------------------------
+
+
+def _page_count(doc) -> int:
+    with pymupdf.open(doc.original_file.path) as pdf:
+        return pdf.page_count
+
+
+def _render_page_png(doc, page_number: int) -> bytes | None:
+    """Render one page of the original PDF to PNG (2x for legibility).
+    Returns None when the page is out of range."""
+    with pymupdf.open(doc.original_file.path) as pdf:
+        if page_number < 1 or page_number > pdf.page_count:
+            return None
+        pixmap = pdf[page_number - 1].get_pixmap(matrix=pymupdf.Matrix(2, 2))
+        return pixmap.tobytes("png")
+
+
+def _owner_document(request, doc_id):
+    """(document, None) for the owner, else (None, error response)."""
+    doc = get_object_or_404(Document, pk=doc_id)
+    if doc.owner_id != request.user.id:
+        return None, _error("only the document owner can manage fields", 403)
+    return doc, None
+
+
+@api_view(["GET", "POST"])
+@permission_classes([IsAuthenticated])
+def document_fields(request, doc_id):
+    doc, err = _owner_document(request, doc_id)
+    if err is not None:
+        return err
+    if request.method == "GET":
+        return Response(
+            {
+                "page_count": _page_count(doc),
+                "fields": DocumentFieldSerializer(
+                    doc.fields.all(), many=True
+                ).data,
+            }
+        )
+
+    if doc.status != Document.Status.PENDING:
+        return _error("fields can only be placed on a pending document", 409)
+    session_id = str(request.data.get("session_id") or "")
+    session = next(
+        (s for s in doc.sessions.all() if str(s.id) == session_id), None
+    )
+    if session is None:
+        return _error("session_id must be one of the document's sessions")
+    field_type = (request.data.get("type") or "").strip()
+    if field_type not in DocumentField.Type.values:
+        return _error(
+            "type must be one of: " + ", ".join(DocumentField.Type.values)
+        )
+    page = request.data.get("page")
+    if isinstance(page, bool) or not isinstance(page, int):
+        return _error("page must be an integer")
+    if page < 1 or page > _page_count(doc):
+        return _error("page is out of range for this document")
+    try:
+        x = float(request.data.get("x"))
+        y = float(request.data.get("y"))
+    except (TypeError, ValueError):
+        return _error("x and y must be numbers between 0 and 1")
+    if not (0.0 <= x <= 1.0 and 0.0 <= y <= 1.0):
+        return _error("x and y must be between 0 and 1")
+    required = request.data.get("required", True)
+    if not isinstance(required, bool):
+        return _error("required must be true or false")
+
+    field = DocumentField.objects.create(
+        document=doc,
+        session=session,
+        field_type=field_type,
+        page=page,
+        x=x,
+        y=y,
+        required=required,
+    )
+    return Response(DocumentFieldSerializer(field).data, status=201)
+
+
+@api_view(["DELETE"])
+@permission_classes([IsAuthenticated])
+def delete_document_field(request, doc_id, field_id):
+    doc, err = _owner_document(request, doc_id)
+    if err is not None:
+        return err
+    field = get_object_or_404(DocumentField, pk=field_id, document=doc)
+    if field.is_completed:
+        return _error("a completed field cannot be deleted", 409)
+    if doc.status != Document.Status.PENDING:
+        return _error("fields can only change on a pending document", 409)
+    field.delete()
+    return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def document_page_png(request, doc_id, page):
+    """One rendered page for the placement UI (owner only)."""
+    doc, err = _owner_document(request, doc_id)
+    if err is not None:
+        return err
+    png = _render_page_png(doc, page)
+    if png is None:
+        return _error("page is out of range for this document", 404)
+    return HttpResponse(png, content_type="image/png")
+
+
+@api_view(["GET"])
+@authentication_classes([])
+def session_page_png(request, token, page):
+    """One rendered page for the ceremony's field view. Possession of
+    the token is the auth, and the page is served only while the
+    session is usable or already signed."""
+    session = get_object_or_404(SigningSession, token=token)
+    if not session.is_usable() and session.status != SigningSession.Status.SIGNED:
+        return _error("session is no longer available", 410)
+    png = _render_page_png(session.document, page)
+    if png is None:
+        return _error("page is out of range for this document", 404)
+    return HttpResponse(png, content_type="image/png")
+
+
 @api_view(["POST"])
 @parser_classes([JSONParser, FormParser, MultiPartParser])
 @authentication_classes([OptionalTokenAuthentication])
@@ -323,6 +474,15 @@ def create_session(request, doc_id):
             "order": session.order,
         },
     )
+    # Email delivery (#13): a pre-defined signer whose session is
+    # already active (first in sequence, or any signer in parallel
+    # mode) gets their signing link by email. Later sequential
+    # signers are invited when their predecessor signs.
+    if session.is_usable():
+        try:
+            send_signer_invite(doc, session)
+        except Exception:
+            log.exception("signer-invite email failed")
     return Response(SigningSessionSerializer(session).data, status=201)
 
 
@@ -338,6 +498,77 @@ def get_session_events(request, token):
             "events": AuditEventSerializer(events, many=True).data,
         }
     )
+
+
+def _prepare_field_values(session, raw_values):
+    """Validate a submit's `field_values` against this session's fields.
+
+    Returns (prepared, error_response): prepared items carry the field,
+    the decoded image bytes (signature/initials) or the stored text
+    (checkbox "true"/"false", text, date). A signer can only complete
+    their own fields; a submit missing any of this session's REQUIRED
+    fields is an error. Everything is validated/decoded here, before
+    any writes, so a bad submit changes nothing.
+    """
+    if raw_values is None:
+        raw_values = []
+    if not isinstance(raw_values, list):
+        return None, _error("field_values must be a list")
+    session_fields = {str(f.id): f for f in session.fields.all()}
+    prepared = {}
+    for entry in raw_values:
+        if not isinstance(entry, dict):
+            return None, _error("field_values entries must be objects")
+        field = session_fields.get(str(entry.get("field_id") or ""))
+        if field is None:
+            return None, _error(
+                "field_values contains a field that is not assigned to this signer"
+            )
+        value = entry.get("value")
+        item = {"field": field, "image_bytes": None, "text": "", "checked": None}
+        if field.field_type in (
+            DocumentField.Type.SIGNATURE,
+            DocumentField.Type.INITIALS,
+        ):
+            try:
+                item["image_bytes"] = _decode_data_url(value, field.field_type)
+            except ValueError as exc:
+                return None, _error(str(exc))
+        elif field.field_type == DocumentField.Type.CHECKBOX:
+            if not isinstance(value, bool):
+                return None, _error("checkbox field value must be true or false")
+            item["checked"] = value
+            item["text"] = "true" if value else "false"
+        elif field.field_type == DocumentField.Type.DATE:
+            text = value.strip() if isinstance(value, str) else ""
+            try:
+                datetime.strptime(text, "%Y-%m-%d")
+            except ValueError:
+                return None, _error("date field value must be YYYY-MM-DD")
+            item["text"] = text
+        else:  # text
+            text = value.strip() if isinstance(value, str) else ""
+            if not text:
+                continue  # an empty text entry completes nothing
+            item["text"] = text
+        prepared[field.id] = item
+
+    missing = []
+    for field in session_fields.values():
+        if not field.required:
+            continue
+        item = prepared.get(field.id)
+        if item is None or (
+            field.field_type == DocumentField.Type.CHECKBOX
+            and item["checked"] is not True
+        ):
+            missing.append(field)
+    if missing:
+        labels = ", ".join(
+            f"{f.field_type} (page {f.page})" for f in missing
+        )
+        return None, _error(f"missing required fields: {labels}")
+    return list(prepared.values()), None
 
 
 # ---------------------------------------------------------------------------
@@ -410,6 +641,11 @@ def submit_signature(request, token):
     if not isinstance(device_info, dict):
         return _error("device_info must be an object")
     signer_email = (request.data.get("signer_email") or "").strip()
+    prepared_fields, field_error = _prepare_field_values(
+        session, request.data.get("field_values")
+    )
+    if field_error is not None:
+        return field_error
 
     doc = session.document
     with transaction.atomic():
@@ -467,6 +703,37 @@ def submit_signature(request, token):
             },
         )
 
+        # Field completions (#13): persist values and extend this
+        # session's hash chain with one event per completed field.
+        for item in prepared_fields:
+            field = item["field"]
+            if item["image_bytes"] is not None:
+                field.value_file.save(
+                    f"{field.id}.png",
+                    ContentFile(item["image_bytes"]),
+                    save=False,
+                )
+            field.value_text = item["text"]
+            field.completed_at = timezone.now()
+            field.save(
+                update_fields=["value_text", "value_file", "completed_at"]
+            )
+            payload = {
+                "field_id": str(field.id),
+                "field_type": field.field_type,
+                "page": field.page,
+                "session_id": session_id,
+                "signer_name": session.signer_name,
+            }
+            if item["image_bytes"] is not None:
+                payload["value_sha256"] = _sha256(item["image_bytes"])
+                payload["value_file"] = field.value_file.name
+            elif item["checked"] is not None:
+                payload["value"] = item["checked"]
+            else:
+                payload["value"] = item["text"]
+            record_event(session, "field.completed", payload)
+
         # This signer's ceremony is complete.
         session.status = SigningSession.Status.SIGNED
         if signer_email:
@@ -480,7 +747,9 @@ def submit_signature(request, token):
         all_sessions = list(doc.sessions.order_by("order", "created_at"))
         document_final = all(
             s.status == SigningSession.Status.SIGNED for s in all_sessions
-        )
+        ) and not doc.fields.filter(
+            required=True, completed_at__isnull=True
+        ).exists()
         sealed = None
         if document_final:
             signers = []
@@ -511,11 +780,32 @@ def submit_signature(request, token):
                         "photo_assurance": payload.get("photo_assurance"),
                     }
                 )
+            # Completed fields stamp onto their pages before the
+            # certificate pages are appended (#13).
+            completed_fields = []
+            for f in doc.fields.filter(
+                completed_at__isnull=False
+            ).order_by("page", "created_at"):
+                image_bytes = None
+                if f.value_file:
+                    with open(f.value_file.path, "rb") as fh:
+                        image_bytes = fh.read()
+                completed_fields.append(
+                    {
+                        "type": f.field_type,
+                        "page": f.page,
+                        "x": f.x,
+                        "y": f.y,
+                        "value_text": f.value_text,
+                        "image_png": image_bytes,
+                    }
+                )
             # Premium documents skip the free-tier watermark.
             signed_bytes = build_signed_pdf_multi(
                 doc.original_file.path,
                 signers,
                 watermark=wants_watermark(doc),
+                fields=completed_fields,
                 brand_name=(doc.owner.brand_name or "") if doc.owner else "",
             )
             doc.signed_file.save(f"signed-{doc.id}.pdf", ContentFile(signed_bytes))
@@ -539,6 +829,20 @@ def submit_signature(request, token):
             send_sealed_notifications(doc, session, sealed.hash)
         except Exception:
             log.exception("sealed-notification email failed")
+    elif doc.signing_mode == Document.SigningMode.SEQUENTIAL:
+        # This signature activated the next signer in the sequence:
+        # invite them if they are pre-defined with an email (#13). In
+        # parallel mode everyone was invited at session creation.
+        nxt = (
+            doc.sessions.filter(status=SigningSession.Status.PENDING)
+            .order_by("order", "created_at")
+            .first()
+        )
+        if nxt is not None and nxt.is_usable():
+            try:
+                send_signer_invite(doc, nxt)
+            except Exception:
+                log.exception("signer-invite email failed")
 
     return Response(
         {

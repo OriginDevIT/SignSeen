@@ -112,10 +112,63 @@ def _render_header(page: pymupdf.Page, brand_name: str = "") -> int:
     return y + 44
 
 
+# Fixed render sizes (points) for placed fields in v1 (#13): the
+# sender controls position/type/assignment, not dimensions.
+FIELD_SIZES = {
+    "signature": (180, 60),
+    "initials": (90, 45),
+    "checkbox": (16, 16),
+    "text": (220, 18),
+    "date": (140, 18),
+}
+
+
+def _stamp_fields(doc: pymupdf.Document, fields: list[dict]) -> None:
+    """Stamp completed fields onto their pages at normalized coords.
+
+    Each field dict: {type, page (1-based), x, y (0-1 fractions of the
+    page size), value_text, image_png (bytes or None)}. A checked
+    checkbox renders as an X inside an outlined box; an unchecked one
+    as the empty box.
+    """
+    for field in fields:
+        page_no = field["page"] - 1
+        if page_no < 0 or page_no >= doc.page_count:
+            continue
+        page = doc[page_no]
+        width, height = page.rect.width, page.rect.height
+        x = field["x"] * width
+        y = field["y"] * height
+        ftype = field["type"]
+        w, h = FIELD_SIZES.get(ftype, (180, 60))
+        if ftype in ("signature", "initials"):
+            if field.get("image_png"):
+                rect = pymupdf.Rect(
+                    x, y, min(x + w, width), min(y + h, height)
+                )
+                page.insert_image(rect, stream=field["image_png"])
+        elif ftype == "checkbox":
+            rect = pymupdf.Rect(x, y, x + w, y + h)
+            page.draw_rect(rect, color=(0.1, 0.1, 0.1), width=1)
+            if field.get("value_text") == "true":
+                page.insert_text(
+                    (x + 3, y + h - 3), "X", fontsize=13, fontname="helv"
+                )
+        elif ftype in ("text", "date"):
+            if field.get("value_text"):
+                page.insert_text(
+                    (x, y + 13),
+                    field["value_text"],
+                    fontsize=12,
+                    fontname="helv",
+                )
+
+
 def build_signed_pdf_multi(
     original_path: str,
     signers: list[dict],
     watermark: bool = True,
+    fields: list[dict] | None = None,
     brand_name: str = "",
 ) -> bytes:
     """Seal a document with one certificate section per signer.
@@ -127,6 +180,8 @@ def build_signed_pdf_multi(
     when they no longer fit.
     """
     doc = pymupdf.open(original_path)
+    if fields:
+        _stamp_fields(doc, fields)
     page = doc.new_page(width=PAGE_WIDTH, height=PAGE_HEIGHT)
     y = _render_header(page, brand_name)
 
