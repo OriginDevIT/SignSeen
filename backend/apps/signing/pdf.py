@@ -89,15 +89,22 @@ def _render_signer_section(page: pymupdf.Page, signer: dict, y: int) -> int:
     return y
 
 
-def _render_header(page: pymupdf.Page) -> int:
+def _render_header(page: pymupdf.Page, brand_name: str = "") -> int:
     y = MARGIN
     page.insert_text(
         (MARGIN, y), "SIGNATURE CERTIFICATE", fontsize=22, fontname="helv"
     )
     y += 28
+    # Sender branding (premium): the owner's brand takes the product
+    # line's place in the header; SignSeen stays named as the platform.
+    product_line = (
+        f"Signed via {brand_name} with SignSeen — Signed. Seen. Sealed."
+        if brand_name
+        else "Signed with SignSeen — Signed. Seen. Sealed."
+    )
     page.insert_text(
         (MARGIN, y),
-        "Signed with SignSeen — Signed. Seen. Sealed.",
+        product_line,
         fontsize=11,
         fontname="helv",
         color=(0.35, 0.35, 0.35),
@@ -162,6 +169,7 @@ def build_signed_pdf_multi(
     signers: list[dict],
     watermark: bool = True,
     fields: list[dict] | None = None,
+    brand_name: str = "",
 ) -> bytes:
     """Seal a document with one certificate section per signer.
 
@@ -175,7 +183,7 @@ def build_signed_pdf_multi(
     if fields:
         _stamp_fields(doc, fields)
     page = doc.new_page(width=PAGE_WIDTH, height=PAGE_HEIGHT)
-    y = _render_header(page)
+    y = _render_header(page, brand_name)
 
     for i, signer in enumerate(signers):
         if y + _signer_section_height(signer) > CONTENT_BOTTOM:
@@ -211,6 +219,7 @@ def build_signed_pdf(
     photo_png: bytes | None,
     meta: dict,
     watermark: bool = True,
+    brand_name: str = "",
 ) -> bytes:
     """Single-signer seal (the original entry point)."""
     signer = {
@@ -218,4 +227,6 @@ def build_signed_pdf(
         "photo_png": photo_png,
         **meta,
     }
-    return build_signed_pdf_multi(original_path, [signer], watermark=watermark)
+    return build_signed_pdf_multi(
+        original_path, [signer], watermark=watermark, brand_name=brand_name
+    )

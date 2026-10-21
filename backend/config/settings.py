@@ -11,6 +11,7 @@ DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
 ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "*").split(",")
 
 INSTALLED_APPS = [
+    "corsheaders",
     "django.contrib.contenttypes",
     "django.contrib.auth",
     "rest_framework",
@@ -21,8 +22,23 @@ INSTALLED_APPS = [
 ]
 
 MIDDLEWARE = [
+    "corsheaders.middleware.CorsMiddleware",
     "django.middleware.security.SecurityMiddleware",
     "django.middleware.common.CommonMiddleware",
+]
+
+# The web app is served from a different origin than this API in the
+# compose dev stack (localhost:3000 -> localhost:8000), and browsers
+# refuse those calls without CORS permission. Same-origin deployments
+# (one proxy in front of both) don't need it and are unaffected.
+# Comma-separated env override, e.g. for a split-origin deployment.
+CORS_ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get(
+        "CORS_ALLOWED_ORIGINS",
+        "http://localhost:3000,http://127.0.0.1:3000",
+    ).split(",")
+    if origin.strip()
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -80,6 +96,11 @@ DEFAULT_FROM_EMAIL = os.environ.get(
     "DEFAULT_FROM_EMAIL", "SignSeen <hello@getsignseen.com>"
 )
 
+# --- E2E fixtures -----------------------------------------------------------
+# Set only by docker-compose.test.yml. Gates the seed_e2e management
+# command, which creates known-password test accounts.
+ENABLE_E2E_FIXTURES = os.environ.get("ENABLE_E2E_FIXTURES", "0") == "1"
+
 # --- Stripe billing (premium tier) ------------------------------------------
 # All optional: with no keys set, billing endpoints answer 503 and the app
 # runs free-tier only. STRIPE_PRICE_ID is the Price created in the Stripe
@@ -88,6 +109,12 @@ STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_PUBLISHABLE_KEY = os.environ.get("STRIPE_PUBLISHABLE_KEY", "")
 STRIPE_PRICE_ID = os.environ.get("STRIPE_PRICE_ID", "")
 STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+
+# --- Google sign-in (OAuth for sender accounts, scope §3.10) ----------------
+# All optional: with no client ID set, /api/auth/google/ answers 503 and
+# password accounts are the only login. The web app uses the same client
+# ID as NEXT_PUBLIC_GOOGLE_CLIENT_ID.
+GOOGLE_OAUTH_CLIENT_ID = os.environ.get("GOOGLE_OAUTH_CLIENT_ID", "")
 
 # File storage for uploads, evidence images, and sealed PDFs.
 # (Object storage like GCS comes with the hosted deployment; local disk is

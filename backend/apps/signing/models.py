@@ -93,6 +93,10 @@ class SigningSession(models.Model):
         max_length=16, choices=Status.choices, default=Status.PENDING
     )
     expires_at = models.DateTimeField(default=default_session_expiry)
+    # Signing alerts: first time the signer opened the link, and when
+    # the expiring-soon (24h) alert was sent. Null = not yet.
+    viewed_at = models.DateTimeField(null=True, blank=True)
+    expiry_alert_sent_at = models.DateTimeField(null=True, blank=True)
     # v1 device evidence: normalized snapshot of the signer's device at
     # submit time (user agent, platform, screen, tz offset). The raw
     # client payload stays in the audit trail; this is the queryable copy.

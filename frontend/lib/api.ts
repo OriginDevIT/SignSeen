@@ -29,6 +29,11 @@ export interface DocumentInfo {
   signed_file: string | null;
   signing_mode: "sequential" | "parallel";
   sessions?: SessionSummary[];
+  /** The active signing session's URL. Returned to the document's
+   * owner only: present (URL or null) in dashboard payloads and in
+   * the single-document view for an authenticated owner; omitted
+   * entirely from the public document view for everyone else. */
+  signing_url?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -60,6 +65,12 @@ export interface FieldValue {
   value: string | boolean;
 }
 
+export interface SessionBranding {
+  name: string;
+  color: string;
+  logo: string | null;
+}
+
 export interface SessionInfo {
   id: string;
   document: string;
@@ -73,6 +84,7 @@ export interface SessionInfo {
   usable: boolean;
   /** True while an earlier signer in the sequence has not signed. */
   waiting: boolean;
+  branding: SessionBranding;
   expires_at: string;
   created_at: string;
   signing_url: string;
@@ -366,6 +378,7 @@ export interface AccountInfo {
   email: string;
   tier: "free" | "premium";
   is_premium: boolean;
+  alerts_enabled: boolean;
 }
 
 interface AuthResult {
@@ -407,6 +420,23 @@ export async function login(
   return result;
 }
 
+/** Sign up / log in with a Google ID token (verified server-side).
+ * The account is keyed by the verified Google email, so this links to
+ * an existing password account with the same email. */
+export async function loginWithGoogle(idToken: string): Promise<AuthResult> {
+  const result = await req<AuthResult>(
+    "/api/auth/google/",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id_token: idToken }),
+    },
+    { auth: false }
+  );
+  setAuthToken(result.token);
+  return result;
+}
+
 export async function logout(): Promise<void> {
   try {
     await req("/api/auth/logout/", { method: "POST" });
@@ -417,6 +447,57 @@ export async function logout(): Promise<void> {
 
 export function myAccount(): Promise<AccountInfo> {
   return req<AccountInfo>("/api/auth/me/");
+}
+
+/* ------------------------------------------------------------------ */
+/* Custom branding (premium accounts).                                 */
+/* ------------------------------------------------------------------ */
+
+export interface BrandingInfo {
+  brand_name: string;
+  brand_color: string;
+  brand_logo: string | null;
+}
+
+export function getBranding(): Promise<BrandingInfo> {
+  return req<BrandingInfo>("/api/auth/branding/");
+}
+
+/** Update branding. Sends multipart when a logo file is included
+ * (files can't ride JSON), plain JSON otherwise. Only the fields
+ * provided are sent — the API leaves the rest untouched. */
+export function updateBranding(input: {
+  brandName?: string;
+  brandColor?: string;
+  logoFile?: File | null;
+}): Promise<BrandingInfo> {
+  if (input.logoFile) {
+    const form = new FormData();
+    if (input.brandName !== undefined) form.append("brand_name", input.brandName);
+    if (input.brandColor !== undefined) form.append("brand_color", input.brandColor);
+    form.append("brand_logo", input.logoFile);
+    return req<BrandingInfo>("/api/auth/branding/", {
+      method: "PATCH",
+      body: form,
+    });
+  }
+  const body: Record<string, string> = {};
+  if (input.brandName !== undefined) body.brand_name = input.brandName;
+  if (input.brandColor !== undefined) body.brand_color = input.brandColor;
+  return req<BrandingInfo>("/api/auth/branding/", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
+/** Toggle signing alerts (viewed / expiring-soon emails) for this account. */
+export function setAlertsEnabled(enabled: boolean): Promise<AccountInfo> {
+  return req<AccountInfo>("/api/auth/me/", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ alerts_enabled: enabled }),
+  });
 }
 
 export function requestPasswordReset(email: string): Promise<void> {
@@ -465,11 +546,13 @@ export function myDashboard(): Promise<DashboardData> {
   return req<DashboardData>("/api/documents/mine/");
 }
 
-/** Public tracking page data for a document (status + signed download). */
+/** Tracking page data for a document (status + signed download).
+ * Sends the stored sender token when there is one: the server
+ * returns the owner-only signing_url to the document's owner and
+ * the public fields to everyone else (anonymous or stale-token
+ * requests included). */
 export function getDocument(docId: string): Promise<DocumentInfo> {
-  return req<DocumentInfo>(`/api/documents/${docId}/`, undefined, {
-    auth: false,
-  });
+  return req<DocumentInfo>(`/api/documents/${docId}/`);
 }
 
 /* ------------------------------------------------------------------ */

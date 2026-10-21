@@ -56,6 +56,7 @@ from .notifications import (
     send_sealed_notifications,
     send_signer_copy,
     send_signer_invite,
+    send_viewed_alert,
 )
 from .trust import assess_photo, normalize_photo
 from .models import AuditEvent, Document, DocumentField, SigningSession
@@ -257,13 +258,18 @@ def my_documents(request):
     as a signer — the signer enters their email at completion, and creating
     an account with that email gives them a personal archive (scope §3.10).
     """
-    docs = Document.objects.filter(owner=request.user).order_by("-created_at")
+    docs = (
+        Document.objects.filter(owner=request.user)
+        .prefetch_related("sessions")
+        .order_by("-created_at")
+    )
     signed_docs = (
         Document.objects.filter(
             sessions__signer_email__iexact=request.user.email,
             sessions__status=SigningSession.Status.SIGNED,
         )
         .exclude(owner=request.user)
+        .prefetch_related("sessions")
         .distinct()
         .order_by("-created_at")
     )
@@ -273,17 +279,39 @@ def my_documents(request):
             "is_premium": request.user.is_premium,
             "storage_used_bytes": storage_used_bytes(request.user, ""),
             "storage_limit_bytes": storage_limit_bytes(request.user),
-            "documents": DocumentSerializer(docs, many=True).data,
-            "signed_documents": DocumentSerializer(signed_docs, many=True).data,
+            # The request context is what lets the serializer expose
+            # each owned document's signing_url (owner-only; the
+            # signed_documents below belong to other senders and
+            # serialize with signing_url=None).
+            "documents": DocumentSerializer(
+                docs, many=True, context={"request": request}
+            ).data,
+            "signed_documents": DocumentSerializer(
+                signed_docs, many=True, context={"request": request}
+            ).data,
         }
     )
 
 
 @api_view(["GET"])
-@authentication_classes([])
+@authentication_classes([OptionalTokenAuthentication])
 def get_document(request, doc_id):
+    """Public tracking view of a document.
+
+    Anonymous and stale-token requesters get the public fields only.
+    An authenticated owner additionally gets the document's
+    signing_url (the active session's link, or None) so the tracking
+    page can offer the same copy-link/QR actions as the dashboard;
+    for everyone else the field is omitted entirely.
+    """
     doc = get_object_or_404(Document, pk=doc_id)
-    return Response(DocumentSerializer(doc).data)
+    data = DocumentSerializer(doc, context={"request": request}).data
+    is_owner = (
+        request.user.is_authenticated and doc.owner_id == request.user.pk
+    )
+    if not is_owner:
+        data.pop("signing_url", None)
+    return Response(data)
 
 
 # ---------------------------------------------------------------------------
@@ -552,6 +580,25 @@ def _prepare_field_values(session, raw_values):
 @authentication_classes([])
 def get_session(request, token):
     session = get_object_or_404(SigningSession, token=token)
+    if session.is_usable() and session.viewed_at is None:
+        # First view of a live pending session (signing.viewed alert):
+        # stamp it and add the audit event for every session; the email
+        # itself is premium + opt-in gated inside the notification
+        # helper. Best-effort — alerting must never fail the view.
+        session.viewed_at = timezone.now()
+        session.save(update_fields=["viewed_at"])
+        record_event(
+            session,
+            "signing.viewed",
+            {
+                "document_id": str(session.document_id),
+                "viewed_at": session.viewed_at.isoformat(),
+            },
+        )
+        try:
+            send_viewed_alert(session.document, session)
+        except Exception:
+            log.exception("viewed-alert email failed")
     return Response(SigningSessionSerializer(session).data)
 
 
@@ -759,6 +806,7 @@ def submit_signature(request, token):
                 signers,
                 watermark=wants_watermark(doc),
                 fields=completed_fields,
+                brand_name=(doc.owner.brand_name or "") if doc.owner else "",
             )
             doc.signed_file.save(f"signed-{doc.id}.pdf", ContentFile(signed_bytes))
             doc.status = Document.Status.SIGNED
