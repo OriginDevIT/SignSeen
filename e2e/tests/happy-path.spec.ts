@@ -41,20 +41,19 @@ test("happy path: send -> sign with photo -> sealed, audit chain valid", async (
   ).toBeVisible();
   await shot(signer, "02-signer-intro.png");
 
-  // View document opens the PDF in a new tab. The tab points straight
-  // at the API's PDF endpoint and headless Chromium has no PDF viewer
-  // (the navigation becomes a download, so no load state ever fires) —
-  // assert the URL, then verify the document itself over HTTP.
-  const [docTab] = await Promise.all([
-    signerContext.waitForEvent("page"),
-    signer.getByRole("link", { name: /View document/ }).click(),
-  ]);
-  await docTab.waitForURL(/\/document\//);
+  // View document links straight at the API's PDF endpoint with
+  // target=_blank. Headless Chromium has no PDF viewer — a real click
+  // turns the new tab's navigation into a download that never settles
+  // — so verify the link's target and markup here, and the document
+  // itself over HTTP.
+  const docLink = signer.getByRole("link", { name: /View document/ });
+  const docHref = await docLink.getAttribute("href");
+  expect(docHref).toContain("/document/");
+  expect(await docLink.getAttribute("target")).toBe("_blank");
   const api = await request.newContext({ baseURL: API_URL });
-  const docFileRes = await api.get(docTab.url());
+  const docFileRes = await api.get(docHref!);
   expect(docFileRes.ok()).toBeTruthy();
   expect(docFileRes.headers()["content-type"]).toContain("application/pdf");
-  await docTab.close();
 
   await signer.getByRole("button", { name: "Start signing" }).click();
   await expect(signer.locator("canvas")).toBeVisible();
