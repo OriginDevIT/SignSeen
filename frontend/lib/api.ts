@@ -148,6 +148,12 @@ async function req<T>(
   if (token) {
     headers.set("Authorization", `Token ${token}`);
   }
+  // A string body without an explicit Content-Type makes fetch send
+  // text/plain, which the API rejects with 415 (#51) — JSON is the
+  // wire format for every string body this client sends.
+  if (typeof init?.body === "string" && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
   const res = await fetch(`${API_BASE}${path}`, { ...init, headers });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) {
@@ -561,7 +567,7 @@ export function getDocument(docId: string): Promise<DocumentInfo> {
 /* ------------------------------------------------------------------ */
 
 export async function startCheckout(
-  plan: "monthly" | "annual" = "monthly",
+  plan: "monthly" | "annual" = "annual",
 ): Promise<string> {
   const { url } = await req<{ url: string }>("/api/billing/checkout/", {
     method: "POST",
