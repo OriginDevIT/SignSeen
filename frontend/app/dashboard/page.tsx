@@ -252,18 +252,18 @@ export default function DashboardPage() {
           ) : (
             <>
               <button
-                onClick={() => upgrade("monthly")}
+                onClick={() => upgrade("annual")}
                 disabled={busyBilling}
                 style={button}
               >
-                {busyBilling ? "…" : "Premium — $5/mo"}
+                {busyBilling ? "…" : "Premium — $50/yr"}
               </button>
               <button
-                onClick={() => upgrade("annual")}
+                onClick={() => upgrade("monthly")}
                 disabled={busyBilling}
                 style={ghost}
               >
-                {busyBilling ? "…" : "Premium — $50/yr"}
+                {busyBilling ? "…" : "Premium — $5/mo"}
               </button>
             </>
           )}
