@@ -40,6 +40,10 @@ npm test
   signing link, a mobile-emulated signer draws a signature, consents,
   adds a witness photo, and seals; the audit chain and sealed document
   are then verified through the API for the document the UI produced.
+- `tests/camera-path.spec.ts` — the same ceremony's photo step through
+  the real in-app camera UI (getUserMedia against Chromium's fake media
+  device), so a WitnessCamera regression cannot hide behind the
+  file-input fallback the happy path uses (#34).
 - `tests/fixtures.ts` — the sample PDF/photo, the signature-drawing
   helper, and `shot()`, the screenshot helper.
 
