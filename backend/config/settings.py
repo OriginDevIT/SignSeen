@@ -7,6 +7,23 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "dev-only-insecure-key")
+
+
+def _env_int(name: str, default: int) -> int:
+    """Integer env var where a BLANK value means 'use the default'.
+
+    Compose passthroughs and copied .env examples routinely set
+    variables to empty strings, and os.environ.get's default only
+    applies when the variable is absent — int('') crashed settings
+    import on staging (#49). A non-blank non-numeric value still
+    raises, failing loud on a real misconfiguration.
+    """
+    raw = os.environ.get(name, "")
+    if raw.strip() == "":
+        return default
+    return int(raw)
+
+
 DEBUG = os.environ.get("DJANGO_DEBUG", "1") == "1"
 ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "*").split(",")
 
@@ -48,16 +65,12 @@ if _secure_cookies is None:
 else:
     SESSION_COOKIE_SECURE = _secure_cookies == "1"
     CSRF_COOKIE_SECURE = _secure_cookies == "1"
-SECURE_HSTS_SECONDS = int(os.environ.get("DJANGO_HSTS_SECONDS", "0"))
+SECURE_HSTS_SECONDS = _env_int("DJANGO_HSTS_SECONDS", 0)
 SECURE_HSTS_INCLUDE_SUBDOMAINS = SECURE_HSTS_SECONDS > 0
 # Login brute-force guard (apps.accounts): failed attempts allowed per
 # email+IP inside the window before the login endpoint answers 429.
-LOGIN_MAX_FAILED_ATTEMPTS = int(
-    os.environ.get("LOGIN_MAX_FAILED_ATTEMPTS", "10")
-)
-LOGIN_FAILURE_WINDOW_SECONDS = int(
-    os.environ.get("LOGIN_FAILURE_WINDOW_SECONDS", "900")
-)
+LOGIN_MAX_FAILED_ATTEMPTS = _env_int("LOGIN_MAX_FAILED_ATTEMPTS", 10)
+LOGIN_FAILURE_WINDOW_SECONDS = _env_int("LOGIN_FAILURE_WINDOW_SECONDS", 900)
 # SSRF guard escape hatch for local development only (issue #39).
 URL_FETCH_ALLOW_PRIVATE = os.environ.get("URL_FETCH_ALLOW_PRIVATE", "0") == "1"
 
@@ -114,8 +127,8 @@ FREE_PENDING_DOC_LIMIT = 1
 FREE_STORAGE_BYTES = 100 * 1024 * 1024  # 100 MB total
 # Premium storage cap: 5 GB default, sized for the $5/mo price
 # (documents are PDFs; 5 GB is thousands of typical documents).
-PREMIUM_STORAGE_BYTES = int(
-    os.environ.get("PREMIUM_STORAGE_BYTES", str(5 * 1024 * 1024 * 1024))
+PREMIUM_STORAGE_BYTES = _env_int(
+    "PREMIUM_STORAGE_BYTES", 5 * 1024 * 1024 * 1024
 )
 
 # --- Email (transactional: signed copies, password resets) ------------------
@@ -124,7 +137,7 @@ EMAIL_BACKEND = os.environ.get(
     "EMAIL_BACKEND", "django.core.mail.backends.console.EmailBackend"
 )
 EMAIL_HOST = os.environ.get("EMAIL_HOST", "")
-EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
+EMAIL_PORT = _env_int("EMAIL_PORT", 587)
 EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
 EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "1") == "1"
@@ -154,8 +167,8 @@ STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
 # Billing lifecycle (issue #36): days a payment-failed premium account
 # stays suspended before it expires, and days an expired account's
 # stored documents are kept before they are purged.
-BILLING_SUSPENSION_DAYS = int(os.environ.get("BILLING_SUSPENSION_DAYS", "180"))
-BILLING_PURGE_DAYS = int(os.environ.get("BILLING_PURGE_DAYS", "180"))
+BILLING_SUSPENSION_DAYS = _env_int("BILLING_SUSPENSION_DAYS", 180)
+BILLING_PURGE_DAYS = _env_int("BILLING_PURGE_DAYS", 180)
 
 # --- Google sign-in (OAuth for sender accounts, scope §3.10) ----------------
 # All optional: with no client ID set, /api/auth/google/ answers 503 and
