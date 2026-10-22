@@ -219,8 +219,23 @@ describe("auth", () => {
     const [reqUrl, init] = vi.mocked(fetch).mock.calls[0];
     expect(reqUrl).toContain("/api/billing/checkout/");
     expect(init?.method).toBe("POST");
-    expect(JSON.parse(String(init?.body))).toEqual({ plan: "monthly" });
+    // Default plan is annual (#52).
+    expect(JSON.parse(String(init?.body))).toEqual({ plan: "annual" });
     expect(url).toBe("https://checkout.stripe/x");
+  });
+
+  it("startCheckout sends a JSON Content-Type on the wire (#51)", async () => {
+    const { startCheckout } = await import("./api");
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({ url: "https://checkout.stripe/z" })
+    );
+    await startCheckout("monthly");
+    const [, init] = vi.mocked(fetch).mock.calls[0];
+    // Regression: a string body without this header makes fetch send
+    // text/plain, and the API answers 415 Unsupported Media Type.
+    const headers = new Headers(init?.headers);
+    expect(headers.get("Content-Type")).toBe("application/json");
+    expect(JSON.parse(String(init?.body))).toEqual({ plan: "monthly" });
   });
 
   it("startCheckout sends the annual plan on the wire", async () => {
