@@ -203,9 +203,9 @@ export default function DashboardPage() {
 
   return (
     <main style={page}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.5rem" }}>
         <h1 style={{ margin: 0 }}>Your documents</h1>
-        <div style={{ display: "flex", gap: "0.5rem" }}>
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
           <a href="/send" onClick={onSendClick} style={{ ...button, textDecoration: "none" }}>
             Send a document
           </a>
@@ -420,7 +420,7 @@ export default function DashboardPage() {
                 href={`/d/${d.id}`}
                 style={{ textDecoration: "none", color: "inherit", display: "block" }}
               >
-                <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
                   <div style={{ fontWeight: 600 }}>{d.title}</div>
                   <div
                     style={{
@@ -519,7 +519,7 @@ export default function DashboardPage() {
                 href={`/d/${d.id}`}
                 style={{ ...card, textDecoration: "none", color: "inherit" }}
               >
-                <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
                   <div style={{ fontWeight: 600 }}>{d.title}</div>
                   <div
                     style={{

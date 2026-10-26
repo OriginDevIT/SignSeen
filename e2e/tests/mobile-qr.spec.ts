@@ -66,8 +66,10 @@ test("QR in the dashboard signing-link panel fits a 360px phone", async ({
 
   // Seeded test-stack account only (see seed_e2e); the doc created
   // while logged in attaches to the account and appears on /dashboard.
+  // Premium, not free: the free tier allows 1 pending document, so a
+  // retried run would hit the limit on its second document.
   await page.goto("/login");
-  await page.getByPlaceholder("Email").fill("e2e-free@example.com");
+  await page.getByPlaceholder("Email").fill("e2e-premium@example.com");
   await page.getByPlaceholder("Password").fill("e2e-password-123");
   await page.getByRole("button", { name: "Log in" }).click();
   await expect(page.getByText("Your documents")).toBeVisible();
