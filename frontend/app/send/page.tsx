@@ -312,20 +312,28 @@ export default function SendPage() {
               </div>
               <div
                 style={{
-                  display: "inline-block",
                   background: "#fff",
                   padding: 12,
                   borderRadius: 8,
                   border: "1px solid #e5e7eb",
+                  // Fixed-size QR overflows narrow phones; the SVG scales
+                  // down with the viewport instead (#47).
+                  width: "min(184px, 72vw)",
+                  boxSizing: "border-box",
                 }}
               >
-                <QRCodeSVG value={sess.signing_url} size={160} />
+                <QRCodeSVG
+                  value={sess.signing_url}
+                  size={160}
+                  style={{ width: "100%", height: "auto", display: "block" }}
+                />
               </div>
               <div
                 style={{
                   display: "flex",
                   gap: "0.5rem",
                   alignItems: "center",
+                  flexWrap: "wrap",
                   background: "#f9fafb",
                   border: "1px solid #e5e7eb",
                   borderRadius: 8,
@@ -337,9 +345,8 @@ export default function SendPage() {
                 <code
                   style={{
                     flex: 1,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
+                    minWidth: 0,
+                    overflowWrap: "anywhere",
                     fontSize: "0.85rem",
                     textAlign: "left",
                   }}

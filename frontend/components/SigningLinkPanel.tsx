@@ -24,7 +24,7 @@ export default function SigningLinkPanel({
   };
 
   const smallBtn: React.CSSProperties = {
-    padding: "0.45rem 0.8rem",
+    padding: "0.6rem 0.9rem",
     fontSize: "0.85rem",
     borderRadius: 8,
     border: "1px solid #d1d5db",
@@ -59,19 +59,26 @@ export default function SigningLinkPanel({
         >
           <div
             style={{
-              display: "inline-block",
               background: "#fff",
               padding: 10,
               borderRadius: 8,
               border: "1px solid #e5e7eb",
+              // Fixed-size QR overflows narrow phones; the SVG scales
+              // down with the viewport instead (#47).
+              width: "min(182px, 72vw)",
+              boxSizing: "border-box",
             }}
           >
-            <QRCodeSVG value={signingUrl} size={160} />
+            <QRCodeSVG
+              value={signingUrl}
+              size={160}
+              style={{ width: "100%", height: "auto", display: "block" }}
+            />
           </div>
           <code
             style={{
               flex: 1,
-              minWidth: "12rem",
+              minWidth: 0,
               overflowWrap: "anywhere",
               fontSize: "0.8rem",
               opacity: 0.75,
