@@ -501,6 +501,37 @@ def test_sealed_pdf_carries_free_tier_watermark():
 
 
 @pytest.mark.django_db
+def test_e2e_sealed_page_renders_only_with_fixtures_enabled():
+    """Gallery endpoint (#31 step 3): PNG for a sealed doc when the
+    test-stack flag is on; 404 when it is off, when the doc is
+    unsealed, and when the page is out of range."""
+    client = APIClient()
+    doc_id = upload_document(client).json()["id"]
+    token = client.post(
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "J"}, format="json"
+    ).json()["token"]
+    url = f"/api/e2e/sealed/{doc_id}/page/1.png"
+    # Unsealed: 404 even with the flag on.
+    with override_settings(ENABLE_E2E_FIXTURES=True):
+        assert client.get(url).status_code == 404
+    response = client.post(
+        f"/api/sessions/{token}/sign/",
+        {"signature": SIG_DATA_URL, "device_info": {}},
+        format="json",
+    )
+    assert response.status_code == 200
+    with override_settings(ENABLE_E2E_FIXTURES=True):
+        rendered = client.get(url)
+        assert rendered.status_code == 200
+        assert rendered["Content-Type"] == "image/png"
+        assert rendered.content[:8] == b"\x89PNG\r\n\x1a\n"
+        assert client.get(f"/api/e2e/sealed/{doc_id}/page/99.png").status_code == 404
+    # Flag off: the route is dead even for a sealed document.
+    with override_settings(ENABLE_E2E_FIXTURES=False):
+        assert client.get(url).status_code == 404
+
+
+@pytest.mark.django_db
 def test_cleanup_expired_marks_stale_sessions():
     from django.core.management import call_command
 
