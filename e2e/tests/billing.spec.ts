@@ -108,6 +108,7 @@ test("billing checkout: 4242 card -> return -> signed webhook -> Premium", async
   const { signingUrl } = await createSigningLink(page, {
     title: `E2E Billing Doc ${id}`,
     senderEmail: email,
+    signerEmail: `e2e-billing-signer-${id}@example.com`,
   });
   await sealCeremony(browser, signingUrl);
 });

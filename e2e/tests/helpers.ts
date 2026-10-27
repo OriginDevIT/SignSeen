@@ -11,19 +11,17 @@ export function apiContext() {
 }
 
 // Create a document + signing link through the desktop /send form.
-// Filling the signer email keeps the spec valid before and after the
-// email-first send change (PR #58): pre-merge it pre-defines the signer,
-// post-merge it satisfies the requirement.
+// The signer email is required by the form since the email-first send
+// change (#58), so it is a required option here: a spec that forgets
+// it would stall at "Ready to sign" instead of failing at the call.
 export async function createSigningLink(
   page: Page,
-  opts: { title: string; senderEmail: string; signerEmail?: string },
+  opts: { title: string; senderEmail: string; signerEmail: string },
 ): Promise<{ signingUrl: string; token: string }> {
   await page.goto("/send");
   await page.getByPlaceholder("e.g. Contractor Agreement").fill(opts.title);
   await page.getByPlaceholder("you@example.com").first().fill(opts.senderEmail);
-  if (opts.signerEmail) {
-    await page.getByPlaceholder("jane@example.com").fill(opts.signerEmail);
-  }
+  await page.getByPlaceholder("jane@example.com").fill(opts.signerEmail);
   await page.locator('input[type="file"]').setInputFiles(samplePdf());
   await page.getByRole("button", { name: "Create signing link" }).click();
   await expect(page.getByText("Ready to sign")).toBeVisible();

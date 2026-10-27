@@ -108,6 +108,7 @@ test("dashboard: logged-in send appears pending, sender email prefilled", async 
   const { token } = await createSigningLink(page, {
     title,
     senderEmail: email,
+    signerEmail: `e2e-dash-signer-${id}@example.com`,
   });
   await shot(page, "09-dashboard-send.png");
 
@@ -208,6 +209,7 @@ test("premium branding: seeded premium account brands, seals, joins the gallery"
   const { signingUrl, token } = await createSigningLink(page, {
     title: `E2E Brand Doc ${id}`,
     senderEmail: "e2e-premium@example.com",
+    signerEmail: `e2e-brand-signer-${id}@example.com`,
   });
   await sealCeremony(browser, signingUrl, { withPhoto: true });
   await shot(page, "10-premium-branding.png");
