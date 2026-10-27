@@ -84,6 +84,13 @@ export default function SendPage() {
   // signer 1 has signed, and the document seals at the final signature.
   const addSigner = async () => {
     if (!docId) return;
+    // The add-signer block is not a <form>, so `required` on the input
+    // would not block this click — guard here instead (the API also
+    // rejects a missing signer email with 400).
+    if (!nextSignerEmail.trim()) {
+      setError("A signer email is required — the signer is emailed their signing link and the document to sign.");
+      return;
+    }
     setError("");
     setAddingSigner(true);
     try {
@@ -120,8 +127,8 @@ export default function SendPage() {
         Send a document for signature
       </h1>
       <p style={{ opacity: 0.65, marginTop: 0, marginBottom: "1.5rem" }}>
-        Upload a PDF and get a signing link + QR code. The signer needs no
-        account.
+        Upload a PDF — the signer is emailed their signing link and the
+        document to sign. The signer needs no account.
       </p>
       {accountEmail ? (
         <p style={{ fontSize: "0.9rem", opacity: 0.7, marginTop: "-1rem", marginBottom: "1.5rem" }}>
@@ -202,10 +209,11 @@ export default function SendPage() {
             />
           </label>
           <label style={{ display: "grid", gap: "0.35rem" }}>
-            Signer email <span style={{ opacity: 0.6 }}>(optional — pre-defines the signer; they are emailed their signing link when their turn comes)</span>
+            Signer email <span style={{ opacity: 0.6 }}>(required — the signer is emailed their signing link and the document to sign)</span>
             <input
               style={inputStyle}
               type="email"
+              required
               value={signerEmail}
               onChange={(e) => setSignerEmail(e.target.value)}
               placeholder="jane@example.com"
@@ -370,8 +378,9 @@ export default function SendPage() {
             </div>
           ))}
           <p style={{ opacity: 0.6, fontSize: "0.9rem", margin: 0 }}>
-            These links expire in 30 days. Send each signer their link by
-            email or text — no account needed on their end.
+            Each signer has been emailed their signing link and the
+            document to sign. Links expire in 30 days — no account
+            needed on their end.
           </p>
           {docId && (
             <p style={{ fontSize: "0.95rem", margin: 0 }}>
@@ -397,7 +406,7 @@ export default function SendPage() {
                   type="email"
                   value={nextSignerEmail}
                   onChange={(e) => setNextSignerEmail(e.target.value)}
-                  placeholder="Next signer email (optional — emailed their link on their turn)"
+                  placeholder="Next signer email (required — emailed their link and the document on their turn)"
                 />
               </label>
               <button

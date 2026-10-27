@@ -458,10 +458,19 @@ def create_session(request, doc_id):
     except LimitExceeded as exc:
         return _error(str(exc), 409)
 
+    # Email-first delivery: the signer is always emailed their
+    # signing link and the document, so a session cannot exist
+    # without an address to send it to.
+    signer_email = (request.data.get("signer_email") or "").strip()
+    if not signer_email:
+        return _error(
+            "signer_email is required — the signer is emailed their "
+            "signing link and the document to sign"
+        )
     session = SigningSession.objects.create(
         document=doc,
         signer_name=(request.data.get("signer_name") or "").strip(),
-        signer_email=(request.data.get("signer_email") or "").strip(),
+        signer_email=signer_email,
         order=doc.sessions.count(),
     )
     record_event(
