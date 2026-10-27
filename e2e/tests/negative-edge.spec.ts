@@ -19,6 +19,7 @@ test("double-sign: revisiting a sealed link says it is no longer active", async 
   const { signingUrl } = await createSigningLink(page, {
     title: `E2E Double ${id}`,
     senderEmail: `e2e-double-${id}@example.com`,
+    signerEmail: `e2e-signer-${id}@example.com`,
   });
   await sealCeremony(browser, signingUrl);
   await page.goto(signingUrl);
@@ -35,6 +36,7 @@ test("bad file: a .txt upload is rejected with a clear error", async ({
     .getByPlaceholder("you@example.com")
     .first()
     .fill(`e2e-bad-${id}@example.com`);
+  await page.getByPlaceholder("jane@example.com").fill(`e2e-bad-signer-${id}@example.com`);
   await page.locator('input[type="file"]').setInputFiles({
     name: "notes.txt",
     mimeType: "text/plain",
@@ -54,6 +56,7 @@ test("empty signature: Looks good without ink stays on the sign step", async ({
   const { signingUrl } = await createSigningLink(page, {
     title: `E2E Empty ${id}`,
     senderEmail: `e2e-empty-${id}@example.com`,
+    signerEmail: `e2e-signer-${id}@example.com`,
   });
   const signerContext = await browser.newContext({ ...devices["Pixel 7"] });
   const signer = await signerContext.newPage();
@@ -77,6 +80,7 @@ test("skipped photo: seals fine, event payload carries no photo", async ({
   const { signingUrl, token } = await createSigningLink(page, {
     title: `E2E NoPhoto ${id}`,
     senderEmail: `e2e-nophoto-${id}@example.com`,
+    signerEmail: `e2e-signer-${id}@example.com`,
   });
   await sealCeremony(browser, signingUrl);
   const api = await apiContext();
@@ -105,10 +109,12 @@ test("second pending doc, anonymous: same sender email hits the free 409", async
   await createSigningLink(page, {
     title: `E2E Limit A ${id}`,
     senderEmail,
+    signerEmail: `e2e-signer-${id}@example.com`,
   });
   await createSigningLink(page, {
     title: `E2E Limit B ${id}`,
     senderEmail,
+    signerEmail: `e2e-signer-${id}@example.com`,
   }).catch(async () => {
     // createSigningLink expects "Ready to sign"; the 409 lands on the
     // form instead, which is the assertion below.
@@ -136,6 +142,7 @@ test("second pending doc, account: the limit is keyed on email, not account", as
   await createSigningLink(page, {
     title: `E2E Limit Anon ${id}`,
     senderEmail: email,
+    signerEmail: `e2e-signer-${id}@example.com`,
   });
 
   await page.goto("/login");
@@ -145,6 +152,7 @@ test("second pending doc, account: the limit is keyed on email, not account", as
   await expect(page.getByRole("heading", { name: "Your documents" })).toBeVisible();
   await page.goto("/send");
   await page.getByPlaceholder("e.g. Contractor Agreement").fill(`E2E Limit Acct ${id}`);
+  await page.getByPlaceholder("jane@example.com").fill(`e2e-limit-acct-signer-${id}@example.com`);
   await page.locator('input[type="file"]').setInputFiles(samplePdf());
   await page.getByRole("button", { name: "Create signing link" }).click();
   await expect(
@@ -159,6 +167,7 @@ test("second signing session on one document: API 409", async ({
   const { token } = await createSigningLink(page, {
     title: `E2E Second ${id}`,
     senderEmail: `e2e-second-${id}@example.com`,
+    signerEmail: `e2e-signer-${id}@example.com`,
   });
   const docId = await documentIdForToken(token);
   const api = await apiContext();
@@ -177,6 +186,7 @@ test("regression: a stale sender token in localStorage must not break a signing 
   const { signingUrl } = await createSigningLink(page, {
     title: `E2E Stale ${id}`,
     senderEmail: `e2e-stale-${id}@example.com`,
+    signerEmail: `e2e-signer-${id}@example.com`,
   });
   const signerContext = await browser.newContext({ ...devices["Pixel 7"] });
   const signer = await signerContext.newPage();

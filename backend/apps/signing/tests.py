@@ -564,8 +564,12 @@ def test_e2e_sealed_page_renders_only_with_fixtures_enabled():
     unsealed, and when the page is out of range."""
     client = APIClient()
     doc_id = upload_document(client).json()["id"]
+    # Session creation requires a signer email since the email-first
+    # send change (#58); this test predates it (landed in #59).
     token = client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "J"}, format="json"
+        f"/api/documents/{doc_id}/sessions/",
+        {"signer_name": "J", "signer_email": "jane@example.com"},
+        format="json",
     ).json()["token"]
     url = f"/api/e2e/sealed/{doc_id}/page/1.png"
     # Unsealed: 404 even with the flag on.

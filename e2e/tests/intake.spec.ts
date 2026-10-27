@@ -16,6 +16,7 @@ test("docx intake: converts, renders as PDF, seals", async ({
   await page.goto("/send");
   await page.getByPlaceholder("e.g. Contractor Agreement").fill(title);
   await page.getByPlaceholder("you@example.com").first().fill(senderEmail);
+  await page.getByPlaceholder("jane@example.com").fill(`e2e-intake-signer-${id}@example.com`);
   await page
     .locator('input[type="file"]')
     .setInputFiles(path.join(__dirname, "sample.docx"));
@@ -56,6 +57,7 @@ test("web page intake: renders the page to PDF, seals", async ({
   await page.goto("/send");
   await page.getByPlaceholder("e.g. Contractor Agreement").fill(title);
   await page.getByPlaceholder("you@example.com").first().fill(senderEmail);
+  await page.getByPlaceholder("jane@example.com").fill(`e2e-intake-signer-${id}@example.com`);
   await page.getByRole("button", { name: "From a web page" }).click();
   await page.getByPlaceholder("https://example.com/terms").fill(pageUrl);
   await page.getByRole("button", { name: "Create signing link" }).click();
