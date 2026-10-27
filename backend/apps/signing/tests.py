@@ -96,11 +96,65 @@ def test_create_session_returns_token_and_signing_url():
 
 
 @pytest.mark.django_db
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+def test_create_session_requires_signer_email():
+    from django.core import mail
+
+    client = APIClient()
+    doc_id = upload_document(client).json()["id"]
+    assert (
+        client.post(
+            f"/api/documents/{doc_id}/sessions/",
+            {"signer_name": "Jane"},
+            format="json",
+        ).status_code
+        == 400
+    )
+    assert (
+        client.post(
+            f"/api/documents/{doc_id}/sessions/",
+            {"signer_name": "Jane", "signer_email": "  "},
+            format="json",
+        ).status_code
+        == 400
+    )
+    assert SigningSession.objects.count() == 0
+
+
+@pytest.mark.django_db
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+def test_signer_invite_attaches_unsigned_pdf():
+    # Email-first delivery: the invite alone must be everything the
+    # signer needs — signing link plus the document to sign.
+    from django.core import mail
+
+    client = APIClient()
+    doc_id = upload_document(client).json()["id"]
+    assert (
+        client.post(
+            f"/api/documents/{doc_id}/sessions/",
+            {"signer_name": "Jane", "signer_email": "jane@example.com"},
+            format="json",
+        ).status_code
+        == 201
+    )
+    invites = [m for m in mail.outbox if m.subject.startswith("Please sign:")]
+    assert len(invites) == 1
+    invite = invites[0]
+    assert invite.to == ["jane@example.com"]
+    assert "/s/" in invite.body
+    assert len(invite.attachments) == 1
+    filename, _content, mime = invite.attachments[0]
+    assert filename == "contract.pdf"
+    assert mime == "application/pdf"
+
+
+@pytest.mark.django_db
 def test_full_ceremony_signs_seals_and_verifies():
     client = APIClient()
     doc_id = upload_document(client).json()["id"]
     token = client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Jane"}, format="json"
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Jane", "signer_email": "jane@example.com"}, format="json"
     ).json()["token"]
 
     response = client.post(
@@ -137,7 +191,7 @@ def test_double_sign_is_rejected():
     client = APIClient()
     doc_id = upload_document(client).json()["id"]
     token = client.post(
-        f"/api/documents/{doc_id}/sessions/", {}, format="json"
+        f"/api/documents/{doc_id}/sessions/", {"signer_email": "jane@example.com"}, format="json"
     ).json()["token"]
     payload = {"signature": SIG_DATA_URL}
     assert client.post(f"/api/sessions/{token}/sign/", payload, format="json").status_code == 200
@@ -150,7 +204,7 @@ def test_expired_session_cannot_sign():
     client = APIClient()
     doc_id = upload_document(client).json()["id"]
     token = client.post(
-        f"/api/documents/{doc_id}/sessions/", {}, format="json"
+        f"/api/documents/{doc_id}/sessions/", {"signer_email": "jane@example.com"}, format="json"
     ).json()["token"]
     session = SigningSession.objects.get(token=token)
     session.expires_at = timezone.now() - timedelta(seconds=1)
@@ -167,7 +221,7 @@ def test_tampered_chain_is_detected():
     client = APIClient()
     doc_id = upload_document(client).json()["id"]
     token = client.post(
-        f"/api/documents/{doc_id}/sessions/", {}, format="json"
+        f"/api/documents/{doc_id}/sessions/", {"signer_email": "jane@example.com"}, format="json"
     ).json()["token"]
     client.post(
         f"/api/sessions/{token}/sign/", {"signature": SIG_DATA_URL}, format="json"
@@ -191,7 +245,7 @@ def test_sign_requires_a_signature_image():
     client = APIClient()
     doc_id = upload_document(client).json()["id"]
     token = client.post(
-        f"/api/documents/{doc_id}/sessions/", {}, format="json"
+        f"/api/documents/{doc_id}/sessions/", {"signer_email": "jane@example.com"}, format="json"
     ).json()["token"]
     response = client.post(f"/api/sessions/{token}/sign/", {}, format="json")
     assert response.status_code == 400
@@ -199,10 +253,13 @@ def test_sign_requires_a_signature_image():
 
 @pytest.mark.django_db
 def test_sign_captures_signer_email():
+    # Email-first delivery requires an address at creation; the sign
+    # payload can still correct it (e.g. the invite went to a stale
+    # address) and the corrected address is what the session keeps.
     client = APIClient()
     doc_id = upload_document(client).json()["id"]
     token = client.post(
-        f"/api/documents/{doc_id}/sessions/", {}, format="json"
+        f"/api/documents/{doc_id}/sessions/", {"signer_email": "old@example.com"}, format="json"
     ).json()["token"]
     response = client.post(
         f"/api/sessions/{token}/sign/",
@@ -219,7 +276,7 @@ def test_session_document_serves_pdf_to_token_holder():
     client = APIClient()
     doc_id = upload_document(client).json()["id"]
     token = client.post(
-        f"/api/documents/{doc_id}/sessions/", {}, format="json"
+        f"/api/documents/{doc_id}/sessions/", {"signer_email": "jane@example.com"}, format="json"
     ).json()["token"]
     response = client.get(f"/api/sessions/{token}/document/")
     assert response.status_code == 200
@@ -422,7 +479,7 @@ def test_normalize_photo_applies_exif_orientation():
 def _sign_with_photo(client, photo_bytes, consent=True, device_info=None):
     doc_id = upload_document(client).json()["id"]
     token = client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Jane"}, format="json"
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Jane", "signer_email": "jane@example.com"}, format="json"
     ).json()["token"]
     payload = {
         "signature": SIG_DATA_URL,
@@ -485,7 +542,7 @@ def test_sealed_pdf_carries_free_tier_watermark():
     client = APIClient()
     doc_id = upload_document(client).json()["id"]
     token = client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "J"}, format="json"
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "J", "signer_email": "jane@example.com"}, format="json"
     ).json()["token"]
     response = client.post(
         f"/api/sessions/{token}/sign/",
@@ -507,11 +564,11 @@ def test_cleanup_expired_marks_stale_sessions():
     client = APIClient()
     stale_doc_id = upload_document(client, email="old@example.com").json()["id"]
     stale_token = client.post(
-        f"/api/documents/{stale_doc_id}/sessions/", {"signer_name": "Old"}, format="json"
+        f"/api/documents/{stale_doc_id}/sessions/", {"signer_name": "Old", "signer_email": "old@example.com"}, format="json"
     ).json()["token"]
     fresh_doc_id = upload_document(client, title="Fresh", email="new@example.com").json()["id"]
     fresh_token = client.post(
-        f"/api/documents/{fresh_doc_id}/sessions/", {"signer_name": "New"}, format="json"
+        f"/api/documents/{fresh_doc_id}/sessions/", {"signer_name": "New", "signer_email": "new@example.com"}, format="json"
     ).json()["token"]
     stale = SigningSession.objects.get(token=stale_token)
     stale.expires_at = timezone.now() - timedelta(seconds=1)
@@ -571,7 +628,7 @@ def test_signed_document_frees_the_pending_slot():
     client = APIClient()
     doc_id = upload_document(client).json()["id"]
     token = client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "J"}, format="json"
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "J", "signer_email": "jane@example.com"}, format="json"
     ).json()["token"]
     assert client.post(
         f"/api/sessions/{token}/sign/",
@@ -615,10 +672,10 @@ def test_second_signing_session_is_rejected():
     client = APIClient()
     doc_id = upload_document(client).json()["id"]
     assert client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "One"}, format="json"
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "One", "signer_email": "one@example.com"}, format="json"
     ).status_code == 201
     second = client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Two"}, format="json"
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Two", "signer_email": "two@example.com"}, format="json"
     )
     assert second.status_code == 409
 
@@ -638,7 +695,7 @@ def test_my_documents_requires_auth_and_reports_usage():
 
 def _sign_and_get_pdf_text(client, doc_id):
     token = client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "J"}, format="json"
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "J", "signer_email": "jane@example.com"}, format="json"
     ).json()["token"]
     assert client.post(
         f"/api/sessions/{token}/sign/",
@@ -661,7 +718,7 @@ def test_free_document_is_watermarked_premium_is_not():
     client = _auth_client(account)
     pro_doc_id = upload_document(client, email=account.email).json()["id"]
     token = client.post(
-        f"/api/documents/{pro_doc_id}/sessions/", {"signer_name": "J"}, format="json"
+        f"/api/documents/{pro_doc_id}/sessions/", {"signer_name": "J", "signer_email": "jane@example.com"}, format="json"
     ).json()["token"]
     assert client.post(
         f"/api/sessions/{token}/sign/",
@@ -682,7 +739,7 @@ def test_sealed_email_goes_to_sender_and_signer():
     client = APIClient()
     doc_id = upload_document(client, email="sender@example.com").json()["id"]
     token = client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "J"}, format="json"
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "J", "signer_email": "jane@example.com"}, format="json"
     ).json()["token"]
     assert client.post(
         f"/api/sessions/{token}/sign/",
@@ -693,9 +750,12 @@ def test_sealed_email_goes_to_sender_and_signer():
         },
         format="json",
     ).status_code == 200
-    recipients = sorted(m.to[0] for m in mail.outbox)
+    # The invite (to the creation-time address) is also in the outbox;
+    # the sealed copies are what this test owns.
+    sealed = [m for m in mail.outbox if m.subject.startswith("Signed:")]
+    recipients = sorted(m.to[0] for m in sealed)
     assert recipients == ["sender@example.com", "signer@example.com"]
-    for message in mail.outbox:
+    for message in sealed:
         assert len(message.attachments) == 1
         assert "Audit seal" in message.body
 
@@ -742,7 +802,7 @@ def test_signer_archive_shows_documents_they_signed():
     sender = APIClient()
     doc_id = upload_document(sender, email="sender2@example.com").json()["id"]
     token = sender.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Sig"}, format="json"
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Sig", "signer_email": "sig@example.com"}, format="json"
     ).json()["token"]
     assert sender.post(
         f"/api/sessions/{token}/sign/",
@@ -791,7 +851,7 @@ def test_signer_endpoints_ignore_stale_sender_token():
     anon = APIClient()
     doc_id = upload_document(anon).json()["id"]
     token = anon.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Jane"}, format="json"
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Jane", "signer_email": "jane@example.com"}, format="json"
     ).json()["token"]
 
     stale = _stale_client()
@@ -833,7 +893,7 @@ def test_anonymous_upload_with_stale_token_degrades_to_anonymous():
     # Session creation on that document works the same way.
     session = stale.post(
         f"/api/documents/{response.json()['id']}/sessions/",
-        {"signer_name": "Jane"},
+        {"signer_name": "Jane", "signer_email": "jane@example.com"},
         format="json",
     )
     assert session.status_code == 201
@@ -849,7 +909,7 @@ def test_anonymous_upload_with_stale_token_degrades_to_anonymous():
 def _sign_document(client, email="sender@example.com"):
     doc_id = upload_document(client, email=email).json()["id"]
     token = client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Jane"}, format="json"
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Jane", "signer_email": "jane@example.com"}, format="json"
     ).json()["token"]
     assert client.post(
         f"/api/sessions/{token}/sign/",
@@ -866,21 +926,28 @@ def test_signer_email_at_completion_sends_copy_and_links_archive():
 
     client = APIClient()
     doc_id, token = _sign_document(client)
-    # Seal-time mail went to the sender only (no signer email known yet).
-    assert [m.to for m in mail.outbox] == [["sender@example.com"]]
+    # Seal-time mail went to the sender and the invited signer (the
+    # session now carries an email from creation under email-first
+    # delivery; the earlier invite is also in the outbox); the
+    # completion endpoint can still redirect the copy to a different
+    # address.
+    assert [m.to for m in mail.outbox if m.subject.startswith("Signed:")] == [
+        ["sender@example.com"],
+        ["jane@example.com"],
+    ]
 
     # A stale sender Authorization header must not matter here either.
     stale = APIClient()
     stale.credentials(HTTP_AUTHORIZATION="Token stale-token-no-longer-in-db")
     response = stale.post(
         f"/api/sessions/{token}/signer-email/",
-        {"email": "jane@example.com"},
+        {"email": "jane-copy@example.com"},
         format="json",
     )
     assert response.status_code == 200
     session = SigningSession.objects.get(token=token)
-    assert session.signer_email == "jane@example.com"
-    assert [m.to for m in mail.outbox][-1] == ["jane@example.com"]
+    assert session.signer_email == "jane-copy@example.com"
+    assert [m.to for m in mail.outbox][-1] == ["jane-copy@example.com"]
     assert session.events.filter(event_type="signer.email_provided").exists()
     assert verify_chain(session) is True
 
@@ -888,7 +955,7 @@ def test_signer_email_at_completion_sends_copy_and_links_archive():
     account_client = APIClient()
     auth = account_client.post(
         "/api/auth/signup/",
-        {"email": "jane@example.com", "password": "longpassword1"},
+        {"email": "jane-copy@example.com", "password": "longpassword1"},
         format="json",
     ).json()["token"]
     account_client.credentials(HTTP_AUTHORIZATION=f"Token {auth}")
@@ -901,7 +968,7 @@ def test_signer_email_rejected_before_signing_and_when_invalid():
     client = APIClient()
     doc_id = upload_document(client).json()["id"]
     token = client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Jane"}, format="json"
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Jane", "signer_email": "jane@example.com"}, format="json"
     ).json()["token"]
     pending = client.post(
         f"/api/sessions/{token}/signer-email/",
@@ -917,7 +984,11 @@ def test_signer_email_rejected_before_signing_and_when_invalid():
         format="json",
     )
     assert bad.status_code == 400
-    assert SigningSession.objects.get(token=signed_token).signer_email == ""
+    # The rejected address leaves the invite-time address untouched.
+    assert (
+        SigningSession.objects.get(token=signed_token).signer_email
+        == "jane@example.com"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -940,7 +1011,7 @@ def test_session_payload_exposes_owner_branding():
     client = _auth_client(account)
     doc_id = upload_document(client, email=account.email).json()["id"]
     token = client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Jane"}, format="json"
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Jane", "signer_email": "jane@example.com"}, format="json"
     ).json()["token"]
     body = APIClient().get(f"/api/sessions/{token}/").json()
     assert body["branding"] == {"name": "Acme Legal", "color": "#123abc", "logo": None}
@@ -951,7 +1022,7 @@ def test_session_payload_branding_empty_for_anonymous_and_unbranded():
     anon = APIClient()
     doc_id = upload_document(anon).json()["id"]
     token = anon.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Jane"}, format="json"
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Jane", "signer_email": "jane@example.com"}, format="json"
     ).json()["token"]
     body = APIClient().get(f"/api/sessions/{token}/").json()
     assert body["branding"] == {"name": "", "color": "", "logo": None}
@@ -961,7 +1032,7 @@ def test_session_payload_branding_empty_for_anonymous_and_unbranded():
     client = _auth_client(account)
     doc_id = upload_document(client, email=account.email).json()["id"]
     token = client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Jane"}, format="json"
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Jane", "signer_email": "jane@example.com"}, format="json"
     ).json()["token"]
     body = APIClient().get(f"/api/sessions/{token}/").json()
     assert body["branding"] == {"name": "", "color": "", "logo": None}
@@ -985,15 +1056,16 @@ def test_sealed_email_opens_with_brand_name():
     client = _auth_client(account)
     doc_id = upload_document(client, email=account.email).json()["id"]
     token = client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "J"}, format="json"
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "J", "signer_email": "jane@example.com"}, format="json"
     ).json()["token"]
     assert client.post(
         f"/api/sessions/{token}/sign/",
         {"signature": SIG_DATA_URL, "device_info": {}},
         format="json",
     ).status_code == 200
-    assert mail.outbox
-    for message in mail.outbox:
+    sealed = [m for m in mail.outbox if m.subject.startswith("Signed:")]
+    assert sealed
+    for message in sealed:
         assert message.body.startswith("Acme Legal — signed document via SignSeen")
 
 # ---------------------------------------------------------------------------
@@ -1006,7 +1078,7 @@ def test_sealed_email_opens_with_brand_name():
 def _owned_session(account_client, email):
     doc_id = upload_document(account_client, email=email).json()["id"]
     token = account_client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Jane"}, format="json"
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Jane", "signer_email": "jane@example.com"}, format="json"
     ).json()["token"]
     return doc_id, token
 
@@ -1026,13 +1098,15 @@ def test_viewed_alert_fires_exactly_once_for_premium_owner():
     assert session.viewed_at is not None
     assert session.events.filter(event_type="signing.viewed").count() == 1
     assert verify_chain(session) is True
-    assert [m.to for m in mail.outbox] == [["prem@example.com"]]
-    assert mail.outbox[0].subject.startswith("Viewed:")
+    # The invite ("Please sign:") also sits in the outbox; filter to
+    # alerts, which is what this test owns.
+    alerts = [m for m in mail.outbox if m.subject.startswith("Viewed:")]
+    assert [m.to for m in alerts] == [["prem@example.com"]]
 
     assert anon.get(f"/api/sessions/{token}/").status_code == 200
     session.refresh_from_db()
     assert session.events.filter(event_type="signing.viewed").count() == 1
-    assert len(mail.outbox) == 1
+    assert len([m for m in mail.outbox if m.subject.startswith("Viewed:")]) == 1
 
 
 @pytest.mark.django_db
@@ -1059,7 +1133,8 @@ def test_viewed_alert_suppressed_when_opted_out_free_or_ownerless():
         session = SigningSession.objects.get(token=token)
         assert session.viewed_at is not None
         assert session.events.filter(event_type="signing.viewed").count() == 1
-    assert mail.outbox == []
+    # No VIEWED alerts fired (the invites in the outbox are expected).
+    assert [m for m in mail.outbox if m.subject.startswith("Viewed:")] == []
 
 
 @pytest.mark.django_db
@@ -1085,13 +1160,13 @@ def test_expiry_alert_command_sends_stamps_and_does_not_resend():
     far.refresh_from_db()
     assert session.expiry_alert_sent_at is not None
     assert far.expiry_alert_sent_at is None
-    assert len(mail.outbox) == 1
-    assert mail.outbox[0].to == ["prem2@example.com"]
-    assert mail.outbox[0].subject.startswith("Expiring soon:")
-    assert "/d/" in mail.outbox[0].body
+    alerts = [m for m in mail.outbox if m.subject.startswith("Expiring soon:")]
+    assert len(alerts) == 1
+    assert alerts[0].to == ["prem2@example.com"]
+    assert "/d/" in alerts[0].body
 
     call_command("send_expiry_alerts")
-    assert len(mail.outbox) == 1
+    assert len([m for m in mail.outbox if m.subject.startswith("Expiring soon:")]) == 1
 # Issue #15: signing link + QR for pending documents. The dashboard and
 # the tracking page need the active session's signing URL — but the
 # token is a credential, so it is exposed to the document owner only.
@@ -1102,7 +1177,7 @@ def _owned_doc_with_session(account):
     client = _auth_client(account)
     doc_id = upload_document(client, email=account.email).json()["id"]
     session = client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Jane"}, format="json"
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Jane", "signer_email": "jane@example.com"}, format="json"
     ).json()
     return client, doc_id, session
 
@@ -1191,7 +1266,10 @@ def _premium_multi_doc(names=("Signer One", "Signer Two", "Signer Three")):
     for name in names:
         resp = client.post(
             f"/api/documents/{doc_id}/sessions/",
-            {"signer_name": name},
+            {
+                "signer_name": name,
+                "signer_email": f"{name.lower().replace(' ', '.')}@example.com",
+            },
             format="json",
         )
         assert resp.status_code == 201, resp.content
@@ -1227,10 +1305,10 @@ def test_free_account_document_still_rejects_second_session():
     client = _auth_client(account)
     doc_id = upload_document(client, email=account.email).json()["id"]
     assert client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "One"}, format="json"
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "One", "signer_email": "one@example.com"}, format="json"
     ).status_code == 201
     second = client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Two"}, format="json"
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Two", "signer_email": "two@example.com"}, format="json"
     )
     assert second.status_code == 409
 
@@ -1263,7 +1341,7 @@ def test_three_signer_document_seals_once_in_order():
     served = anon.get(f"/api/sessions/{tokens[0]}/document/")
     assert served.status_code == 200
     assert b"SIGNATURE CERTIFICATE" not in b"".join(served.streaming_content)
-    assert len(mail.outbox) == 0  # no seal notifications yet
+    assert [m for m in mail.outbox if m.subject.startswith("Signed:")] == []  # no seal notifications yet (invites may exist)
 
     # Signer 2 activates and signs; still not final.
     assert anon.get(f"/api/sessions/{tokens[1]}/").json()["usable"] is True
@@ -1284,8 +1362,15 @@ def test_three_signer_document_seals_once_in_order():
     assert doc.status == Document.Status.SIGNED
     assert doc.signed_file
     seal_mail = [m for m in mail.outbox if m.subject.startswith("Signed:")]
-    assert len(seal_mail) == 1  # sender copy, at final seal only
+    # Sender copy plus one copy per signer (every session now carries an
+    # email under email-first delivery), all at final seal only.
+    assert len(seal_mail) == 4
     assert seal_mail[0].to == ["multi@example.com"]
+    assert sorted(m.to[0] for m in seal_mail[1:]) == [
+        "signer.one@example.com",
+        "signer.three@example.com",
+        "signer.two@example.com",
+    ]
 
     # The certificate lists all three signers.
     pdf = pymupdf.open(stream=doc.signed_file.read())

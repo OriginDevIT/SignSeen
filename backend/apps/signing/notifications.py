@@ -148,10 +148,12 @@ def send_signer_copy(document, session, audit_seal: str) -> None:
 def send_signer_invite(document, session) -> None:
     """Invite a pre-defined signer to their signing session (#13).
 
-    Complex documents are delivered by email: when a session with a
+    Email-first delivery: when a session with a
     signer_email becomes active — at creation if it is already usable,
     or when its predecessor signs in sequential mode — the signer gets
-    their own signing link. Best-effort, like every notification here.
+    their own signing link AND the unsigned document attached, so the
+    email alone is everything they need. Best-effort, like every
+    notification here.
     """
     signer_email = (session.signer_email or "").strip()
     if not signer_email:
@@ -168,13 +170,21 @@ def send_signer_invite(document, session) -> None:
         f'"{document.title}".\n\n'
         f"Your signing link: {signing_url}\n"
         f"{order_note}\n"
-        "No account needed — open the link, complete your fields, and sign."
+        "The document you need to sign is attached. No account needed — "
+        "open the link, complete your fields, and sign."
     )
     msg = EmailMessage(
         subject=f"Please sign: {document.title}",
         body=body,
         from_email=settings.DEFAULT_FROM_EMAIL,
         to=[signer_email],
+    )
+    with document.original_file.open("rb") as f:
+        pdf_bytes = f.read()
+    msg.attach(
+        document.original_filename or f"document-{document.id}.pdf",
+        pdf_bytes,
+        "application/pdf",
     )
     try:
         msg.send()

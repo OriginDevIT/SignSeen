@@ -15,12 +15,15 @@ test("happy path: send -> sign with photo -> sealed, audit chain valid", async (
   const id = runId();
   const title = `E2E Agreement ${id}`;
   const senderEmail = `e2e-sender-${id}@example.com`;
+  const signerEmail = `e2e-signer-${id}@example.com`;
 
   // --- Sender (desktop) -------------------------------------------------
   await page.goto("/send");
   await page.getByPlaceholder("e.g. Contractor Agreement").fill(title);
   await expect(page.getByPlaceholder("Jane Doe")).toHaveCount(1);
   await page.getByPlaceholder("you@example.com").first().fill(senderEmail);
+  // Email-first delivery: the signer email is required at send.
+  await page.getByPlaceholder("jane@example.com").fill(signerEmail);
   await page.locator('input[type="file"]').setInputFiles(samplePdf());
   await page.getByRole("button", { name: "Create signing link" }).click();
 
@@ -110,6 +113,25 @@ test("happy path: send -> sign with photo -> sealed, audit chain valid", async (
           const data = await res.json();
           return (data.messages ?? []).some((m: { Subject: string }) =>
             m.Subject.startsWith("Signed:"),
+          );
+        },
+        { timeout: 15_000 },
+      )
+      .toBe(true);
+  }
+
+  // And the signer invite (link + unsigned PDF) reached the signer
+  // by email at link creation.
+  if (MAILPIT_URL) {
+    await expect
+      .poll(
+        async () => {
+          const res = await api.get(
+            `${MAILPIT_URL}/api/v1/search?query=to:${signerEmail}`,
+          );
+          const data = await res.json();
+          return (data.messages ?? []).some((m: { Subject: string }) =>
+            m.Subject.startsWith("Please sign:"),
           );
         },
         { timeout: 15_000 },

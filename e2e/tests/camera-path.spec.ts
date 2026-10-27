@@ -20,6 +20,7 @@ test("camera path: sign with a live-captured witness photo", async ({
   await page.goto("/send");
   await page.getByPlaceholder("e.g. Contractor Agreement").fill(title);
   await page.getByPlaceholder("you@example.com").first().fill(senderEmail);
+  await page.getByPlaceholder("jane@example.com").fill(`e2e-camera-signer-${id}@example.com`);
   await page.locator('input[type="file"]').setInputFiles(samplePdf());
   await page.getByRole("button", { name: "Create signing link" }).click();
   await expect(page.getByText("Ready to sign")).toBeVisible();
