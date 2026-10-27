@@ -1,5 +1,6 @@
 import { test, expect, devices, request } from "@playwright/test";
 import { samplePdf, samplePhoto, runId, shot, drawSignature } from "./fixtures";
+import { recordGalleryDoc } from "./helpers";
 
 const API_URL = process.env.E2E_API_URL ?? "http://localhost:8000";
 const MAILPIT_URL = process.env.E2E_MAILPIT_URL; // optional, compose test stack only
@@ -101,6 +102,19 @@ test("happy path: send -> sign with photo -> sealed, audit chain valid", async (
   const doc = await docRes.json();
   expect(doc.status).toBe("signed");
   expect(doc.signed_file).toBeTruthy();
+  // The canonical free-tier sealed document joins the review gallery
+  // (step 3): signature placement, photo orientation, certificate
+  // metadata, and the free-tier watermark are human-eye checks.
+  recordGalleryDoc({
+    label: `Happy path, free tier with photo — ${id}`,
+    docId: doc.id,
+    checks: [
+      "signature image visible and right-side up",
+      "witness photo visible and correctly oriented",
+      "metadata lines present (signer, timestamp, IDs, audit seal, photo assurance full)",
+      "light diagonal free-tier watermark on every page",
+    ],
+  });
 
   // --- Sealed email reached the sender (compose test stack only) --------
   if (MAILPIT_URL) {

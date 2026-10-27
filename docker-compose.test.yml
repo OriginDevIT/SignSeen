@@ -17,3 +17,11 @@ services:
       EMAIL_PORT: "1025"
       EMAIL_USE_TLS: "0"
       ENABLE_E2E_FIXTURES: "1"
+      # Stripe test-mode keys, passed through only when the shell sets
+      # them (billing.spec.ts gates its full flow on the same vars).
+      # Empty here = billing unconfigured, which is what CI runs.
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_PUBLISHABLE_KEY: ${STRIPE_PUBLISHABLE_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      STRIPE_PRICE_ID_MONTHLY: ${STRIPE_PRICE_ID_MONTHLY:-}
+      STRIPE_PRICE_ID_ANNUAL: ${STRIPE_PRICE_ID_ANNUAL:-}

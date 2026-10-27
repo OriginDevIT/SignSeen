@@ -242,6 +242,8 @@ e2e/node_modules/
 e2e/test-results/
 e2e/playwright-report/
 e2e/screenshots/
+e2e/gallery/
+e2e/gallery-manifest.jsonl
 
 # TypeScript incremental build cache — local only, never tracked (#35)
 *.tsbuildinfo

@@ -52,6 +52,9 @@ This script covers those by hand.
 
 ## C. Intake breadth
 
+Scripted in `e2e/tests/intake.spec.ts` (#31 step 4) — the items
+below are the spec's assertions, kept here for reference.
+
 12. **DOCX**: on `/send`, upload a `.docx` with real formatting (headings,
     bold, a list). Sign it.
     - ✅ Converted PDF preserves the formatting recognizably.
@@ -61,6 +64,9 @@ This script covers those by hand.
       partially.)
 
 ## D. Negative / edge cases
+
+Scripted in `e2e/tests/negative-edge.spec.ts` (#31 step 2) — the items
+below are the spec's assertions, kept here for reference.
 
 14. **Double-sign**: revisit the same signing link.
     - ✅ "This link is no longer active."
@@ -80,6 +86,9 @@ This script covers those by hand.
     - ✅ 409: "This document already has a signing session."
 
 ## E. Accounts, dashboard, email (Phase 4)
+
+Scripted in `e2e/tests/accounts.spec.ts` (#31 step 2) — the items
+below are the spec's assertions, kept here for reference.
 
 21. **Signup/login**: `/signup` → create account → land on `/dashboard`.
     Log out, `/login` → back in. Wrong password → "invalid email or
@@ -101,6 +110,10 @@ This script covers those by hand.
     "Create a free account" → `/signup`. Factual wording, no upsell copy.
 
 ## F. Billing (Stripe test mode — needs keys)
+
+Scripted in `e2e/tests/billing.spec.ts` (#31 step 4): without keys the
+spec asserts the clean unconfigured failure; with test-mode keys it
+drives Checkout and simulates the webhook (see `e2e/README.md`).
 
 Only when `STRIPE_SECRET_KEY` / `STRIPE_PRICE_ID` are set in `.env.staging`:
 27. **Upgrade**: on `/dashboard`, **Upgrade to premium** → Stripe Checkout

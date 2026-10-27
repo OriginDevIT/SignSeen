@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import views
+from . import e2e_views, views
 
 urlpatterns = [
     path("documents/", views.create_document, name="document-create"),
@@ -52,5 +52,12 @@ urlpatterns = [
         "sessions/<str:token>/events/",
         views.get_session_events,
         name="session-events",
+    ),
+    # Test-stack only (e2e_views guards on ENABLE_E2E_FIXTURES): sealed
+    # pages for the Playwright review gallery.
+    path(
+        "e2e/sealed/<uuid:doc_id>/page/<int:page>.png",
+        e2e_views.sealed_page,
+        name="e2e-sealed-page",
     ),
 ]

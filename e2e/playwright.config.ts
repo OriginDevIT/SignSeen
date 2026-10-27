@@ -6,6 +6,7 @@ import { defineConfig } from "@playwright/test";
 // stands in for the signer's front camera.
 export default defineConfig({
   testDir: "./tests",
+  globalSetup: "./global-setup.ts",
   timeout: 120_000,
   expect: { timeout: 15_000 },
   fullyParallel: false,
