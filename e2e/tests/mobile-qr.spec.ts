@@ -41,6 +41,7 @@ test("QR on the /send confirmation fits a 360px phone", async ({
     .getByPlaceholder("e.g. Contractor Agreement")
     .fill(`E2E QR ${id}`);
   await page.getByPlaceholder("you@example.com").first().fill("sender@example.com");
+  await page.getByPlaceholder("jane@example.com").fill(`e2e-qr-signer-${id}@example.com`);
   await page.locator('input[type="file"]').setInputFiles(samplePdf());
   await page.getByRole("button", { name: "Create signing link" }).click();
 
@@ -78,6 +79,7 @@ test("QR in the dashboard signing-link panel fits a 360px phone", async ({
   await page
     .getByPlaceholder("e.g. Contractor Agreement")
     .fill(`E2E QR Dash ${id}`);
+  await page.getByPlaceholder("jane@example.com").fill(`e2e-qr-dash-signer-${id}@example.com`);
   await page.locator('input[type="file"]').setInputFiles(samplePdf());
   await page.getByRole("button", { name: "Create signing link" }).click();
   await expect(page.getByText("Ready to sign")).toBeVisible();
