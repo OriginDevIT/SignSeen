@@ -4,9 +4,9 @@ export const metadata = { title: "Terms of Service — SignSeen" };
 
 /**
  * DRAFT — prepared in-house for attorney review before public launch
- * (issue #37). Drafting direction (Matt, Oct 21, 2026): maximum
- * liability release for the operator, honest commitments on data
- * protection as implemented in the code.
+ * (issue #37). Drafting direction: maximum liability release for the
+ * operator, honest commitments on data protection as implemented
+ * in the code.
  */
 export default function TermsPage() {
   return (

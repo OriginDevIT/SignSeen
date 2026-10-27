@@ -1,6 +1,6 @@
 """Billing lifecycle enforcement (issue #36) — run daily from cron.
 
-Premium lifecycle after Matt's Oct 21 rules:
+Premium lifecycle rules:
 - payment failed -> SUSPENDED (premium features off, documents kept)
 - suspended for BILLING_SUSPENSION_DAYS (180) -> EXPIRED (subscription
   cancelled at Stripe, tier reverts to free, documents still kept)
