@@ -154,7 +154,7 @@ ENABLE_E2E_FIXTURES = os.environ.get("ENABLE_E2E_FIXTURES", "0") == "1"
 # All optional: with no keys set, billing endpoints answer 503 and the app
 # runs free-tier only. STRIPE_PRICE_ID is the Price created in the Stripe
 # dashboard; no amount is hardcoded here. Premium is sold monthly and
-# annually (Matt, Oct 21: $5/mo, $50/yr) — one Stripe Price per plan;
+# annually — one Stripe Price per plan;
 # STRIPE_PRICE_ID remains as the legacy monthly fallback.
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_PUBLISHABLE_KEY = os.environ.get("STRIPE_PUBLISHABLE_KEY", "")
