@@ -240,6 +240,11 @@ def webhook(request):
     except Exception:
         return HttpResponse(status=400)
 
+    # construct_event returns a stripe Event object, not a dict, and
+    # Event rejects dict methods like .get — convert once so the
+    # dict-style access below works on real (unmocked) events.
+    event = event.to_dict()
+
     etype = event.get("type", "")
     obj = (event.get("data") or {}).get("object") or {}
 
