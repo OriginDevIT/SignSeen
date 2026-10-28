@@ -1,9 +1,17 @@
-"""Tests for Stripe billing: checkout, portal, webhooks (all mocked)."""
+"""Tests for Stripe billing: checkout, portal, webhooks.
 
+Webhook tests mock construct_event except the signed-event regression
+test, which posts a genuinely signed payload.
+"""
+
+import hashlib
+import hmac
+import json
+import time
 from unittest import mock
 
 import pytest
-from django.test import override_settings
+from django.test import Client, override_settings
 from rest_framework.test import APIClient
 
 from apps.accounts.models import Account
@@ -60,8 +68,18 @@ def test_checkout_rejected_when_already_premium():
     assert client.post("/api/billing/checkout/").status_code == 409
 
 
+class _FakeEvent:
+    """Stands in for a real stripe Event: not a dict, but to_dict() works."""
+
+    def __init__(self, etype, obj):
+        self._d = {"type": etype, "data": {"object": obj}}
+
+    def to_dict(self):
+        return self._d
+
+
 def _webhook_event(etype, obj):
-    return {"type": etype, "data": {"object": obj}}
+    return _FakeEvent(etype, obj)
 
 
 @pytest.mark.django_db
@@ -86,6 +104,56 @@ def test_webhook_upgrades_on_checkout_completed():
     account.refresh_from_db()
     assert account.tier == Account.Tier.PREMIUM
     assert account.stripe_customer_id == "cus_9"
+
+
+@pytest.mark.django_db
+@override_settings(**STRIPE_ENV)
+def test_webhook_accepts_real_signed_event():
+    """Regression: construct_event returns an Event, not a dict.
+
+    The mocked webhook tests returned plain dicts, which masked that
+    the view's .get() calls raise AttributeError on real events and
+    the webhook 500s (staging, Oct 28). This posts a genuinely signed
+    payload with no mocking.
+    """
+    account = Account.objects.create_user(
+        email="w-real@example.com", password="longpassword1"
+    )
+    event = {
+        "id": "evt_real",
+        "object": "event",
+        "created": int(time.time()),
+        "type": "checkout.session.completed",
+        "data": {
+            "object": {
+                "id": "cs_real",
+                "object": "checkout.session",
+                "mode": "subscription",
+                "payment_status": "paid",
+                "customer": "cus_9",
+                "subscription": "sub_9",
+                "metadata": {"account_id": str(account.id)},
+            }
+        },
+    }
+    payload = json.dumps(event)
+    ts = str(int(time.time()))
+    sig = hmac.new(
+        STRIPE_ENV["STRIPE_WEBHOOK_SECRET"].encode(),
+        f"{ts}.{payload}".encode(),
+        hashlib.sha256,
+    ).hexdigest()
+    response = Client().post(
+        "/api/billing/webhook/",
+        data=payload,
+        content_type="application/json",
+        HTTP_STRIPE_SIGNATURE=f"t={ts},v1={sig}",
+    )
+    assert response.status_code == 200
+    account.refresh_from_db()
+    assert account.tier == Account.Tier.PREMIUM
+    assert account.stripe_customer_id == "cus_9"
+    assert account.stripe_subscription_id == "sub_9"
 
 
 @pytest.mark.django_db
