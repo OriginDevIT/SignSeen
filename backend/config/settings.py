@@ -73,6 +73,9 @@ LOGIN_MAX_FAILED_ATTEMPTS = _env_int("LOGIN_MAX_FAILED_ATTEMPTS", 10)
 LOGIN_FAILURE_WINDOW_SECONDS = _env_int("LOGIN_FAILURE_WINDOW_SECONDS", 900)
 # SSRF guard escape hatch for local development only (issue #39).
 URL_FETCH_ALLOW_PRIVATE = os.environ.get("URL_FETCH_ALLOW_PRIVATE", "0") == "1"
+# Overall bound on a web-page render (issue #64): a slow page must fail
+# with a clean error well before the front proxy gives up (~100s).
+URL_RENDER_TIMEOUT_SECONDS = _env_int("URL_RENDER_TIMEOUT_SECONDS", 60)
 
 # The web app is served from a different origin than this API in the
 # compose dev stack (localhost:3000 -> localhost:8000), and browsers

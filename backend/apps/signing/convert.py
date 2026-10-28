@@ -8,15 +8,19 @@ Both paths are verified against real binaries (see tests).
 """
 
 import ipaddress
+import logging
 import os
 import socket
 import subprocess
+import sys
 import tempfile
 from urllib.parse import urlparse
 
 from django.conf import settings
 from weasyprint import HTML
 from weasyprint.urls import URLFetcher
+
+log = logging.getLogger(__name__)
 
 SOFFICE_TIMEOUT_SECONDS = 120
 
@@ -119,8 +123,8 @@ class _GuardedURLFetcher(URLFetcher):
         return super().fetch(url, headers=headers)
 
 
-def render_url_to_pdf(url: str) -> bytes:
-    """Render a web page URL to PDF (SSRF-guarded; see above)."""
+def _render_url_to_pdf_sync(url: str) -> bytes:
+    """Direct WeasyPrint render; runs in the child process (see below)."""
     validate_public_url(url)
     try:
         return HTML(url=url, url_fetcher=_GuardedURLFetcher()).write_pdf()
@@ -128,3 +132,45 @@ def render_url_to_pdf(url: str) -> bytes:
         raise
     except Exception as exc:
         raise ConversionError(f"could not render page: {exc}")
+
+
+def render_url_to_pdf(url: str) -> bytes:
+    """Render a web page URL to PDF, bounded by an overall timeout.
+
+    The render runs in a child process so a slow page can actually be
+    killed: a timed-out render thread would keep consuming CPU on the
+    box. On timeout the child is killed and this raises ConversionError,
+    which the view turns into a clean 400 instead of a hung request.
+    """
+    validate_public_url(url)
+    timeout = getattr(settings, "URL_RENDER_TIMEOUT_SECONDS", 60)
+    cmd = [
+        sys.executable,
+        str(settings.BASE_DIR / "manage.py"),
+        "render_url_pdf",
+        url,
+    ]
+    # The settings module rarely survives into the process environment
+    # under test runners; fall back to manage.py's default. Settings
+    # the child render depends on are passed explicitly too, so an
+    # in-process override (e.g. in tests) reaches the child.
+    env = {
+        **os.environ,
+        "DJANGO_SETTINGS_MODULE": os.environ.get("DJANGO_SETTINGS_MODULE")
+        or "config.settings",
+        "URL_FETCH_ALLOW_PRIVATE": (
+            "1" if getattr(settings, "URL_FETCH_ALLOW_PRIVATE", False) else "0"
+        ),
+    }
+    try:
+        proc = subprocess.run(cmd, capture_output=True, timeout=timeout, env=env)
+    except subprocess.TimeoutExpired:
+        raise ConversionError("page took too long to render")
+    if proc.returncode != 0:
+        log.warning(
+            "url render child failed for %s: %s",
+            url,
+            proc.stderr.decode(errors="replace")[-500:],
+        )
+        raise ConversionError("could not render page")
+    return proc.stdout

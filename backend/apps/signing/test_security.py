@@ -2,12 +2,18 @@
 response hardening headers."""
 
 import socket
+import subprocess
+from unittest import mock
 
 import pytest
 from django.test import override_settings
 from rest_framework.test import APIClient
 
-from apps.signing.convert import ConversionError, validate_public_url
+from apps.signing.convert import (
+    ConversionError,
+    render_url_to_pdf,
+    validate_public_url,
+)
 
 
 def _addrinfo(ip):
@@ -68,3 +74,39 @@ def test_validate_public_url_dev_escape_hatch(monkeypatch):
 def test_x_frame_options_deny_header():
     response = APIClient().get("/api/health/")
     assert response.headers.get("X-Frame-Options") == "DENY"
+
+
+def _stub_validation(monkeypatch):
+    monkeypatch.setattr(
+        "apps.signing.convert.validate_public_url", lambda url: None
+    )
+
+
+def test_render_url_timeout_becomes_conversion_error(monkeypatch):
+    _stub_validation(monkeypatch)
+    with mock.patch(
+        "apps.signing.convert.subprocess.run",
+        side_effect=subprocess.TimeoutExpired(cmd="x", timeout=60),
+    ):
+        with pytest.raises(ConversionError, match="too long"):
+            render_url_to_pdf("https://example.com/page")
+
+
+def test_render_url_child_failure_hides_stderr(monkeypatch):
+    _stub_validation(monkeypatch)
+    proc = subprocess.CompletedProcess(
+        args=["x"], returncode=1, stdout=b"", stderr=b"traceback secret"
+    )
+    with mock.patch("apps.signing.convert.subprocess.run", return_value=proc):
+        with pytest.raises(ConversionError) as excinfo:
+            render_url_to_pdf("https://example.com/page")
+    assert "secret" not in str(excinfo.value)
+
+
+def test_render_url_child_success_returns_bytes(monkeypatch):
+    _stub_validation(monkeypatch)
+    proc = subprocess.CompletedProcess(
+        args=["x"], returncode=0, stdout=b"%PDF-fake", stderr=b""
+    )
+    with mock.patch("apps.signing.convert.subprocess.run", return_value=proc):
+        assert render_url_to_pdf("https://example.com/page") == b"%PDF-fake"
