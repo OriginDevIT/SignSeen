@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { act } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import WitnessCamera from "./WitnessCamera";
 
 const SIGNING_URL = "https://example.com/s/test-token";
@@ -54,7 +54,10 @@ describe("WitnessCamera", () => {
     const capture = (await screen.findByRole("button", {
       name: "Capture photo",
     })) as HTMLButtonElement;
-    expect(capture.disabled).toBe(false);
+    // The capture button starts disabled and only enables once the
+    // async camera start settles; wait for that instead of asserting
+    // on whatever state the first render happened to reach.
+    await waitFor(() => expect(capture.disabled).toBe(false));
     expect(getUserMedia).toHaveBeenCalledTimes(1);
     expect(getUserMedia).toHaveBeenCalledWith({
       audio: false,
@@ -75,7 +78,10 @@ describe("WitnessCamera", () => {
     const capture = (await screen.findByRole("button", {
       name: "Capture photo",
     })) as HTMLButtonElement;
-    expect(capture.disabled).toBe(false);
+    // The capture button starts disabled and only enables once the
+    // async camera start settles; wait for that instead of asserting
+    // on whatever state the first render happened to reach.
+    await waitFor(() => expect(capture.disabled).toBe(false));
     expect(getUserMedia).toHaveBeenCalledTimes(2);
     expect(getUserMedia).toHaveBeenNthCalledWith(2, {
       audio: false,
@@ -160,7 +166,10 @@ describe("WitnessCamera", () => {
     const capture = (await screen.findByRole("button", {
       name: "Capture photo",
     })) as HTMLButtonElement;
-    expect(capture.disabled).toBe(false);
+    // The capture button starts disabled and only enables once the
+    // async camera start settles; wait for that instead of asserting
+    // on whatever state the first render happened to reach.
+    await waitFor(() => expect(capture.disabled).toBe(false));
     const video = screen.getByLabelText("Camera preview") as HTMLVideoElement;
     Object.defineProperty(video, "videoWidth", { value: 640 });
     Object.defineProperty(video, "videoHeight", { value: 480 });
