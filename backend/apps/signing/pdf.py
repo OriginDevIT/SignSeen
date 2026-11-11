@@ -37,8 +37,10 @@ def _apply_free_tier_watermark(doc: pymupdf.Document) -> None:
 
 
 def _signer_lines(signer: dict) -> list[str]:
+    # Plain "-" fallback: the certificate renders in Helvetica, whose
+    # encoding turns an em dash into a stray middle dot.
     lines = [
-        f"Signer: {signer.get('signer_name') or '—'}",
+        f"Signer: {signer.get('signer_name') or '-'}",
         f"Signed at (UTC): {signer.get('signed_at')}",
         f"Document ID: {signer.get('document_id')}",
         f"Session ID: {signer.get('session_id')}",
@@ -174,10 +176,13 @@ def build_signed_pdf_multi(
     """Seal a document with one certificate section per signer.
 
     Each signer dict carries `signature_png`, optional `photo_png`, and
-    the metadata rendered in its section (`signer_name`, `signed_at`,
-    `document_id`, `session_id`, `audit_hash`, optional
-    `photo_assurance`). Sections flow onto additional certificate pages
-    when they no longer fit.
+    the metadata rendered in its section (`signer_name` — the signer
+    email when no name was given — `signed_at` as an explicit UTC
+    timestamp, `document_id`, `session_id`, `audit_hash`, optional
+    `photo_assurance`). `audit_hash` is the hash of the document.sealed
+    event, the same seal the done screen and the seal email carry.
+    Sections flow onto additional certificate pages when they no longer
+    fit.
     """
     doc = pymupdf.open(original_path)
     if fields:
@@ -197,13 +202,13 @@ def build_signed_pdf_multi(
         y = MARGIN
     page.insert_text(
         (MARGIN, y),
-        "Verify: the audit seal above must match the final event hash in the",
+        "Verify: the audit seal above must match the hash of the",
         fontsize=9,
         color=(0.4, 0.4, 0.4),
     )
     page.insert_text(
         (MARGIN, y + 14),
-        "document's tamper-evident audit trail.",
+        "document.sealed event in the document's tamper-evident audit trail.",
         fontsize=9,
         color=(0.4, 0.4, 0.4),
     )

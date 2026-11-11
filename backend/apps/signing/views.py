@@ -12,7 +12,7 @@ Signer flow (token-addressed, no account):
 """
 
 import base64
-from datetime import datetime
+from datetime import datetime, timezone as dt_timezone
 import binascii
 import hashlib
 import logging
@@ -40,7 +40,7 @@ from rest_framework.response import Response
 
 from apps.core.authentication import OptionalTokenAuthentication
 
-from .hashing import record_event, verify_chain
+from .hashing import next_event_hash, record_event, verify_chain
 from .convert import ConversionError, convert_office_to_pdf, render_url_to_pdf
 from .limits import (
     LimitExceeded,
@@ -95,6 +95,16 @@ def _signing_mode(data) -> str | None:
 
 def _error(message: str, code=status.HTTP_400_BAD_REQUEST) -> Response:
     return Response({"error": message}, status=code)
+
+
+def _utc_timestamp(dt) -> str:
+    """Render an aware datetime as an explicit UTC timestamp (…Z).
+
+    The certificate labels this value "(UTC)", so the conversion is
+    pinned here rather than left to whatever the stored value's
+    offset happens to be.
+    """
+    return dt.astimezone(dt_timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _decode_data_url(value: str, field: str) -> bytes:
@@ -761,6 +771,26 @@ def submit_signature(request, token):
         ).exists()
         sealed = None
         if document_final:
+            # The certificate prints the audit seal of the
+            # document.sealed event, so the seal has to be known
+            # before the PDF is built. A sealed event's hash covers
+            # its payload, and the payload used to carry the sealed
+            # file's hash — but that hash only exists once the PDF
+            # (with the seal in it) exists. The file hash therefore
+            # moves to a follow-up event recorded right after the
+            # seal, and the sealed event itself carries only the
+            # document and the submission it seals. The hash is
+            # fully determined by the chain tip, the payload, and
+            # the timestamp, so it is computed here and the event
+            # is recorded with the same values below.
+            seal_timestamp = timezone.now()
+            seal_payload = {
+                "document_id": str(doc.id),
+                "seal_event": str(submitted.id),
+            }
+            _, seal_hash = next_event_hash(
+                session, "document.sealed", seal_payload, seal_timestamp
+            )
             signers = []
             for s in all_sessions:
                 event = s.events.filter(event_type="signature.submitted").first()
@@ -781,11 +811,15 @@ def submit_signature(request, token):
                     {
                         "signature_png": sig_bytes,
                         "photo_png": photo_bytes,
-                        "signer_name": s.signer_name,
-                        "signed_at": event.created_at.isoformat(),
+                        # The signer name is optional at send time;
+                        # the signer email is always known (email-first
+                        # delivery), so it identifies the signer when
+                        # no name was given.
+                        "signer_name": s.signer_name or s.signer_email,
+                        "signed_at": _utc_timestamp(event.created_at),
                         "document_id": str(doc.id),
                         "session_id": str(s.id),
-                        "audit_hash": event.hash,
+                        "audit_hash": seal_hash,
                         "photo_assurance": payload.get("photo_assurance"),
                     }
                 )
@@ -823,10 +857,24 @@ def submit_signature(request, token):
             sealed = record_event(
                 session,
                 "document.sealed",
+                seal_payload,
+                timestamp=seal_timestamp,
+            )
+            if sealed.hash != seal_hash:
+                # The chain moved between the preview and the record;
+                # the certificate already prints seal_hash, so a
+                # mismatch must fail loudly instead of shipping a
+                # seal that does not match the trail.
+                raise RuntimeError("sealed event hash changed before record")
+            # The sealed file's hash can only be known now that the
+            # file exists; it is chained right after the seal so the
+            # trail still covers the sealed file.
+            record_event(
+                session,
+                "sealed_file.recorded",
                 {
                     "document_id": str(doc.id),
                     "signed_sha256": _sha256(signed_bytes),
-                    "seal_event": str(submitted.id),
                 },
             )
 
