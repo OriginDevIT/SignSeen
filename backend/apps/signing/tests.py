@@ -645,6 +645,196 @@ def test_submit_records_device_evidence_and_photo_assurance():
     assert "Witness photo assurance: full" in pdf[-1].get_text()
 
 
+# ---------------------------------------------------------------------------
+# Sender option: require a witness photo (#73, per-document, premium-only)
+# ---------------------------------------------------------------------------
+
+
+def _upload_with_flag(client, photo_required, email="sender@example.com"):
+    """Multipart upload carrying the photo_required flag (a string on
+    the wire: the upload intake is multipart, not JSON)."""
+    pdf = SimpleUploadedFile(
+        "contract.pdf", make_pdf_bytes(), content_type="application/pdf"
+    )
+    return client.post(
+        "/api/documents/",
+        {
+            "title": "Contract",
+            "sender_email": email,
+            "file": pdf,
+            "photo_required": "true" if photo_required else "false",
+        },
+        format="multipart",
+    )
+
+
+def _photo_required_doc(client, email="sender@example.com"):
+    """Premium document with the flag on + its first session."""
+    doc_id = _upload_with_photo_flag(client, email)
+    token = client.post(
+        f"/api/documents/{doc_id}/sessions/",
+        {"signer_name": "Jane", "signer_email": "jane@example.com"},
+        format="json",
+    ).json()["token"]
+    return doc_id, token
+
+
+def _upload_with_photo_flag(client, email):
+    response = _upload_with_flag(client, True, email=email)
+    assert response.status_code == 201, response.content
+    assert response.json()["photo_required"] is True
+    return response.json()["id"]
+
+
+def _submit(token, client=None, with_photo=False):
+    payload = {"signature": SIG_DATA_URL, "device_info": {}}
+    if with_photo:
+        payload["photo"] = "data:image/jpeg;base64," + base64.b64encode(
+            _exif_jpeg()
+        ).decode()
+        payload["photo_consent"] = True
+    return (client or APIClient()).post(
+        f"/api/sessions/{token}/sign/", payload, format="json"
+    )
+
+
+@pytest.mark.django_db
+def test_photo_required_set_at_creation_for_premium_only():
+    premium = _auth_client(
+        _make_account(email="premium@example.com", tier=Account.Tier.PREMIUM)
+    )
+    response = _upload_with_flag(premium, True, email="premium@example.com")
+    assert response.status_code == 201
+    assert response.json()["photo_required"] is True
+    assert Document.objects.get(pk=response.json()["id"]).photo_required is True
+
+    # Anyone else asking for it gets the default (optional): the flag
+    # is never a way to get a premium feature without the tier.
+    anon = APIClient()
+    response = _upload_with_flag(anon, True, email="anon@example.com")
+    assert response.status_code == 201
+    assert response.json()["photo_required"] is False
+
+    free = _auth_client(_make_account(email="free@example.com"))
+    response = _upload_with_flag(free, True, email="free@example.com")
+    assert response.status_code == 201
+    assert response.json()["photo_required"] is False
+
+
+@pytest.mark.django_db
+@override_settings(URL_FETCH_ALLOW_PRIVATE=True)
+def test_photo_required_set_on_url_intake():
+    premium = _auth_client(
+        _make_account(email="premium@example.com", tier=Account.Tier.PREMIUM)
+    )
+    html = b"<html><body><h1>Terms</h1></body></html>"
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html")
+            self.end_headers()
+            self.wfile.write(html)
+
+        def log_message(self, *args):
+            pass
+
+    server = http.server.HTTPServer(("127.0.0.1", 0), Handler)
+    port = server.server_address[1]
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        response = premium.post(
+            "/api/documents/from-url/",
+            {
+                "title": "ToS",
+                "sender_email": "premium@example.com",
+                "url": f"http://127.0.0.1:{port}/terms",
+                "photo_required": True,
+            },
+            format="json",
+        )
+    finally:
+        server.shutdown()
+    assert response.status_code == 201
+    assert response.json()["photo_required"] is True
+
+
+@pytest.mark.django_db
+def test_photo_required_defaults_off_and_session_exposes_it():
+    client = APIClient()
+    response = upload_document(client)
+    assert response.status_code == 201
+    assert response.json()["photo_required"] is False
+
+    doc_id = response.json()["id"]
+    token = client.post(
+        f"/api/documents/{doc_id}/sessions/",
+        {"signer_name": "Jane", "signer_email": "jane@example.com"},
+        format="json",
+    ).json()["token"]
+    session = client.get(f"/api/sessions/{token}/").json()
+    assert session["photo_required"] is False
+    assert session["sender_email"] == "sender@example.com"
+
+
+@pytest.mark.django_db
+def test_submit_without_photo_rejected_when_required():
+    premium = _auth_client(
+        _make_account(email="premium@example.com", tier=Account.Tier.PREMIUM)
+    )
+    doc_id, token = _photo_required_doc(premium, "premium@example.com")
+
+    # The ceremony's direct-submit bypass: no photo, no seal.
+    response = _submit(token, premium, with_photo=False)
+    assert response.status_code == 400
+    assert "witness photo" in response.json()["error"]
+    assert SigningSession.objects.get(token=token).status == "pending"
+
+    # With a photo (and consent) the same session seals.
+    response = _submit(token, premium, with_photo=True)
+    assert response.status_code == 200
+    assert Document.objects.get(pk=doc_id).status == "signed"
+
+
+@pytest.mark.django_db
+def test_submit_without_photo_ok_when_optional():
+    client = APIClient()
+    doc_id = upload_document(client).json()["id"]
+    token = client.post(
+        f"/api/documents/{doc_id}/sessions/",
+        {"signer_name": "Jane", "signer_email": "jane@example.com"},
+        format="json",
+    ).json()["token"]
+    assert _submit(token, client, with_photo=False).status_code == 200
+    assert Document.objects.get(pk=doc_id).status == "signed"
+
+
+@pytest.mark.django_db
+def test_photo_required_applies_to_every_signer():
+    premium = _auth_client(
+        _make_account(email="premium@example.com", tier=Account.Tier.PREMIUM)
+    )
+    doc_id = _upload_with_photo_flag(premium, "premium@example.com")
+    tokens = []
+    for name, email in (
+        ("Signer One", "signer.one@example.com"),
+        ("Signer Two", "signer.two@example.com"),
+    ):
+        tokens.append(
+            premium.post(
+                f"/api/documents/{doc_id}/sessions/",
+                {"signer_name": name, "signer_email": email},
+                format="json",
+            ).json()["token"]
+        )
+
+    for token in tokens:
+        assert _submit(token, premium, with_photo=False).status_code == 400
+        assert _submit(token, premium, with_photo=True).status_code == 200
+    assert Document.objects.get(pk=doc_id).status == "signed"
+
+
 @pytest.mark.django_db
 def test_sealed_pdf_carries_free_tier_watermark():
     client = APIClient()

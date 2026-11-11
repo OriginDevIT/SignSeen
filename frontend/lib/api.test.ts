@@ -130,6 +130,21 @@ describe("createDocumentFromUrl", () => {
       sender_email: "s@example.com",
     });
   });
+
+  it("sends photo_required in the JSON body", async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse({ id: "doc-9" }, 201));
+    await createDocumentFromUrl(
+      "https://example.com/terms",
+      "ToS",
+      "s@example.com",
+      "sequential",
+      true
+    );
+    const [, init] = vi.mocked(fetch).mock.calls[0];
+    expect(JSON.parse(init?.body as string)).toMatchObject({
+      photo_required: true,
+    });
+  });
 });
 
 describe("sessionDocumentUrl", () => {
@@ -657,6 +672,24 @@ describe("document fields (#13)", () => {
     const [, init] = vi.mocked(fetch).mock.calls[0];
     const form = init?.body as FormData;
     expect(form.get("signing_mode")).toBe("parallel");
+  });
+
+  it("uploadDocument sends photo_required in the form", async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse({ id: "doc-1" }, 201));
+    const file = new File(["%PDF-"], "contract.pdf", { type: "application/pdf" });
+    await uploadDocument(file, "Contract", "s@example.com", "sequential", true);
+    const [, init] = vi.mocked(fetch).mock.calls[0];
+    const form = init?.body as FormData;
+    expect(form.get("photo_required")).toBe("true");
+  });
+
+  it("uploadDocument defaults photo_required to false", async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse({ id: "doc-1" }, 201));
+    const file = new File(["%PDF-"], "contract.pdf", { type: "application/pdf" });
+    await uploadDocument(file, "Contract", "s@example.com");
+    const [, init] = vi.mocked(fetch).mock.calls[0];
+    const form = init?.body as FormData;
+    expect(form.get("photo_required")).toBe("false");
   });
 
   it("submitSignature sends field_values with the exact wire keys", async () => {

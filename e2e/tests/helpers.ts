@@ -16,12 +16,23 @@ export function apiContext() {
 // it would stall at "Ready to sign" instead of failing at the call.
 export async function createSigningLink(
   page: Page,
-  opts: { title: string; senderEmail: string; signerEmail: string },
+  opts: {
+    title: string;
+    senderEmail: string;
+    signerEmail: string;
+    /** Sender option (#73): require a witness photo (premium senders). */
+    photoRequired?: boolean;
+  },
 ): Promise<{ signingUrl: string; token: string }> {
   await page.goto("/send");
   await page.getByPlaceholder("e.g. Contractor Agreement").fill(opts.title);
   await page.getByPlaceholder("you@example.com").first().fill(opts.senderEmail);
   await page.getByPlaceholder("jane@example.com").fill(opts.signerEmail);
+  if (opts.photoRequired) {
+    await page
+      .getByRole("checkbox", { name: /Require a witness photo/ })
+      .check();
+  }
   await page.locator('input[type="file"]').setInputFiles(samplePdf());
   await page.getByRole("button", { name: "Create signing link" }).click();
   await expect(page.getByText("Ready to sign")).toBeVisible();

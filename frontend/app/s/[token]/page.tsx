@@ -130,10 +130,10 @@ export default function SignPage() {
     setStep("photo");
   };
 
-  // Whether the sender requires a witness photo for this document.
-  // Always false for now: #73 drives this from the session, and the
-  // photo step hides "Skip photo" when it is true.
-  const photoRequired = false;
+  // Whether the sender requires a witness photo for this document
+  // (#73, per-document, set at send time). The photo step hides
+  // "Skip photo" and blocks submit until a photo is attached.
+  const photoRequired = session?.photo_required ?? false;
 
   // "Take photo": open the in-app camera (front camera requested
   // exactly, unlike the capture="user" hint some phones ignore). A
@@ -499,6 +499,7 @@ export default function SignPage() {
           onCloseCamera={() => setCameraOpen(false)}
           signingUrl={signingLink}
           photoRequired={photoRequired}
+          requiredBy={session?.sender_email}
           fieldsComplete={!hasFields || allRequiredComplete}
           onSubmit={submit}
           submitStyle={brandBtn}
