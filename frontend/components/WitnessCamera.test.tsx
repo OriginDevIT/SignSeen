@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import WitnessCamera from "./WitnessCamera";
 
+const SIGNING_URL = "https://example.com/s/test-token";
+
 function stubGetUserMedia(impl: (...args: any[]) => any) {
   const getUserMedia = vi.fn(impl);
   vi.stubGlobal("navigator", { mediaDevices: { getUserMedia } });
@@ -14,6 +16,17 @@ function fakeStream() {
   const track = { stop: vi.fn() };
   const stream = { getTracks: () => [track] } as unknown as MediaStream;
   return { stream, track };
+}
+
+function renderCamera(props: Partial<React.ComponentProps<typeof WitnessCamera>> = {}) {
+  return render(
+    <WitnessCamera
+      onCapture={vi.fn()}
+      onCancel={vi.fn()}
+      signingUrl={SIGNING_URL}
+      {...props}
+    />
+  );
 }
 
 describe("WitnessCamera", () => {
@@ -36,13 +49,7 @@ describe("WitnessCamera", () => {
     const { stream } = fakeStream();
     const getUserMedia = stubGetUserMedia(async () => stream);
     const onCapture = vi.fn();
-    render(
-      <WitnessCamera
-        onCapture={onCapture}
-        onFallback={vi.fn()}
-        onCancel={vi.fn()}
-      />
-    );
+    renderCamera({ onCapture });
 
     const capture = (await screen.findByRole("button", {
       name: "Capture photo",
@@ -63,13 +70,7 @@ describe("WitnessCamera", () => {
       }
       return stream;
     });
-    render(
-      <WitnessCamera
-        onCapture={vi.fn()}
-        onFallback={vi.fn()}
-        onCancel={vi.fn()}
-      />
-    );
+    renderCamera();
 
     const capture = (await screen.findByRole("button", {
       name: "Capture photo",
@@ -82,88 +83,63 @@ describe("WitnessCamera", () => {
     });
   });
 
-  it("shows the upload fallback when the camera cannot be started", async () => {
-    const onFallback = vi.fn();
+  it("shows the continue-on-your-phone QR when the camera cannot be started", async () => {
     const getUserMedia = stubGetUserMedia(async () => {
       throw new DOMException("no camera", "NotFoundError");
     });
-    render(
-      <WitnessCamera
-        onCapture={vi.fn()}
-        onFallback={onFallback}
-        onCancel={vi.fn()}
-      />
-    );
+    const { container } = renderCamera();
 
-    const upload = await screen.findByRole("button", {
-      name: "Upload a photo instead",
-    });
+    await screen.findByText("Continue on your phone");
     expect(
-      screen.getByText(/Camera isn't available on this device/)
+      screen.getByText(/This device has no camera/)
     ).toBeTruthy();
-    // The old silent path called the fallback on its own; the fallback
-    // is now a visible control the signer chooses.
-    expect(onFallback).not.toHaveBeenCalled();
+    // The QR encodes the same signing link, and the link itself is
+    // shown as text alongside it.
+    expect(screen.getByText(SIGNING_URL)).toBeTruthy();
+    expect(container.querySelector("svg")).toBeTruthy();
+    // No upload path: no camera means no photo.
+    expect(
+      screen.queryByRole("button", { name: /Upload a photo/ })
+    ).toBeNull();
     expect(getUserMedia).toHaveBeenCalledTimes(2);
-    fireEvent.click(upload);
-    expect(onFallback).toHaveBeenCalledTimes(1);
   });
 
-  it("shows the upload fallback when getUserMedia is missing", async () => {
+  it("shows the continue-on-your-phone QR when getUserMedia is missing", async () => {
     vi.stubGlobal("navigator", {});
-    const onFallback = vi.fn();
-    render(
-      <WitnessCamera
-        onCapture={vi.fn()}
-        onFallback={onFallback}
-        onCancel={vi.fn()}
-      />
-    );
+    const { container } = renderCamera();
 
-    const upload = await screen.findByRole("button", {
-      name: "Upload a photo instead",
-    });
-    expect(upload).toBeTruthy();
-    fireEvent.click(upload);
-    expect(onFallback).toHaveBeenCalledTimes(1);
+    await screen.findByText("Continue on your phone");
+    expect(screen.getByText(SIGNING_URL)).toBeTruthy();
+    expect(container.querySelector("svg")).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: /Upload a photo/ })
+    ).toBeNull();
   });
 
   it("does not retry the camera request when permission is denied", async () => {
     const getUserMedia = stubGetUserMedia(async () => {
       throw new DOMException("denied", "NotAllowedError");
     });
-    render(
-      <WitnessCamera
-        onCapture={vi.fn()}
-        onFallback={vi.fn()}
-        onCancel={vi.fn()}
-      />
-    );
+    renderCamera();
 
-    await screen.findByRole("button", { name: "Upload a photo instead" });
+    await screen.findByText("Continue on your phone");
     expect(getUserMedia).toHaveBeenCalledTimes(1);
   });
 
-  it("shows the upload fallback when the camera never starts", async () => {
+  it("shows the continue-on-your-phone QR when the camera never starts", async () => {
     vi.useFakeTimers();
     stubGetUserMedia(() => new Promise(() => {}));
-    render(
-      <WitnessCamera
-        onCapture={vi.fn()}
-        onFallback={vi.fn()}
-        onCancel={vi.fn()}
-      />
-    );
+    renderCamera();
 
     await act(async () => {
       await vi.advanceTimersByTimeAsync(15000);
     });
     expect(
-      screen.getByText(/Camera isn't available on this device/)
+      screen.getByText("Continue on your phone")
     ).toBeTruthy();
     expect(
-      screen.getByRole("button", { name: "Upload a photo instead" })
-    ).toBeTruthy();
+      screen.queryByRole("button", { name: /Upload a photo/ })
+    ).toBeNull();
   });
 
   it("captures the current frame and stops the stream", async () => {
@@ -179,13 +155,7 @@ describe("WitnessCamera", () => {
     ).mockReturnValue("data:image/jpeg;base64,fakephoto");
 
     const onCapture = vi.fn();
-    render(
-      <WitnessCamera
-        onCapture={onCapture}
-        onFallback={vi.fn()}
-        onCancel={vi.fn()}
-      />
-    );
+    renderCamera({ onCapture });
 
     const capture = (await screen.findByRole("button", {
       name: "Capture photo",

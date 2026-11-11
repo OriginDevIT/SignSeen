@@ -32,8 +32,9 @@ export async function createSigningLink(
 }
 
 // Drive the mobile ceremony to the done screen. withPhoto uses the
-// file-input fallback (the live-camera path has its own spec); without
-// it the signer taps "Skip photo & submit".
+// test-only hidden file input (the live-camera path has its own spec;
+// no UI in the product triggers the input); without it the signer
+// taps "Skip photo & submit".
 export async function sealCeremony(
   browser: Browser,
   signingUrl: string,

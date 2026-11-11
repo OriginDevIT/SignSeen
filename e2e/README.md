@@ -43,7 +43,8 @@ npm test
 - `tests/camera-path.spec.ts` — the same ceremony's photo step through
   the real in-app camera UI (getUserMedia against Chromium's fake media
   device), so a WitnessCamera regression cannot hide behind the
-  file-input fallback the happy path uses (#34).
+  test-only hidden file input the happy path uses (#34). The input has
+  no user-facing trigger: there is no upload path in the product.
 - `tests/negative-edge.spec.ts` — manual script §D: double-sign, bad
   file, empty signature, skipped photo, the free-tier 409 (anonymous
   and account, keyed on email), a second session's 409, and the
