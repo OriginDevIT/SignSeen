@@ -3,8 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import SignaturePad, { type SignaturePadHandle } from "../../../components/SignaturePad";
-import WitnessCamera from "../../../components/WitnessCamera";
-import { isCameraSupported } from "../../../lib/camera";
+import PhotoStep from "../../../components/PhotoStep";
 import {
   ApiError,
   collectDeviceInfo,
@@ -98,7 +97,6 @@ export default function SignPage() {
   const fieldPadRefs = useRef(new Map<string, SignaturePadHandle>());
 
   const padRef = useRef<SignaturePadHandle>(null);
-  const photoInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     getSession(token)
@@ -132,24 +130,17 @@ export default function SignPage() {
     setStep("photo");
   };
 
-  // "Take photo": prefer the in-app camera (defaults to the front
-  // camera for real, unlike the capture="user" hint some phones
-  // ignore); fall back to the file picker where getUserMedia is
-  // unavailable. Denial inside the camera also lands on the fallback.
-  const openPhotoCapture = () => {
-    if (isCameraSupported()) {
-      setCameraOpen(true);
-    } else {
-      photoInputRef.current?.click();
-    }
-  };
+  // Whether the sender requires a witness photo for this document.
+  // Always false for now: #73 drives this from the session, and the
+  // photo step hides "Skip photo" when it is true.
+  const photoRequired = false;
 
-  const onPhotoPicked = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0];
-    if (!f) return;
-    const reader = new FileReader();
-    reader.onload = () => setPhotoUrl(reader.result as string);
-    reader.readAsDataURL(f);
+  // "Take photo": open the in-app camera (front camera requested
+  // exactly, unlike the capture="user" hint some phones ignore). A
+  // camera that cannot start shows a continue-on-your-phone QR
+  // inside the camera instead of an upload path.
+  const openPhotoCapture = () => {
+    setCameraOpen(true);
   };
 
   const fieldComplete = (f: DocumentFieldInfo): boolean => {
@@ -245,6 +236,13 @@ export default function SignPage() {
   const brandBtn: React.CSSProperties = branding?.color
     ? { ...primaryBtn, background: branding.color }
     : primaryBtn;
+
+  // The signing link for the camera's continue-on-your-phone QR:
+  // the session's canonical URL, or this page's URL (the signer is
+  // already on the signing link).
+  const signingLink =
+    session?.signing_url ||
+    (typeof window !== "undefined" ? window.location.href : "");
   // The email that links this document to a later account: one the
   // signer just left at completion, or the one the sender addressed
   // the session to (their copy already went out at seal time).
@@ -491,99 +489,20 @@ export default function SignPage() {
       )}
 
       {step === "photo" && (
-        <section style={{ display: "grid", gap: "1rem" }}>
-          <h2 style={{ margin: 0 }}>2. Seen — snap a witness photo</h2>
-          <p style={{ opacity: 0.7, margin: 0 }}>
-            A quick photo of you signing acts as a photographic witness. Optional, but recommended.
-          </p>
-          <input
-            ref={photoInputRef}
-            type="file"
-            accept="image/*"
-            capture="user"
-            onChange={onPhotoPicked}
-            style={{ display: "none" }}
-          />
-          {cameraOpen ? (
-            <WitnessCamera
-              onCapture={(url) => {
-                setPhotoUrl(url);
-                setCameraOpen(false);
-              }}
-              onFallback={() => {
-                setCameraOpen(false);
-                photoInputRef.current?.click();
-              }}
-              onCancel={() => setCameraOpen(false)}
-            />
-          ) : photoUrl ? (
-            <img
-              src={photoUrl}
-              alt="Witness photo preview"
-              style={{ width: "100%", borderRadius: 12, maxHeight: 320, objectFit: "cover" }}
-            />
-          ) : (
-            <div
-              style={{
-                border: "2px dashed #9ca3af",
-                borderRadius: 12,
-                height: 180,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                opacity: 0.6,
-              }}
-            >
-              No photo yet
-            </div>
-          )}
-          <label
-            style={{
-              display: "flex",
-              gap: "0.5rem",
-              alignItems: "flex-start",
-              fontSize: "0.9rem",
-              cursor: "pointer",
-            }}
-          >
-            <input
-              type="checkbox"
-              checked={photoConsent}
-              onChange={(e) => setPhotoConsent(e.target.checked)}
-              style={{ marginTop: "0.2rem" }}
-            />
-            <span>
-              I consent to having my photo captured as a witness to this
-              signature. The photo is stamped into the signed document.
-            </span>
-          </label>
-          <div style={{ display: "flex", gap: "0.75rem" }}>
-            <button
-              onClick={openPhotoCapture}
-              disabled={!photoConsent}
-              style={{
-                ...ghostBtn,
-                flex: 1,
-                opacity: photoConsent ? 1 : 0.45,
-                cursor: photoConsent ? "pointer" : "not-allowed",
-              }}
-            >
-              {photoUrl ? "Retake" : "Take photo"}
-            </button>
-            <button
-              onClick={submit}
-              disabled={hasFields && !allRequiredComplete}
-              style={{
-                ...brandBtn,
-                flex: 2,
-                opacity: hasFields && !allRequiredComplete ? 0.45 : 1,
-                cursor: hasFields && !allRequiredComplete ? "not-allowed" : "pointer",
-              }}
-            >
-              {photoUrl ? "Seal it — submit" : "Skip photo & submit"}
-            </button>
-          </div>
-        </section>
+        <PhotoStep
+          photoUrl={photoUrl}
+          photoConsent={photoConsent}
+          onConsentChange={setPhotoConsent}
+          cameraOpen={cameraOpen}
+          onTakePhoto={openPhotoCapture}
+          onCapturePhoto={setPhotoUrl}
+          onCloseCamera={() => setCameraOpen(false)}
+          signingUrl={signingLink}
+          photoRequired={photoRequired}
+          fieldsComplete={!hasFields || allRequiredComplete}
+          onSubmit={submit}
+          submitStyle={brandBtn}
+        />
       )}
 
       {step === "submitting" && (
