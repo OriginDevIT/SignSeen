@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  cameraConstraints,
   captureVideoFrame,
+  requestCamera,
   toggleFacing,
   type FacingMode,
 } from "../lib/camera";
@@ -39,10 +39,14 @@ const ghostBtn: React.CSSProperties = {
 };
 
 /**
- * Live in-app camera for the witness photo. Defaults to the front
- * ("user") camera — the file input's capture="user" attribute is only
- * a hint and some phones ignore it. The stream is stopped on capture,
- * on cancel, on a facing-mode switch, and on unmount.
+ * Live in-app camera for the witness photo. Requests the front
+ * ("user") camera exactly first and falls back to any camera only
+ * when no front camera exists — the file input's capture="user"
+ * attribute is only a hint and some phones ignore it. When no camera
+ * can be started at all, the component says so and offers the
+ * file-upload fallback instead of failing silently. The stream is
+ * stopped on capture, on cancel, on a facing-mode switch, and on
+ * unmount.
  */
 export default function WitnessCamera({
   onCapture,
@@ -51,8 +55,10 @@ export default function WitnessCamera({
 }: WitnessCameraProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const settledRef = useRef(false);
   const [facing, setFacing] = useState<FacingMode>("user");
   const [starting, setStarting] = useState(true);
+  const [failed, setFailed] = useState(false);
 
   // Latest callbacks in a ref so inline parent handlers don't restart
   // the stream on every render.
@@ -66,23 +72,31 @@ export default function WitnessCamera({
 
   useEffect(() => {
     let cancelled = false;
+    settledRef.current = false;
     setStarting(true);
+    setFailed(false);
     stopStream();
+
+    // A start that never settles (no device answering, a permission
+    // prompt left open) must not leave the signer staring at
+    // "Starting camera…" forever: surface the upload fallback instead.
+    // A late grant after the timeout is ignored (stream stopped).
+    const timer = window.setTimeout(() => {
+      if (cancelled || settledRef.current) return;
+      settledRef.current = true;
+      stopStream();
+      setFailed(true);
+      setStarting(false);
+    }, 15000);
 
     (async () => {
       try {
-        const mediaDevices =
-          typeof navigator !== "undefined" ? navigator.mediaDevices : undefined;
-        if (!mediaDevices || typeof mediaDevices.getUserMedia !== "function") {
-          throw new Error("getUserMedia unavailable");
-        }
-        const stream = await mediaDevices.getUserMedia(
-          cameraConstraints(facing)
-        );
-        if (cancelled) {
+        const stream = await requestCamera(facing);
+        if (cancelled || settledRef.current) {
           stream.getTracks().forEach((t) => t.stop());
           return;
         }
+        settledRef.current = true;
         streamRef.current = stream;
         const video = videoRef.current;
         if (video) {
@@ -91,14 +105,22 @@ export default function WitnessCamera({
         }
         if (!cancelled) setStarting(false);
       } catch {
-        // Permission denied / no camera / insecure context: the file
-        // picker keeps the photo step working everywhere.
-        if (!cancelled) callbacks.current.onFallback();
+        // Permission denied / no camera / insecure context: show the
+        // upload fallback instead of failing silently. The fallback
+        // button is a real control, so opening the file picker from
+        // it is a user gesture and always produces a visible picker.
+        if (cancelled || settledRef.current) return;
+        settledRef.current = true;
+        setFailed(true);
+        setStarting(false);
+      } finally {
+        window.clearTimeout(timer);
       }
     })();
 
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
       stopStream();
     };
   }, [facing, stopStream]);
@@ -113,6 +135,36 @@ export default function WitnessCamera({
     stopStream();
     callbacks.current.onCapture(dataUrl);
   };
+
+  if (failed) {
+    return (
+      <div style={{ display: "grid", gap: "0.75rem" }}>
+        <p
+          style={{
+            margin: 0,
+            background: "#fef3c7",
+            padding: "0.75rem 1rem",
+            borderRadius: 8,
+          }}
+        >
+          Camera isn&apos;t available on this device. You can upload a photo
+          instead — it works the same as a witness photo.
+        </p>
+        <div style={{ display: "flex", gap: "0.75rem" }}>
+          <button type="button" onClick={onCancel} style={ghostBtn}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={() => callbacks.current.onFallback()}
+            style={{ ...primaryBtn, flex: 2 }}
+          >
+            Upload a photo instead
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: "grid", gap: "0.75rem" }}>

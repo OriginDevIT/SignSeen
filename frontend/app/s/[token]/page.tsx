@@ -132,10 +132,11 @@ export default function SignPage() {
     setStep("photo");
   };
 
-  // "Take photo": prefer the in-app camera (defaults to the front
-  // camera for real, unlike the capture="user" hint some phones
-  // ignore); fall back to the file picker where getUserMedia is
-  // unavailable. Denial inside the camera also lands on the fallback.
+  // "Take photo": prefer the in-app camera (front camera requested
+  // exactly, unlike the capture="user" hint some phones ignore);
+  // fall back to the file picker where getUserMedia is unavailable.
+  // A failure inside the camera shows an upload button instead, and
+  // that button lands here — a user gesture, so the picker opens.
   const openPhotoCapture = () => {
     if (isCameraSupported()) {
       setCameraOpen(true);
