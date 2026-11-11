@@ -598,3 +598,42 @@ export async function openBillingPortal(): Promise<string> {
   });
   return url;
 }
+
+/* ------------------------------------------------------------------ */
+/* Public document verification (#74). No account, no login.           */
+/* ------------------------------------------------------------------ */
+
+export type VerifyReason =
+  | "not_a_signseen_document"
+  | "seal_mismatch"
+  | "chain_broken"
+  | "file_altered";
+
+export interface VerifyVerdict {
+  valid: boolean;
+  /** Present when valid: the sealed document's title. */
+  document_title?: string;
+  /** Present when valid: the sealing instant, explicit UTC (…Z). */
+  signed_at?: string;
+  /** Present when valid: how many signers the certificate names. */
+  signer_count?: number;
+  /** Present when valid: the signer email(s), comma-separated. */
+  signer_email?: string;
+  /** Present when invalid: the reason category, nothing more. */
+  reason?: VerifyReason;
+}
+
+/** Upload a PDF and ask the server whether this system sealed it.
+
+Public endpoint: no sender token is attached (a stale one must never
+break a public check), and the server keeps nothing from the upload.
+*/
+export function verifyDocument(file: File): Promise<VerifyVerdict> {
+  const form = new FormData();
+  form.append("file", file);
+  return req<VerifyVerdict>(
+    "/api/verify/",
+    { method: "POST", body: form },
+    { auth: false },
+  );
+}

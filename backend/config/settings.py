@@ -73,6 +73,13 @@ LOGIN_MAX_FAILED_ATTEMPTS = _env_int("LOGIN_MAX_FAILED_ATTEMPTS", 10)
 LOGIN_FAILURE_WINDOW_SECONDS = _env_int("LOGIN_FAILURE_WINDOW_SECONDS", 900)
 # SSRF guard escape hatch for local development only (issue #39).
 URL_FETCH_ALLOW_PRIVATE = os.environ.get("URL_FETCH_ALLOW_PRIVATE", "0") == "1"
+# Public verification rate limiting (#74): 1/min, 7/hour per IP.
+# The Playwright suite disables it so one spec can check both a valid
+# and an invalid document without waiting out the minute window; the
+# limiter itself is covered by backend tests with the default on.
+VERIFY_RATE_LIMIT_ENABLED = (
+    os.environ.get("VERIFY_RATE_LIMIT_ENABLED", "1") == "1"
+)
 # Overall bound on a web-page render (issue #64): a slow page must fail
 # with a clean error well before the front proxy gives up (~100s).
 URL_RENDER_TIMEOUT_SECONDS = _env_int("URL_RENDER_TIMEOUT_SECONDS", 60)

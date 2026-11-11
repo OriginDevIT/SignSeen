@@ -149,3 +149,19 @@ both the web app and the API.
 
 `docker compose down -v` — wipes containers, the test database, and
 uploaded files.
+
+## J. Verify page (#74)
+
+30. **Genuine sealed PDF**: on `/verify`, upload a signed PDF
+    downloaded from a sealed document.
+    - ✅ "Valid — this is a genuine document sealed by SignSeen.",
+      with the document title, signed date, signer count, and signer
+      email.
+31. **Anything else**: upload an unsigned PDF, an edited copy of a
+    sealed PDF, or a random PDF.
+    - ✅ "Invalid" with the matching reason (not a SignSeen
+      document / seal mismatch / file altered). Note the 1-per-minute,
+      7-per-hour per-IP limit: a second check right after the first
+      is refused with "too many verification attempts".
+32. **No storage**: check the server afterwards — no trace of the
+    uploaded file on disk or in the database.
