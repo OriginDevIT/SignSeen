@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { renderToString } from "react-dom/server";
-import VerifyPage, {
+import VerifyPage from "./page";
+import {
   MAX_VERIFY_FILE_BYTES,
   VERIFY_REASON_TEXT,
-} from "./page";
+} from "../../lib/api";
 
 describe("VerifyPage", () => {
   it("renders the upload control, the retention promise, and the honest semantics", () => {

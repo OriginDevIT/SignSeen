@@ -3,24 +3,11 @@
 import { useRef, useState } from "react";
 import {
   ApiError,
+  MAX_VERIFY_FILE_BYTES,
+  VERIFY_REASON_TEXT,
   verifyDocument,
-  type VerifyReason,
   type VerifyVerdict,
 } from "../../lib/api";
-
-/** Client-side upload cap, matching the server's 15 MB limit. */
-export const MAX_VERIFY_FILE_BYTES = 15 * 1024 * 1024;
-
-/** Plain-words explanation for each invalid verdict. The server
- * returns only the reason category; the wording lives here. */
-export const VERIFY_REASON_TEXT: Record<VerifyReason, string> = {
-  not_a_signseen_document: "This file is not a document sealed by SignSeen.",
-  seal_mismatch:
-    "The audit seal in this file does not match the seal in the document's audit trail.",
-  chain_broken:
-    "The document's audit trail does not check out — it may have been tampered with.",
-  file_altered: "This file was changed after it was sealed.",
-};
 
 const page: React.CSSProperties = {
   maxWidth: 640,
