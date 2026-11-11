@@ -1817,3 +1817,220 @@ def test_field_placement_rejects_non_owner_and_bad_values():
     listing = client.get(f"/api/documents/{doc_id}/fields/").json()
     assert listing["page_count"] == 2
     assert listing["fields"] == []
+
+# ---------------------------------------------------------------------------
+# Public verification page (#74)
+# ---------------------------------------------------------------------------
+
+
+def _verify(client, pdf_bytes, ip="10.1.0.1", name="signed.pdf"):
+    """POST a PDF to /api/verify/ from one client IP."""
+    uploaded = SimpleUploadedFile(
+        name, pdf_bytes, content_type="application/pdf"
+    )
+    return client.post(
+        "/api/verify/", {"file": uploaded}, format="multipart", REMOTE_ADDR=ip
+    )
+
+
+def _sealed_pdf_bytes(doc_id) -> bytes:
+    doc = Document.objects.get(pk=doc_id)
+    return doc.signed_file.read()
+
+
+def _forged_certificate_pdf(document_id, session_id, seal) -> bytes:
+    """A minimal PDF carrying a certificate page with given values."""
+    doc = pymupdf.open()
+    page = doc.new_page()
+    lines = [
+        "SIGNATURE CERTIFICATE",
+        "Signer: jane@example.com",
+        "Signed at (UTC): 2026-11-11T18:02:30Z",
+        f"Document ID: {document_id}",
+        f"Session ID: {session_id}",
+        f"Audit seal: {seal}",
+    ]
+    y = 72
+    for line in lines:
+        page.insert_text((72, y), line)
+        y += 18
+    return doc.tobytes()
+
+
+@pytest.mark.django_db
+def test_verify_genuine_sealed_pdf_is_valid():
+    client = APIClient()
+    doc_id, token, _response = _seal_document(client, signer_name="Jane")
+    body = _verify(client, _sealed_pdf_bytes(doc_id), ip="10.1.0.1").json()
+    assert body["valid"] is True
+    assert body["document_title"] == "Contract"
+    assert body["signed_at"].endswith("Z")
+    assert body["signer_count"] == 1
+    assert body["signer_email"] == "jane@example.com"
+
+    # A stale sender token must not break this public endpoint.
+    stale = APIClient()
+    stale.credentials(HTTP_AUTHORIZATION="Token stale-token-no-longer-in-db")
+    assert _verify(stale, _sealed_pdf_bytes(doc_id), ip="10.1.0.2").json()[
+        "valid"
+    ] is True
+
+
+@pytest.mark.django_db
+def test_verify_multi_signer_pdf_is_valid():
+    client, doc_id, alice, bob = _premium_fields_setup("sequential")
+    assert _sign(alice["token"]).status_code == 200
+    assert _sign(bob["token"]).status_code == 200
+    body = _verify(client, _sealed_pdf_bytes(doc_id), ip="10.1.0.3").json()
+    assert body["valid"] is True
+    assert body["signer_count"] == 2
+    assert body["signer_email"] == "alice@example.com, bob@example.com"
+
+
+@pytest.mark.django_db
+def test_verify_tampered_copy_is_invalid():
+    client = APIClient()
+    doc_id, _token, _response = _seal_document(client)
+    signed = _sealed_pdf_bytes(doc_id)
+
+    # Trailing garbage: the bytes changed, the certificate is intact.
+    body = _verify(client, signed + b" ", ip="10.1.0.4").json()
+    assert body == {"valid": False, "reason": "file_altered"}
+
+    # A visible edit to the original pages: same verdict.
+    edited = pymupdf.open(stream=signed)
+    edited[0].insert_text((72, 200), "TAMPERED AFTER SEALING")
+    body = _verify(client, edited.tobytes(), ip="10.1.0.5").json()
+    assert body == {"valid": False, "reason": "file_altered"}
+
+
+@pytest.mark.django_db
+def test_verify_forged_seal_is_invalid():
+    client = APIClient()
+    doc_id, signing_token, _response = _seal_document(client)
+    session = SigningSession.objects.get(token=signing_token)
+    forged = _forged_certificate_pdf(doc_id, session.id, "0" * 64)
+    body = _verify(client, forged, ip="10.1.0.6").json()
+    assert body == {"valid": False, "reason": "seal_mismatch"}
+
+
+@pytest.mark.django_db
+def test_verify_random_pdf_is_invalid():
+    client = APIClient()
+    body = _verify(client, make_pdf_bytes(), ip="10.1.0.7").json()
+    assert body == {"valid": False, "reason": "not_a_signseen_document"}
+
+
+@pytest.mark.django_db
+def test_verify_forged_certificate_ids_are_invalid():
+    client = APIClient()
+    forged = _forged_certificate_pdf(
+        "11111111-1111-1111-1111-111111111111",
+        "22222222-2222-2222-2222-222222222222",
+        "a" * 64,
+    )
+    body = _verify(client, forged, ip="10.1.0.8").json()
+    assert body == {"valid": False, "reason": "not_a_signseen_document"}
+
+
+@pytest.mark.django_db
+def test_verify_rejects_missing_non_pdf_and_oversized():
+    client = APIClient()
+    assert client.post("/api/verify/", {}, format="multipart").status_code == 400
+    text = SimpleUploadedFile("notes.txt", b"hello", content_type="text/plain")
+    response = client.post(
+        "/api/verify/", {"file": text}, format="multipart", REMOTE_ADDR="10.1.0.9"
+    )
+    assert response.status_code == 400
+    assert response.json()["error"] == "file must be a PDF"
+
+    big = SimpleUploadedFile(
+        "big.pdf",
+        b"%PDF-1.7\n" + b"x" * (15 * 1024 * 1024),
+        content_type="application/pdf",
+    )
+    response = client.post(
+        "/api/verify/", {"file": big}, format="multipart", REMOTE_ADDR="10.1.0.10"
+    )
+    assert response.status_code == 400
+    assert response.json()["error"] == "file exceeds the 15 MB limit"
+
+
+@pytest.mark.django_db
+def test_verify_leaves_nothing_on_disk():
+    import glob
+    import os
+    import tempfile
+
+    from django.conf import settings
+
+    client = APIClient()
+    doc_id, _token, _response = _seal_document(client)
+    signed = _sealed_pdf_bytes(doc_id)
+    # Over 2.5 MB, so Django writes the upload to a temp file instead
+    # of keeping it in memory: the exact path the "upload, validate,
+    # delete" promise has to clean up.
+    padded = signed + b"x" * (3 * 1024 * 1024)
+
+    media_before = {
+        p for p in settings.MEDIA_ROOT.rglob("*") if p.is_file()
+    }
+    tmp_before = set(glob.glob(os.path.join(tempfile.gettempdir(), "*.upload*")))
+    docs_before = Document.objects.count()
+    events_before = AuditEvent.objects.count()
+
+    response = _verify(client, padded, ip="10.1.0.11")
+    assert response.json() == {"valid": False, "reason": "file_altered"}
+
+    assert {
+        p for p in settings.MEDIA_ROOT.rglob("*") if p.is_file()
+    } == media_before
+    assert (
+        set(glob.glob(os.path.join(tempfile.gettempdir(), "*.upload*")))
+        == tmp_before
+    )
+    assert Document.objects.count() == docs_before
+    assert AuditEvent.objects.count() == events_before
+
+
+@pytest.mark.django_db
+def test_verify_rate_limit_enforced():
+    client = APIClient()
+    doc_id, _token, _response = _seal_document(client)
+    signed = _sealed_pdf_bytes(doc_id)
+
+    first = _verify(client, signed, ip="10.1.0.12")
+    assert first.status_code == 200
+    assert first.json()["valid"] is True
+
+    # Second attempt inside the minute from the same IP: 429.
+    second = _verify(client, signed, ip="10.1.0.12")
+    assert second.status_code == 429
+
+    # A different IP is unaffected.
+    third = _verify(client, signed, ip="10.1.0.13")
+    assert third.status_code == 200
+    assert third.json()["valid"] is True
+
+
+@pytest.mark.django_db
+def test_verify_missing_recorded_event_is_invalid():
+    client = APIClient()
+    doc_id, _token, _response = _seal_document(client)
+    session = SigningSession.objects.get(document_id=doc_id)
+    session.events.filter(event_type="sealed_file.recorded").delete()
+    body = _verify(client, _sealed_pdf_bytes(doc_id), ip="10.1.0.14").json()
+    # The trail cannot prove the bytes are the sealed file: fail closed.
+    assert body == {"valid": False, "reason": "file_altered"}
+
+
+@pytest.mark.django_db
+def test_verify_broken_chain_is_invalid():
+    client = APIClient()
+    doc_id, _token, _response = _seal_document(client)
+    session = SigningSession.objects.get(document_id=doc_id)
+    sealed = session.events.get(event_type="document.sealed")
+    sealed.payload = {"document_id": str(doc_id), "seal_event": "tampered"}
+    sealed.save(update_fields=["payload"])
+    body = _verify(client, _sealed_pdf_bytes(doc_id), ip="10.1.0.15").json()
+    assert body == {"valid": False, "reason": "chain_broken"}

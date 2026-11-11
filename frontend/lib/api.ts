@@ -598,3 +598,56 @@ export async function openBillingPortal(): Promise<string> {
   });
   return url;
 }
+
+/* ------------------------------------------------------------------ */
+/* Public document verification (#74). No account, no login.           */
+/* ------------------------------------------------------------------ */
+
+export type VerifyReason =
+  | "not_a_signseen_document"
+  | "seal_mismatch"
+  | "chain_broken"
+  | "file_altered";
+
+/** Client-side upload cap, matching the server's 15 MB limit. */
+export const MAX_VERIFY_FILE_BYTES = 15 * 1024 * 1024;
+
+/** Plain-words explanation for each invalid verdict. The server
+ * returns only the reason category; the wording lives here. */
+export const VERIFY_REASON_TEXT: Record<VerifyReason, string> = {
+  not_a_signseen_document: "This file is not a document sealed by SignSeen.",
+  seal_mismatch:
+    "The audit seal in this file does not match the seal in the document's audit trail.",
+  chain_broken:
+    "The document's audit trail does not check out — it may have been tampered with.",
+  file_altered: "This file was changed after it was sealed.",
+};
+
+export interface VerifyVerdict {
+  valid: boolean;
+  /** Present when valid: the sealed document's title. */
+  document_title?: string;
+  /** Present when valid: the sealing instant, explicit UTC (…Z). */
+  signed_at?: string;
+  /** Present when valid: how many signers the certificate names. */
+  signer_count?: number;
+  /** Present when valid: the signer email(s), comma-separated. */
+  signer_email?: string;
+  /** Present when invalid: the reason category, nothing more. */
+  reason?: VerifyReason;
+}
+
+/** Upload a PDF and ask the server whether this system sealed it.
+
+Public endpoint: no sender token is attached (a stale one must never
+break a public check), and the server keeps nothing from the upload.
+*/
+export function verifyDocument(file: File): Promise<VerifyVerdict> {
+  const form = new FormData();
+  form.append("file", file);
+  return req<VerifyVerdict>(
+    "/api/verify/",
+    { method: "POST", body: form },
+    { auth: false },
+  );
+}

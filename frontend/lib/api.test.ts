@@ -6,6 +6,7 @@ import {
   sessionDocumentUrl,
   submitSignature,
   uploadDocument,
+  verifyDocument,
 } from "./api";
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -687,5 +688,75 @@ describe("document fields (#13)", () => {
       { field_id: "f3", value: "hello" },
     ]);
     expect(init?.headers.get("Authorization")).toBeNull();
+  });
+});
+
+describe("verifyDocument", () => {
+  it("posts a multipart form to /api/verify/ with no auth header", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({
+        valid: true,
+        document_title: "Contract",
+        signed_at: "2026-11-11T18:02:30Z",
+        signer_count: 1,
+        signer_email: "jane@example.com",
+      }),
+    );
+    const file = new File(["%PDF-"], "signed.pdf", {
+      type: "application/pdf",
+    });
+    const result = await verifyDocument(file);
+    expect(result.valid).toBe(true);
+    expect(result.document_title).toBe("Contract");
+
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toContain("/api/verify/");
+    expect(init?.method).toBe("POST");
+    const form = init?.body as FormData;
+    expect(form).toBeInstanceOf(FormData);
+    expect(form.get("file")).toBe(file);
+    // req() always passes a real Headers instance; the RequestInit
+    // type is wider, so narrow it for the assertion.
+    const headers = init?.headers as Headers | undefined;
+    expect(headers?.get("Authorization")).toBeNull();
+  });
+
+  it("returns the invalid verdict with its reason category", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({ valid: false, reason: "seal_mismatch" }),
+    );
+    const file = new File(["%PDF-"], "signed.pdf", {
+      type: "application/pdf",
+    });
+    const result = await verifyDocument(file);
+    expect(result).toEqual({ valid: false, reason: "seal_mismatch" });
+  });
+
+  it("throws an ApiError carrying the server message and status", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({ error: "file exceeds the 15 MB limit" }, 400),
+    );
+    const file = new File(["%PDF-"], "big.pdf", {
+      type: "application/pdf",
+    });
+    await expect(verifyDocument(file)).rejects.toMatchObject({
+      message: "file exceeds the 15 MB limit",
+      status: 400,
+    });
+  });
+
+  it("throws an ApiError on rate limiting", async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse(
+        { error: "too many verification attempts — try again later" },
+        429,
+      ),
+    );
+    const file = new File(["%PDF-"], "signed.pdf", {
+      type: "application/pdf",
+    });
+    await expect(verifyDocument(file)).rejects.toMatchObject({
+      status: 429,
+    });
   });
 });
