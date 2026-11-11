@@ -82,16 +82,23 @@ export default function DashboardPage() {
     }
     (async () => {
       try {
-        setAccount(await myAccount());
-        setDash(await myDashboard());
-        try {
-          const b = await getBranding();
+        // The three loads are independent reads, so fetch them in
+        // parallel instead of one after another: the page renders
+        // nothing until account and dashboard resolve, so the
+        // sequential version paid a full round trip per call.
+        const [acct, d, b] = await Promise.all([
+          myAccount(),
+          myDashboard(),
+          // Branding is a settings extra; a failure here shouldn't
+          // take down the whole dashboard.
+          getBranding().catch(() => null),
+        ]);
+        setAccount(acct);
+        setDash(d);
+        if (b) {
           setBranding(b);
           setBrandName(b.brand_name);
           setBrandColor(b.brand_color);
-        } catch {
-          // Branding is a settings extra; a failure here shouldn't
-          // take down the whole dashboard.
         }
       } catch (err) {
         if (err instanceof ApiError && err.status === 401) {
