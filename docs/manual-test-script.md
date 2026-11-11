@@ -44,8 +44,9 @@ This script covers those by hand.
     - ✅ Every page carries a light diagonal "Signed with SignSeen"
       watermark (free-tier mark).
 11. Audit trail: `GET http://localhost:8000/api/sessions/<token>/events/`
-    - ✅ `chain_valid: true`, three events:
-      `session.created` → `signature.submitted` → `document.sealed`.
+    - ✅ `chain_valid: true`, four events:
+      `session.created` → `signature.submitted` → `document.sealed` →
+      `sealed_file.recorded` (carries the sealed file's SHA-256).
     - ✅ `signature.submitted` payload includes `photo_assurance`
       (`assurance: "full"`, `reason: "timestamp_match"`) and
       `photo_consent: true`.

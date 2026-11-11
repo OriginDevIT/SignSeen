@@ -93,6 +93,7 @@ test("happy path: send -> sign with photo -> sealed, audit chain valid", async (
     "signing.viewed",
     "signature.submitted",
     "document.sealed",
+    "sealed_file.recorded",
   ]);
 
   const sessionRes = await api.get(`/api/sessions/${token}/`);

@@ -2,6 +2,7 @@
 from django.test import override_settings
 
 import base64
+import hashlib
 import http.server
 import io
 import threading
@@ -182,8 +183,115 @@ def test_full_ceremony_signs_seals_and_verifies():
     session = SigningSession.objects.get(token=token)
     assert session.status == "signed"
     types = [e.event_type for e in session.events.order_by("created_at")]
-    assert types == ["session.created", "signature.submitted", "document.sealed"]
+    assert types == [
+        "session.created",
+        "signature.submitted",
+        "document.sealed",
+        "sealed_file.recorded",
+    ]
     assert verify_chain(session) is True
+
+
+def _seal_document(client, signer_name=None, signer_email="jane@example.com"):
+    """Upload, create a session, and sign it; return (doc_id, token, response)."""
+    doc_id = upload_document(client).json()["id"]
+    payload = {"signer_email": signer_email}
+    if signer_name is not None:
+        payload["signer_name"] = signer_name
+    token = client.post(
+        f"/api/documents/{doc_id}/sessions/", payload, format="json"
+    ).json()["token"]
+    response = client.post(
+        f"/api/sessions/{token}/sign/",
+        {"signature": SIG_DATA_URL, "device_info": {}},
+        format="json",
+    )
+    assert response.status_code == 200
+    return doc_id, token, response
+
+
+def _certificate_text(doc_id) -> str:
+    doc = Document.objects.get(pk=doc_id)
+    pdf = pymupdf.open(stream=doc.signed_file.read())
+    return "".join(page.get_text() for page in pdf)
+
+
+@pytest.mark.django_db
+def test_certificate_seal_matches_sealing_event():
+    # The certificate, the done screen, and the seal email must all
+    # carry the same seal: the hash of the document.sealed event. The
+    # certificate used to print the earlier signature.submitted
+    # event's hash instead, so the two never matched — and the
+    # certificate itself told the reader to check the seal against
+    # the audit trail.
+    client = APIClient()
+    doc_id, _token, response = _seal_document(client, signer_name="Jane")
+    body = response.json()
+    assert body["chain_valid"] is True
+
+    session = SigningSession.objects.get(document_id=doc_id)
+    sealed = session.events.get(event_type="document.sealed")
+    assert body["audit_seal"] == sealed.hash
+
+    text = _certificate_text(doc_id)
+    assert f"Audit seal: {sealed.hash}" in text
+    assert "Signer: Jane" in text
+
+    # The sealed file's hash stays in the trail, in the event chained
+    # right after the seal.
+    recorded = session.events.get(event_type="sealed_file.recorded")
+    doc = Document.objects.get(pk=doc_id)
+    assert recorded.payload["signed_sha256"] == hashlib.sha256(
+        doc.signed_file.read()
+    ).hexdigest()
+
+
+@pytest.mark.django_db
+def test_certificate_timestamp_is_true_utc_signing_time():
+    # "Signed at (UTC)" must be the signing instant in UTC — never a
+    # local-time value wearing a UTC label.
+    from datetime import datetime, timezone as dt_timezone
+
+    client = APIClient()
+    doc_id, _token, _response = _seal_document(client, signer_name="Jane")
+    session = SigningSession.objects.get(document_id=doc_id)
+    submitted = session.events.get(event_type="signature.submitted")
+
+    text = _certificate_text(doc_id)
+    line = next(l for l in text.splitlines() if l.startswith("Signed at (UTC):"))
+    value = line.split("Signed at (UTC):", 1)[1].strip()
+    assert value.endswith("Z")
+    parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    expected = submitted.created_at.astimezone(dt_timezone.utc).replace(microsecond=0)
+    assert parsed == expected
+
+
+@pytest.mark.django_db
+def test_certificate_signer_line_shows_email_when_no_name():
+    # The signer name is optional at send time; the certificate must
+    # still identify the signer — the signer email is always known.
+    # It used to render a stray dot (an em-dash fallback the
+    # certificate font cannot render).
+    client = APIClient()
+    doc_id, _token, _response = _seal_document(client)
+    text = _certificate_text(doc_id)
+    assert "Signer: jane@example.com" in text
+    assert "Signer: ·" not in text
+
+
+def test_signer_lines_fallback_is_plain_dash():
+    from .pdf import _signer_lines
+
+    lines = _signer_lines(
+        {
+            "signer_name": "",
+            "signed_at": "2026-11-11T18:02:30Z",
+            "document_id": "doc",
+            "session_id": "sess",
+            "audit_hash": "abc",
+        }
+    )
+    assert lines[0] == "Signer: -"
 
 
 @pytest.mark.django_db

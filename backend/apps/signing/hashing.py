@@ -26,14 +26,30 @@ def chain_hash(prev_hash: str, event_type: str, payload: dict, timestamp_iso: st
     return h.hexdigest()
 
 
-def record_event(session, event_type: str, payload: dict):
-    """Append an event to the session's chain and return it."""
-    from .models import AuditEvent
+def next_event_hash(session, event_type: str, payload: dict, timestamp):
+    """Hash (and prev hash) the next event in this session's chain would carry.
 
+    The hash is fully determined by the chain tip, the event type, the
+    payload, and the timestamp, so it can be computed before the event
+    row exists — the sealed PDF needs the document.sealed event's hash
+    printed on its certificate before that event is recorded.
+    """
     last = session.events.order_by("-created_at").first()
     prev_hash = last.hash if last else GENESIS_HASH
-    timestamp = timezone.now()
-    event_hash = chain_hash(prev_hash, event_type, payload, timestamp.isoformat())
+    return prev_hash, chain_hash(prev_hash, event_type, payload, timestamp.isoformat())
+
+
+def record_event(session, event_type: str, payload: dict, timestamp=None):
+    """Append an event to the session's chain and return it.
+
+    `timestamp` pins the exact instant that goes into the hash (and
+    the row): pass one when the hash was computed ahead of the record,
+    as the seal does; otherwise the current time is used.
+    """
+    from .models import AuditEvent
+
+    timestamp = timestamp or timezone.now()
+    prev_hash, event_hash = next_event_hash(session, event_type, payload, timestamp)
     return AuditEvent.objects.create(
         session=session,
         event_type=event_type,
