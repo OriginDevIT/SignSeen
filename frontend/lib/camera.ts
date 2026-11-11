@@ -10,9 +10,47 @@
 
 export type FacingMode = "user" | "environment";
 
-/** Stream constraints for a facing mode: video only, no audio. */
+/** Stream constraints for a facing mode: video only, no audio.
+ * A plain facingMode string is only a preference — a device may still
+ * open another camera — so this is the fallback shape, not the first
+ * request. */
 export function cameraConstraints(facing: FacingMode): MediaStreamConstraints {
   return { audio: false, video: { facingMode: facing } };
+}
+
+/** Stream constraints that REQUIRE the given camera. A device with no
+ * matching camera rejects with OverconstrainedError instead of
+ * silently opening another one. */
+export function exactCameraConstraints(
+  facing: FacingMode
+): MediaStreamConstraints {
+  return { audio: false, video: { facingMode: { exact: facing } } };
+}
+
+/** Request a camera stream, preferring the given facing mode.
+ * Tries the exact camera first; when no camera matches (or no camera
+ * exists at all) retries with the preference form so any available
+ * camera is used instead. Permission denial is not retried — the
+ * caller treats it as "camera unavailable". */
+export async function requestCamera(
+  facing: FacingMode
+): Promise<MediaStream> {
+  const mediaDevices =
+    typeof navigator !== "undefined" ? navigator.mediaDevices : undefined;
+  if (!mediaDevices || typeof mediaDevices.getUserMedia !== "function") {
+    throw new Error("getUserMedia unavailable");
+  }
+  try {
+    return await mediaDevices.getUserMedia(exactCameraConstraints(facing));
+  } catch (err) {
+    if (
+      err instanceof DOMException &&
+      (err.name === "OverconstrainedError" || err.name === "NotFoundError")
+    ) {
+      return await mediaDevices.getUserMedia(cameraConstraints(facing));
+    }
+    throw err;
+  }
 }
 
 /** The other camera (for the switch-camera control). */
