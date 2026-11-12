@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('signing', '0007_merge_20261021_1149'),
+        ('signing', '0008_document_photo_required'),
     ]
 
     operations = [
