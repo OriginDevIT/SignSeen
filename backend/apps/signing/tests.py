@@ -1777,17 +1777,33 @@ def _make_session(client, doc_id, name, email):
     return resp.json()
 
 
-def _place(client, doc_id, session_id, field_type, page=1, x=0.1, y=0.2, required=True):
+def _place(
+    client,
+    doc_id,
+    session_id,
+    field_type,
+    page=1,
+    x=0.1,
+    y=0.2,
+    required=True,
+    width=None,
+    height=None,
+):
+    body = {
+        "session_id": session_id,
+        "type": field_type,
+        "page": page,
+        "x": x,
+        "y": y,
+        "required": required,
+    }
+    if width is not None:
+        body["width"] = width
+    if height is not None:
+        body["height"] = height
     resp = client.post(
         f"/api/documents/{doc_id}/fields/",
-        {
-            "session_id": session_id,
-            "type": field_type,
-            "page": page,
-            "x": x,
-            "y": y,
-            "required": required,
-        },
+        body,
         format="json",
     )
     assert resp.status_code == 201, resp.content
@@ -2007,6 +2023,138 @@ def test_field_placement_rejects_non_owner_and_bad_values():
     listing = client.get(f"/api/documents/{doc_id}/fields/").json()
     assert listing["page_count"] == 2
     assert listing["fields"] == []
+
+
+@pytest.mark.django_db
+def test_drawn_box_field_create_and_validation():
+    client, doc_id, alice, _ = _premium_fields_setup("sequential")
+
+    def place(**overrides):
+        body = {
+            "session_id": alice["id"],
+            "type": "signature",
+            "page": 1,
+            "x": 0.1,
+            "y": 0.2,
+        }
+        body.update(overrides)
+        return client.post(f"/api/documents/{doc_id}/fields/", body, format="json")
+
+    # A drawn box is stored and exposed on the field and the session payload.
+    drawn = place(width=0.3, height=0.15)
+    assert drawn.status_code == 201, drawn.content
+    assert drawn.json()["width"] == 0.3
+    assert drawn.json()["height"] == 0.15
+    payload = APIClient().get(f"/api/sessions/{alice['token']}/").json()
+    listed = next(f for f in payload["fields"] if f["id"] == drawn.json()["id"])
+    assert listed["width"] == 0.3 and listed["height"] == 0.15
+
+    # A click-placed field carries no size and keeps the fixed render size.
+    clicked = place(x=0.6, y=0.6)
+    assert clicked.status_code == 201, clicked.content
+    assert clicked.json()["width"] is None
+    assert clicked.json()["height"] is None
+
+    # Validation: both dimensions or neither; inside the page; above the floor.
+    assert place(width=0.3).status_code == 400  # height missing
+    assert place(height=0.15).status_code == 400  # width missing
+    assert place(width=0.95, height=0.15).status_code == 400  # x + width > 1
+    assert place(width=0.3, height=0.85).status_code == 400  # y + height > 1
+    assert place(width=0.01, height=0.15).status_code == 400  # too narrow
+    assert place(width=0.3, height=0.005).status_code == 400  # too short
+    assert place(width=-0.1, height=0.15).status_code == 400
+    assert place(width=1.5, height=0.15).status_code == 400
+    assert place(width="wide", height=0.15).status_code == 400
+
+
+@pytest.mark.django_db
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+def test_drawn_box_stamping_fits_inside():
+    client, doc_id, alice, bob = _premium_fields_setup("sequential")
+
+    # Drawn boxes (normalized): signature 0.3 x 0.15, text 0.4 x 0.06,
+    # checkbox 0.08 x 0.08 — plus a legacy click-placed signature.
+    a_sig = _place(
+        client, doc_id, alice["id"], "signature",
+        page=1, x=0.1, y=0.2, width=0.3, height=0.15,
+    )
+    a_text = _place(
+        client, doc_id, alice["id"], "text",
+        page=1, x=0.1, y=0.45, width=0.4, height=0.06,
+    )
+    a_legacy = _place(
+        client, doc_id, alice["id"], "signature", page=1, x=0.6, y=0.6
+    )
+    b_check = _place(
+        client, doc_id, bob["id"], "checkbox",
+        page=1, x=0.55, y=0.2, width=0.08, height=0.08,
+    )
+
+    done = _sign_with_fields(
+        alice["token"],
+        [
+            {"field_id": a_sig["id"], "value": SIG_DATA_URL},
+            {"field_id": a_text["id"], "value": "Alice agreed"},
+            {"field_id": a_legacy["id"], "value": SIG_DATA_URL},
+        ],
+    )
+    assert done.status_code == 200, done.content
+    final = _sign_with_fields(
+        bob["token"], [{"field_id": b_check["id"], "value": True}]
+    )
+    assert final.status_code == 200, final.content
+    assert final.json()["document_final"] is True
+
+    doc = Document.objects.get(pk=doc_id)
+    pdf = pymupdf.open(stream=doc.signed_file.read())
+    page = pdf[0]
+    W, H = page.rect.width, page.rect.height
+
+    def box(x, y, w, h):
+        return pymupdf.Rect(x * W, y * H, (x + w) * W, (y + h) * H)
+
+    def inside(inner, outer, tol=2):
+        return (
+            inner.x0 >= outer.x0 - tol
+            and inner.y0 >= outer.y0 - tol
+            and inner.x1 <= outer.x1 + tol
+            and inner.y1 <= outer.y1 + tol
+        )
+
+    # The test signature is a 1x1 PNG, so a fit-inside stamp is a
+    # square centred in its box — inside the drawn box, never stretched.
+    images = page.get_image_info(xrefs=True)
+    assert len(images) == 2
+    drawn_box = box(0.1, 0.2, 0.3, 0.15)
+    legacy_box = pymupdf.Rect(0.6 * W, 0.6 * H, 0.6 * W + 180, 0.6 * H + 60)
+    drawn_img = next(
+        i for i in images if inside(pymupdf.Rect(i["bbox"]), drawn_box)
+    )
+    legacy_img = next(
+        i for i in images if inside(pymupdf.Rect(i["bbox"]), legacy_box)
+    )
+    for img in (drawn_img, legacy_img):
+        r = pymupdf.Rect(img["bbox"])
+        assert abs((r.x1 - r.x0) - (r.y1 - r.y0)) < 2  # square: aspect preserved
+    # The drawn box's square is the box height (the constraining side);
+    # the legacy 180x60 box's square is 60 tall.
+    drawn_rect = pymupdf.Rect(drawn_img["bbox"])
+    legacy_rect = pymupdf.Rect(legacy_img["bbox"])
+    assert abs((drawn_rect.y1 - drawn_rect.y0) - 0.15 * H) < 2
+    assert abs((legacy_rect.y1 - legacy_rect.y0) - 60) < 2
+
+    # Text shrinks to fit its box width and stays inside the box.
+    text_box = box(0.1, 0.45, 0.4, 0.06)
+    found = page.search_for("Alice agreed")
+    assert found, "stamped text not found"
+    assert inside(found[0], text_box)
+
+    # The checkbox draws as a square centred in its box.
+    check_box = box(0.55, 0.2, 0.08, 0.08)
+    assert "X" in page.get_text()
+    rects = [d["rect"] for d in page.get_drawings() if d["rect"].width > 10]
+    assert any(inside(r, check_box) for r in rects)
+
 
 # ---------------------------------------------------------------------------
 # Public verification page (#74)

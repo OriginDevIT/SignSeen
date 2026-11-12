@@ -114,8 +114,9 @@ def _render_header(page: pymupdf.Page, brand_name: str = "") -> int:
     return y + 44
 
 
-# Fixed render sizes (points) for placed fields in v1 (#13): the
-# sender controls position/type/assignment, not dimensions.
+# Fixed render sizes (points) for placed fields without a drawn box
+# (#13): the sender controls position/type/assignment, and a drawn
+# box's size; click-placed and pre-existing fields use these.
 FIELD_SIZES = {
     "signature": (180, 60),
     "initials": (90, 45),
@@ -125,13 +126,25 @@ FIELD_SIZES = {
 }
 
 
+def _field_box(field: dict, page_w: float, page_h: float) -> tuple[float, float]:
+    """Render size in points for a field: its drawn box when stored,
+    else the fixed per-type size."""
+    fw, fh = field.get("width"), field.get("height")
+    if fw is not None and fh is not None:
+        return fw * page_w, fh * page_h
+    return FIELD_SIZES.get(field["type"], (180, 60))
+
+
 def _stamp_fields(doc: pymupdf.Document, fields: list[dict]) -> None:
     """Stamp completed fields onto their pages at normalized coords.
 
     Each field dict: {type, page (1-based), x, y (0-1 fractions of the
-    page size), value_text, image_png (bytes or None)}. A checked
-    checkbox renders as an X inside an outlined box; an unchecked one
-    as the empty box.
+    page size), width, height (0-1 fractions or None), value_text,
+    image_png (bytes or None)}. Content always fits inside the field's
+    box, never outside it: images keep their aspect (fit inside, centred),
+    a checkbox draws at the box's smaller side, and text/date shrink to
+    fit the box width. A checked checkbox renders as an X inside an
+    outlined box; an unchecked one as the empty box.
     """
     for field in fields:
         page_no = field["page"] - 1
@@ -142,26 +155,44 @@ def _stamp_fields(doc: pymupdf.Document, fields: list[dict]) -> None:
         x = field["x"] * width
         y = field["y"] * height
         ftype = field["type"]
-        w, h = FIELD_SIZES.get(ftype, (180, 60))
+        w, h = _field_box(field, width, height)
         if ftype in ("signature", "initials"):
             if field.get("image_png"):
                 rect = pymupdf.Rect(
                     x, y, min(x + w, width), min(y + h, height)
                 )
-                page.insert_image(rect, stream=field["image_png"])
+                page.insert_image(
+                    rect, stream=field["image_png"], keep_proportion=True
+                )
         elif ftype == "checkbox":
-            rect = pymupdf.Rect(x, y, x + w, y + h)
+            side = min(w, h)
+            x0 = x + (w - side) / 2
+            y0 = y + (h - side) / 2
+            rect = pymupdf.Rect(x0, y0, x0 + side, y0 + side)
             page.draw_rect(rect, color=(0.1, 0.1, 0.1), width=1)
             if field.get("value_text") == "true":
                 page.insert_text(
-                    (x + 3, y + h - 3), "X", fontsize=13, fontname="helv"
+                    (x0 + 3, y0 + side - 3),
+                    "X",
+                    fontsize=max(8, side - 4),
+                    fontname="helv",
                 )
         elif ftype in ("text", "date"):
             if field.get("value_text"):
+                text = field["value_text"]
+                font = pymupdf.Font("helv")
+                # Size to the box: the rendered span (ascender to
+                # descender) must fit the box height, and the text
+                # must fit its width; centre the span vertically.
+                span = font.ascender - font.descender
+                fontsize = max(6.0, min(h - 6, (h - 2) / span))
+                while fontsize > 6 and font.text_length(text, fontsize) > w - 4:
+                    fontsize -= 1
+                baseline = y + (h - span * fontsize) / 2 + font.ascender * fontsize
                 page.insert_text(
-                    (x, y + 13),
-                    field["value_text"],
-                    fontsize=12,
+                    (x, baseline),
+                    text,
+                    fontsize=fontsize,
                     fontname="helv",
                 )
 

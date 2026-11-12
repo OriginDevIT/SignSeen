@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import {
   ApiError,
@@ -13,6 +13,12 @@ import {
   type DocumentInfo,
   type FieldType,
 } from "../../../lib/api";
+import {
+  boxTooSmall,
+  fieldBox,
+  isClick,
+  normalizeBox,
+} from "../../../lib/fieldBox";
 
 const FIELD_TYPES: FieldType[] = ["signature", "initials", "checkbox", "text", "date"];
 
@@ -44,6 +50,23 @@ export default function PlaceFieldsPage() {
   const [sessionId, setSessionId] = useState("");
   const [error, setError] = useState("");
   const [loadError, setLoadError] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  // In-progress drag, as normalized corner points. The drag start (in
+  // client pixels, for the click test) lives in a ref so pointerup can
+  // read the end point from its own event instead of stale state.
+  const [draft, setDraft] = useState<{
+    x0: number;
+    y0: number;
+    x1: number;
+    y1: number;
+  } | null>(null);
+  const imgRef = useRef<HTMLImageElement | null>(null);
+  const dragStart = useRef<{
+    clientX: number;
+    clientY: number;
+    x: number;
+    y: number;
+  } | null>(null);
 
   useEffect(() => {
     Promise.all([getDocument(docId), getDocumentFields(docId)])
@@ -89,15 +112,32 @@ export default function PlaceFieldsPage() {
     return `Signer ${s.order + 1}${s.signer_name ? ` — ${s.signer_name}` : ""}`;
   };
 
-  const onPageClick = async (e: React.MouseEvent<HTMLImageElement>) => {
+  const pageFields = fields.filter((f) => f.page === page);
+
+  const pointFromEvent = (e: React.PointerEvent) => {
+    const el = imgRef.current;
+    if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return null;
+    return {
+      clientX: e.clientX,
+      clientY: e.clientY,
+      x: (e.clientX - rect.left) / rect.width,
+      y: (e.clientY - rect.top) / rect.height,
+    };
+  };
+
+  const placeField = async (
+    x: number,
+    y: number,
+    width?: number,
+    height?: number
+  ) => {
     setError("");
     if (!sessionId) {
       setError("Add a signer to this document before placing fields.");
       return;
     }
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = (e.clientX - rect.left) / rect.width;
-    const y = (e.clientY - rect.top) / rect.height;
     try {
       const field = await createDocumentField(docId, {
         session_id: sessionId,
@@ -105,6 +145,12 @@ export default function PlaceFieldsPage() {
         page,
         x: Math.round(x * 10000) / 10000,
         y: Math.round(y * 10000) / 10000,
+        ...(width !== undefined && height !== undefined
+          ? {
+              width: Math.round(width * 10000) / 10000,
+              height: Math.round(height * 10000) / 10000,
+            }
+          : {}),
       });
       setFields((prev) => [...prev, field]);
     } catch (err) {
@@ -112,11 +158,80 @@ export default function PlaceFieldsPage() {
     }
   };
 
+  const onPointerDown = (e: React.PointerEvent<HTMLImageElement>) => {
+    const p = pointFromEvent(e);
+    if (!p) return;
+    setError("");
+    if (!sessionId) {
+      setError("Add a signer to this document before placing fields.");
+      return;
+    }
+    dragStart.current = p;
+    setDraft({ x0: p.x, y0: p.y, x1: p.x, y1: p.y });
+    // Pointer capture keeps the drag tracking if the pointer leaves
+    // the image mid-drag; not every environment implements it.
+    const target = e.currentTarget as HTMLImageElement & {
+      setPointerCapture?: (id: number) => void;
+    };
+    target.setPointerCapture?.(e.pointerId);
+  };
+
+  const onPointerMove = (e: React.PointerEvent<HTMLImageElement>) => {
+    const start = dragStart.current;
+    if (!start) return;
+    const p = pointFromEvent(e);
+    if (!p) return;
+    setDraft({ x0: start.x, y0: start.y, x1: p.x, y1: p.y });
+  };
+
+  const onPointerUp = async (e: React.PointerEvent<HTMLImageElement>) => {
+    const start = dragStart.current;
+    dragStart.current = null;
+    setDraft(null);
+    if (!start) return;
+    const end = pointFromEvent(e);
+    if (!end) return;
+    if (isClick(start.clientX, start.clientY, end.clientX, end.clientY)) {
+      // A click: select the box under the pointer, if any; otherwise
+      // place a default-size field at that point.
+      const hit = [...pageFields].reverse().find((f) => {
+        const b = fieldBox(f);
+        return (
+          b !== null &&
+          start.x >= b.x &&
+          start.x <= b.x + b.width &&
+          start.y >= b.y &&
+          start.y <= b.y + b.height
+        );
+      });
+      if (hit) {
+        setSelectedId(hit.id);
+        return;
+      }
+      setSelectedId(null);
+      await placeField(start.x, start.y);
+      return;
+    }
+    const box = normalizeBox(start.x, start.y, end.x, end.y);
+    if (boxTooSmall(box)) {
+      setError("That box is too small — drag a larger one.");
+      return;
+    }
+    setSelectedId(null);
+    await placeField(box.x, box.y, box.width, box.height);
+  };
+
+  const onPointerCancel = () => {
+    dragStart.current = null;
+    setDraft(null);
+  };
+
   const onDelete = async (field: DocumentFieldInfo) => {
     setError("");
     try {
       await deleteDocumentField(docId, field.id);
       setFields((prev) => prev.filter((f) => f.id !== field.id));
+      setSelectedId((prev) => (prev === field.id ? null : prev));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not delete the field.");
     }
@@ -142,7 +257,7 @@ export default function PlaceFieldsPage() {
     );
   }
 
-  const pageFields = fields.filter((f) => f.page === page);
+  const draftBox = draft ? normalizeBox(draft.x0, draft.y0, draft.x1, draft.y1) : null;
 
   return (
     <main style={shell}>
@@ -151,8 +266,9 @@ export default function PlaceFieldsPage() {
       </h1>
       <p style={{ opacity: 0.65, marginTop: 0 }}>
         Signing mode: {doc.signing_mode}. Pick a field type and the signer it
-        belongs to, then click on the page where the field goes. Each signer
-        only ever sees their own fields.
+        belongs to, then drag on the page to draw a box where the field goes
+        — or click to place a default-size field. Each signer only ever
+        sees their own fields.
       </p>
 
       {error && (
@@ -224,49 +340,123 @@ export default function PlaceFieldsPage() {
         {imgUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
+            ref={imgRef}
             src={imgUrl}
             alt={`Document page ${page}`}
-            onClick={onPageClick}
-            style={{ width: "100%", display: "block", cursor: "crosshair" }}
+            onPointerDown={onPointerDown}
+            onPointerMove={onPointerMove}
+            onPointerUp={onPointerUp}
+            onPointerCancel={onPointerCancel}
+            draggable={false}
+            style={{
+              width: "100%",
+              display: "block",
+              cursor: "crosshair",
+              touchAction: "none",
+            }}
           />
         ) : (
           <p style={{ padding: "2rem", textAlign: "center", opacity: 0.6 }}>
             Loading page…
           </p>
         )}
-        {pageFields.map((f) => (
+        {draftBox && (
           <div
-            key={f.id}
-            title={`${f.type} — ${signerLabel(f.session)}`}
+            data-testid="field-draft"
             style={{
               position: "absolute",
-              left: `${f.x * 100}%`,
-              top: `${f.y * 100}%`,
-              transform: "translate(-2px, -50%)",
-              background: "#111827",
-              color: "#fff",
-              fontSize: "0.7rem",
-              padding: "0.15rem 0.45rem",
-              borderRadius: 999,
+              left: `${draftBox.x * 100}%`,
+              top: `${draftBox.y * 100}%`,
+              width: `${draftBox.width * 100}%`,
+              height: `${draftBox.height * 100}%`,
+              border: "2px solid #2563eb",
+              background: "rgba(37, 99, 235, 0.12)",
               pointerEvents: "none",
-              whiteSpace: "nowrap",
             }}
-          >
-            {f.type} · S{(doc.sessions?.find((s) => s.id === f.session)?.order ?? 0) + 1}
-          </div>
-        ))}
+          />
+        )}
+        {pageFields.map((f) => {
+          const b = fieldBox(f);
+          const signerNo =
+            (doc.sessions?.find((s) => s.id === f.session)?.order ?? 0) + 1;
+          if (b === null) {
+            // Click-placed field: no stored size, marker pill as before.
+            return (
+              <div
+                key={f.id}
+                title={`${f.type} — ${signerLabel(f.session)}`}
+                style={{
+                  position: "absolute",
+                  left: `${f.x * 100}%`,
+                  top: `${f.y * 100}%`,
+                  transform: "translate(-2px, -50%)",
+                  background: "#111827",
+                  color: "#fff",
+                  fontSize: "0.7rem",
+                  padding: "0.15rem 0.45rem",
+                  borderRadius: 999,
+                  pointerEvents: "none",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {f.type} · S{signerNo}
+              </div>
+            );
+          }
+          const selected = f.id === selectedId;
+          return (
+            <div
+              key={f.id}
+              title={`${f.type} — ${signerLabel(f.session)}`}
+              data-testid="field-box"
+              style={{
+                position: "absolute",
+                left: `${b.x * 100}%`,
+                top: `${b.y * 100}%`,
+                width: `${b.width * 100}%`,
+                height: `${b.height * 100}%`,
+                border: selected ? "2px solid #2563eb" : "2px solid #111827",
+                background: selected
+                  ? "rgba(37, 99, 235, 0.15)"
+                  : "rgba(17, 24, 39, 0.08)",
+                borderRadius: 2,
+                pointerEvents: "none",
+                overflow: "hidden",
+              }}
+            >
+              <span
+                style={{
+                  display: "block",
+                  background: "#111827",
+                  color: "#fff",
+                  fontSize: "0.7rem",
+                  padding: "0.1rem 0.4rem",
+                  whiteSpace: "nowrap",
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                }}
+              >
+                {f.type} · S{signerNo}
+              </span>
+            </div>
+          );
+        })}
       </div>
 
       <h2 style={{ fontSize: "1.15rem", marginTop: "1.5rem" }}>
         Placed fields ({fields.length})
       </h2>
       {fields.length === 0 ? (
-        <p style={{ opacity: 0.65 }}>No fields yet — click on the page to place one.</p>
+        <p style={{ opacity: 0.65 }}>
+          No fields yet — drag on the page to draw a box, or click to place
+          a default-size one.
+        </p>
       ) : (
         <div style={{ display: "grid", gap: "0.5rem" }}>
           {fields.map((f) => (
             <div
               key={f.id}
+              onClick={() => setSelectedId(f.id)}
               style={{
                 display: "flex",
                 gap: "0.75rem",
@@ -274,11 +464,18 @@ export default function PlaceFieldsPage() {
                 border: "1px solid #e5e7eb",
                 borderRadius: 8,
                 padding: "0.6rem 0.8rem",
+                background: f.id === selectedId ? "#eff6ff" : "#fff",
+                cursor: "pointer",
               }}
             >
               <span style={{ fontWeight: 600, textTransform: "capitalize" }}>{f.type}</span>
               <span style={{ opacity: 0.7 }}>
-                page {f.page} · ({f.x.toFixed(2)}, {f.y.toFixed(2)}) · {signerLabel(f.session)}
+                page {f.page} · ({f.x.toFixed(2)}, {f.y.toFixed(2)})
+                {f.width != null && f.height != null
+                  ? ` · ${f.width.toFixed(2)} × ${f.height.toFixed(2)}`
+                  : ""}
+                {" · "}
+                {signerLabel(f.session)}
                 {f.required ? " · required" : " · optional"}
                 {f.completed ? " · completed" : ""}
               </span>

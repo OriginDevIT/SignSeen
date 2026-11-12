@@ -17,10 +17,9 @@ export interface SignaturePadHandle {
  * Touch + mouse signature canvas. Pointer events with touch-action:none
  * make it work with a finger on mobile and a mouse on desktop.
  */
-const SignaturePad = forwardRef<SignaturePadHandle>(function SignaturePad(
-  _props,
-  ref
-) {
+const SignaturePad = forwardRef<SignaturePadHandle, { height?: number }>(
+  function SignaturePad(props, ref) {
+  const height = props.height ?? 200;
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drawing = useRef(false);
   const hasInk = useRef(false);
@@ -129,7 +128,7 @@ const SignaturePad = forwardRef<SignaturePadHandle>(function SignaturePad(
       style={{
         touchAction: "none",
         width: "100%",
-        height: 200,
+        height,
         border: "2px dashed #9ca3af",
         borderRadius: 12,
         background: "#ffffff",

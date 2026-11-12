@@ -149,8 +149,10 @@ class DocumentField(models.Model):
 
     Placed on the converted/uploaded PDF at normalized coordinates
     (x/y are fractions of the page size, 0-1), assigned to one signer
-    slot (session). Fixed render sizes per type in v1 (see pdf.py);
-    the sender controls position, type, assignment and required-ness.
+    slot (session). A field drawn as a box also stores its normalized
+    width/height; fields without a stored size render at the fixed
+    per-type sizes in pdf.py (FIELD_SIZES). The sender controls
+    position, type, assignment and required-ness.
 
     Completion happens inside the signer's submit: text/date values
     land in `value_text` (checkboxes as "true"/"false"), signature /
@@ -177,6 +179,11 @@ class DocumentField(models.Model):
     page = models.PositiveIntegerField()  # 1-based
     x = models.FloatField()
     y = models.FloatField()
+    # Normalized width/height of a drawn box (fractions of the page
+    # size, 0-1). Null for fields placed by a click or before drawn
+    # boxes existed — those render at the fixed per-type sizes.
+    width = models.FloatField(null=True, blank=True)
+    height = models.FloatField(null=True, blank=True)
     required = models.BooleanField(default=True)
     value_text = models.TextField(blank=True, default="")
     value_file = models.FileField(upload_to="fields/", null=True, blank=True)

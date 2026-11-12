@@ -18,6 +18,7 @@ import {
   type SignResult,
 } from "../../../lib/api";
 import { CEREMONY_STEPS } from "../../../lib/ceremony";
+import { fieldBox, signaturePadHeight } from "../../../lib/fieldBox";
 
 type Step = "loading" | "intro" | "sign" | "photo" | "submitting" | "done" | "waiting" | "unavailable";
 
@@ -95,6 +96,10 @@ export default function SignPage() {
 
   const [fieldValues, setFieldValues] = useState<Record<string, string | boolean>>({});
   const fieldPadRefs = useRef(new Map<string, SignaturePadHandle>());
+  // Rendered page aspect (width/height) per page, from the preview
+  // image's natural size — used to size field pads to drawn boxes.
+  // Letter (612/792) until the image reports its own size.
+  const [pageAspects, setPageAspects] = useState<Record<number, number>>({});
 
   const padRef = useRef<SignaturePadHandle>(null);
 
@@ -337,31 +342,81 @@ export default function SignPage() {
                     <img
                       src={sessionPageUrl(token, pg)}
                       alt={`Document page ${pg}`}
+                      onLoad={(e) => {
+                        const img = e.currentTarget;
+                        if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+                          const aspect = img.naturalWidth / img.naturalHeight;
+                          setPageAspects((prev) =>
+                            prev[pg] === aspect ? prev : { ...prev, [pg]: aspect }
+                          );
+                        }
+                      }}
                       style={{ width: "100%", display: "block" }}
                     />
                     {sessionFields
                       .filter((f) => f.page === pg)
-                      .map((f) => (
-                        <div
-                          key={f.id}
-                          style={{
-                            position: "absolute",
-                            left: `${f.x * 100}%`,
-                            top: `${f.y * 100}%`,
-                            transform: "translate(-2px, -50%)",
-                            background: fieldComplete(f) ? "#15803d" : "#111827",
-                            color: "#fff",
-                            fontSize: "0.7rem",
-                            padding: "0.15rem 0.45rem",
-                            borderRadius: 999,
-                            pointerEvents: "none",
-                            whiteSpace: "nowrap",
-                          }}
-                        >
-                          {f.type}
-                          {f.required ? " *" : ""}
-                        </div>
-                      ))}
+                      .map((f) => {
+                        const b = fieldBox(f);
+                        const bg = fieldComplete(f) ? "#15803d" : "#111827";
+                        if (b === null) {
+                          // Click-placed field: no stored size, marker pill.
+                          return (
+                            <div
+                              key={f.id}
+                              style={{
+                                position: "absolute",
+                                left: `${f.x * 100}%`,
+                                top: `${f.y * 100}%`,
+                                transform: "translate(-2px, -50%)",
+                                background: bg,
+                                color: "#fff",
+                                fontSize: "0.7rem",
+                                padding: "0.15rem 0.45rem",
+                                borderRadius: 999,
+                                pointerEvents: "none",
+                                whiteSpace: "nowrap",
+                              }}
+                            >
+                              {f.type}
+                              {f.required ? " *" : ""}
+                            </div>
+                          );
+                        }
+                        return (
+                          <div
+                            key={f.id}
+                            data-testid="field-box"
+                            style={{
+                              position: "absolute",
+                              left: `${b.x * 100}%`,
+                              top: `${b.y * 100}%`,
+                              width: `${b.width * 100}%`,
+                              height: `${b.height * 100}%`,
+                              border: `2px solid ${bg}`,
+                              background: "rgba(17, 24, 39, 0.08)",
+                              borderRadius: 2,
+                              pointerEvents: "none",
+                              overflow: "hidden",
+                            }}
+                          >
+                            <span
+                              style={{
+                                display: "block",
+                                background: bg,
+                                color: "#fff",
+                                fontSize: "0.7rem",
+                                padding: "0.1rem 0.4rem",
+                                whiteSpace: "nowrap",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                              }}
+                            >
+                              {f.type}
+                              {f.required ? " *" : ""}
+                            </span>
+                          </div>
+                        );
+                      })}
                   </div>
                 ))}
               {sessionFields.map((f) => (
@@ -402,6 +457,11 @@ export default function SignPage() {
                           ref={(h) => {
                             if (h) fieldPadRefs.current.set(f.id, h);
                           }}
+                          height={signaturePadHeight(
+                            f.width,
+                            f.height,
+                            pageAspects[f.page] ?? 612 / 792
+                          )}
                         />
                         <button
                           onClick={() => captureFieldPad(f)}
