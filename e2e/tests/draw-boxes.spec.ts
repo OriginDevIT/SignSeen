@@ -109,6 +109,11 @@ test("draw a box, seal it, and verify the sealed document", async ({
     await drawSignature(signer, fieldPad);
     await signer.getByRole("button", { name: "Use this signature" }).click();
     await expect(signer.getByAltText("signature preview")).toBeVisible();
+    // The main pad needs ink too: "Looks good — continue" ignores the
+    // click while it is empty, even once every field is complete.
+    const mainPad = signer.getByLabel("Draw your signature here").first();
+    await mainPad.scrollIntoViewIfNeeded();
+    await drawSignature(signer, mainPad);
     await signer
       .getByRole("button", { name: "Looks good — continue" })
       .click();
