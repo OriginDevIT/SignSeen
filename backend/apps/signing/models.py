@@ -62,6 +62,10 @@ class Document(models.Model):
         choices=SigningMode.choices,
         default=SigningMode.SEQUENTIAL,
     )
+    # Sender option (#73): every signer must attach a witness photo.
+    # Set at send time, premium senders only; default off, and
+    # documents sent before this shipped keep the optional behaviour.
+    photo_required = models.BooleanField(default=False)
     status = models.CharField(
         max_length=16, choices=Status.choices, default=Status.PENDING
     )

@@ -26,6 +26,8 @@ interface PhotoStepProps {
    * ceremony needs no other change.
    */
   photoRequired?: boolean;
+  /** Who required the photo (the sender's email), named in the message. */
+  requiredBy?: string;
   /** All required document fields are complete. */
   fieldsComplete: boolean;
   /** Submit the ceremony. */
@@ -61,6 +63,7 @@ export default function PhotoStep({
   onCloseCamera,
   signingUrl,
   photoRequired = false,
+  requiredBy,
   fieldsComplete,
   onSubmit,
   submitStyle,
@@ -153,7 +156,9 @@ export default function PhotoStep({
       </label>
       {photoRequired && !photoUrl && (
         <p style={{ opacity: 0.65, margin: 0, fontSize: "0.9rem" }}>
-          A witness photo is required before you can submit.
+          {requiredBy
+            ? `${requiredBy} requires a witness photo to complete this signing.`
+            : "A witness photo is required before you can submit."}
         </p>
       )}
       <div style={{ display: "flex", gap: "0.75rem" }}>

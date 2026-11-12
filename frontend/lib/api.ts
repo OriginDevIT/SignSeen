@@ -28,6 +28,8 @@ export interface DocumentInfo {
   sender_email: string;
   signed_file: string | null;
   signing_mode: "sequential" | "parallel";
+  /** Sender option (#73): every signer must attach a witness photo. */
+  photo_required: boolean;
   sessions?: SessionSummary[];
   /** The active signing session's URL. Returned to the document's
    * owner only: present (URL or null) in dashboard payloads and in
@@ -76,6 +78,10 @@ export interface SessionInfo {
   document: string;
   document_title: string;
   document_status: string;
+  /** Sender option (#73): every signer must attach a witness photo. */
+  photo_required: boolean;
+  /** The sender's email, so the ceremony can name who required it. */
+  sender_email: string;
   token: string;
   signer_name: string;
   signer_email: string;
@@ -175,13 +181,15 @@ export function uploadDocument(
   file: File,
   title: string,
   senderEmail: string,
-  signingMode: "sequential" | "parallel" = "sequential"
+  signingMode: "sequential" | "parallel" = "sequential",
+  photoRequired: boolean = false
 ): Promise<DocumentInfo> {
   const form = new FormData();
   form.append("file", file);
   form.append("title", title);
   form.append("sender_email", senderEmail);
   form.append("signing_mode", signingMode);
+  form.append("photo_required", String(photoRequired));
   return req<DocumentInfo>("/api/documents/", { method: "POST", body: form });
 }
 
@@ -203,7 +211,8 @@ export function createDocumentFromUrl(
   url: string,
   title: string,
   senderEmail: string,
-  signingMode: "sequential" | "parallel" = "sequential"
+  signingMode: "sequential" | "parallel" = "sequential",
+  photoRequired: boolean = false
 ): Promise<DocumentInfo> {
   return req<DocumentInfo>("/api/documents/from-url/", {
     method: "POST",
@@ -213,6 +222,7 @@ export function createDocumentFromUrl(
       title,
       sender_email: senderEmail,
       signing_mode: signingMode,
+      photo_required: photoRequired,
     }),
   });
 }

@@ -62,6 +62,7 @@ class DocumentSerializer(serializers.ModelSerializer):
             "sender_email",
             "signed_file",
             "signing_mode",
+            "photo_required",
             "sessions",
             "signing_url",
             "created_at",
@@ -99,6 +100,14 @@ class SigningSessionSerializer(serializers.ModelSerializer):
     branding = serializers.SerializerMethodField()
     document_title = serializers.CharField(source="document.title", read_only=True)
     document_status = serializers.CharField(source="document.status", read_only=True)
+    # Sender option (#73), read from the document: the ceremony gates
+    # the photo step on this, and names the sender in the message.
+    photo_required = serializers.BooleanField(
+        source="document.photo_required", read_only=True
+    )
+    sender_email = serializers.CharField(
+        source="document.sender_email", read_only=True
+    )
 
     class Meta:
         model = SigningSession
@@ -107,6 +116,8 @@ class SigningSessionSerializer(serializers.ModelSerializer):
             "document",
             "document_title",
             "document_status",
+            "photo_required",
+            "sender_email",
             "token",
             "signer_name",
             "signer_email",

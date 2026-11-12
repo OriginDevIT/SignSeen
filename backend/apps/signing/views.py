@@ -93,6 +93,25 @@ def _signing_mode(data) -> str | None:
     return mode if mode in Document.SigningMode.values else None
 
 
+def _photo_required(data, account) -> bool:
+    """The sender's witness-photo requirement (#73), set at creation.
+
+    Premium senders only: anyone else asking for it gets the default
+    (optional) — the flag is never a way to get a premium feature
+    without the tier. Accepts JSON booleans and form strings alike
+    (the upload intake is multipart).
+    """
+    raw = data.get("photo_required")
+    wanted = raw is True or str(raw).strip().lower() in ("1", "true", "yes", "on")
+    if not wanted:
+        return False
+    return (
+        account is not None
+        and getattr(account, "is_authenticated", False)
+        and account.is_premium
+    )
+
+
 def _error(message: str, code=status.HTTP_400_BAD_REQUEST) -> Response:
     return Response({"error": message}, status=code)
 
@@ -209,6 +228,7 @@ def create_document(request):
         original_filename=original_filename,
         source=Document.Source.UPLOAD,
         signing_mode=signing_mode,
+        photo_required=_photo_required(request.data, account),
     )
     doc.original_file.save(f"document-{doc.id}.pdf", ContentFile(pdf_bytes))
     return Response(DocumentSerializer(doc).data, status=status.HTTP_201_CREATED)
@@ -254,6 +274,7 @@ def create_document_from_url(request):
         source=Document.Source.URL,
         source_url=url,
         signing_mode=signing_mode,
+        photo_required=_photo_required(request.data, account),
     )
     doc.original_file.save(f"document-{doc.id}.pdf", ContentFile(pdf_bytes))
     return Response(DocumentSerializer(doc).data, status=status.HTTP_201_CREATED)
@@ -656,6 +677,11 @@ def submit_signature(request, token):
             photo_png = _decode_data_url(request.data.get("photo"), "photo")
         except ValueError as exc:
             return _error(str(exc))
+    # Sender option (#73): when the document requires a witness photo,
+    # a submission without one is rejected here — client gating alone
+    # is not enforcement, and a bypassed client must not seal.
+    if session.document.photo_required and not photo_png:
+        return _error("a witness photo is required to complete this signing")
     device_info = request.data.get("device_info") or {}
     if not isinstance(device_info, dict):
         return _error("device_info must be an object")

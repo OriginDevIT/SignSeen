@@ -63,6 +63,15 @@ describe("PhotoStep", () => {
     ).toBeTruthy();
   });
 
+  it("names the sender who required the photo", () => {
+    renderStep({ photoRequired: true, requiredBy: "boss@example.com" });
+    expect(
+      screen.getByText(
+        "boss@example.com requires a witness photo to complete this signing."
+      )
+    ).toBeTruthy();
+  });
+
   it("allows submit when the photo is required and attached", () => {
     renderStep({
       photoRequired: true,

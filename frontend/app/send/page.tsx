@@ -23,6 +23,7 @@ export default function SendPage() {
   const [signerName, setSignerName] = useState("");
   const [signerEmail, setSignerEmail] = useState("");
   const [signingMode, setSigningMode] = useState<"sequential" | "parallel">("sequential");
+  const [photoRequired, setPhotoRequired] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [pageUrl, setPageUrl] = useState("");
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
@@ -56,12 +57,19 @@ export default function SendPage() {
     try {
       const doc =
         intake === "file"
-          ? await uploadDocument(file!, title.trim(), senderEmail.trim(), signingMode)
+          ? await uploadDocument(
+              file!,
+              title.trim(),
+              senderEmail.trim(),
+              signingMode,
+              photoRequired
+            )
           : await createDocumentFromUrl(
               pageUrl.trim(),
               title.trim(),
               senderEmail.trim(),
-              signingMode
+              signingMode,
+              photoRequired
             );
       const sess = await createSession(doc.id, signerName.trim(), signerEmail.trim());
       setSessions([sess]);
@@ -218,6 +226,31 @@ export default function SendPage() {
               onChange={(e) => setSignerEmail(e.target.value)}
               placeholder="jane@example.com"
             />
+          </label>
+          <label
+            style={{
+              display: "flex",
+              gap: "0.5rem",
+              alignItems: "flex-start",
+              fontSize: "0.95rem",
+              cursor: isPremium ? "pointer" : "not-allowed",
+              opacity: isPremium ? 1 : 0.6,
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={photoRequired}
+              disabled={!isPremium}
+              onChange={(e) => setPhotoRequired(e.target.checked)}
+              style={{ marginTop: "0.2rem" }}
+            />
+            <span>
+              Require a witness photo{" "}
+              <span style={{ opacity: 0.6 }}>
+                (every signer must attach a photo to complete signing)
+              </span>
+              {!isPremium && " Premium feature — upgrade to enable it."}
+            </span>
           </label>
           <label style={{ display: "grid", gap: "0.35rem" }}>
             Signing order
