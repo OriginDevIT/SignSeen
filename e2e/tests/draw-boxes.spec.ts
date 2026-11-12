@@ -80,6 +80,18 @@ test("draw a box, seal it, and verify the sealed document", async ({
     await signer.getByRole("button", { name: "Start signing" }).click();
     // The drawn box renders at its size on the page preview too.
     await expect(signer.getByTestId("field-box")).toBeVisible();
+    // The preview image loads asynchronously, and when it lands the
+    // layout below it shifts down by its full height. Wait until it
+    // has loaded before reading the field pad's position, or the
+    // stroke lands on the preview instead of the pad.
+    await signer.waitForFunction(() => {
+      const img = document.querySelector('img[alt="Document page 1"]');
+      return (
+        !!img &&
+        (img as HTMLImageElement).complete &&
+        (img as HTMLImageElement).naturalWidth > 0
+      );
+    });
     // The ceremony renders the main pad first, then one pad per
     // signature field — the field pad is the second canvas. Its height
     // follows the drawn box (260px for this 30% × 15% box), not the
