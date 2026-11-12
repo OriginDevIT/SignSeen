@@ -68,6 +68,11 @@ npm test
   `/dashboard?upgraded=1`, then posts a locally signed
   `checkout.session.completed` event — Stripe cannot deliver webhooks
   to localhost — and asserts the dashboard flips to Premium.
+- `tests/draw-boxes.spec.ts` — drag a box on the place-fields page to
+  place a signature field at its true size, sign inside it in the
+  ceremony, and verify the sealed document as valid on /verify (#78).
+  The stamped signature's pixel geometry is asserted in backend
+  tests, where the sealed PDF can be read directly.
 - `tests/helpers.ts` — shared send/seal flows, Mailpit polling, and
   `recordGalleryDoc`, which appends a sealed document to the review
   manifest.

@@ -377,6 +377,13 @@ def _owner_document(request, doc_id):
     return doc, None
 
 
+# Drawn-box size limits (normalized fractions of the page size, #78).
+# Mirrored in frontend/lib/fieldBox.ts, which validates before submit;
+# the server is authoritative.
+MIN_FIELD_WIDTH = 0.02
+MIN_FIELD_HEIGHT = 0.01
+
+
 @api_view(["GET", "POST"])
 @permission_classes([IsAuthenticated])
 def document_fields(request, doc_id):
@@ -418,6 +425,24 @@ def document_fields(request, doc_id):
         return _error("x and y must be numbers between 0 and 1")
     if not (0.0 <= x <= 1.0 and 0.0 <= y <= 1.0):
         return _error("x and y must be between 0 and 1")
+    # A drawn box carries both dimensions; a click carries neither
+    # and the field renders at the fixed per-type size.
+    width = height = None
+    if request.data.get("width") is not None or request.data.get("height") is not None:
+        try:
+            width = float(request.data.get("width"))
+            height = float(request.data.get("height"))
+        except (TypeError, ValueError):
+            return _error("width and height must both be numbers")
+        if width > 1.0 or height > 1.0:
+            return _error("width and height must be at most 1")
+        if width < MIN_FIELD_WIDTH or height < MIN_FIELD_HEIGHT:
+            return _error(
+                "the box is too small — width must be at least "
+                f"{MIN_FIELD_WIDTH} and height at least {MIN_FIELD_HEIGHT}"
+            )
+        if x + width > 1.0 or y + height > 1.0:
+            return _error("the box must fit inside the page")
     required = request.data.get("required", True)
     if not isinstance(required, bool):
         return _error("required must be true or false")
@@ -429,6 +454,8 @@ def document_fields(request, doc_id):
         page=page,
         x=x,
         y=y,
+        width=width,
+        height=height,
         required=required,
     )
     return Response(DocumentFieldSerializer(field).data, status=201)
@@ -865,6 +892,8 @@ def submit_signature(request, token):
                         "page": f.page,
                         "x": f.x,
                         "y": f.y,
+                        "width": f.width,
+                        "height": f.height,
                         "value_text": f.value_text,
                         "image_png": image_bytes,
                     }

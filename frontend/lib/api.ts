@@ -52,6 +52,11 @@ export interface DocumentFieldInfo {
   /** Normalized coordinates (0-1 fractions of the page size). */
   x: number;
   y: number;
+  /** Normalized size of a drawn box (0-1 fractions of the page
+   * size). Null for click-placed fields, which render at the fixed
+   * per-type sizes. */
+  width: number | null;
+  height: number | null;
   required: boolean;
   /** Text value (text/date submitted values; "true"/"false" for a
    * checkbox). Signature/initials values are stored server-side. */
@@ -334,6 +339,10 @@ export function createDocumentField(
     page: number;
     x: number;
     y: number;
+    /** Normalized size of a drawn box; omit for a click-placed field,
+     * which the server renders at the fixed per-type size. */
+    width?: number;
+    height?: number;
     required?: boolean;
   }
 ): Promise<DocumentFieldInfo> {

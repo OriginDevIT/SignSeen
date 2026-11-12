@@ -651,6 +651,45 @@ describe("document fields (#13)", () => {
     });
   });
 
+  it("createDocumentField includes the drawn box size (#78)", async () => {
+    const { createDocumentField } = await import("./api");
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse(
+        {
+          id: "f1",
+          type: "signature",
+          page: 1,
+          x: 0.1,
+          y: 0.2,
+          width: 0.3,
+          height: 0.15,
+        },
+        201
+      )
+    );
+    const field = await createDocumentField("doc-1", {
+      session_id: "sess-1",
+      type: "signature",
+      page: 1,
+      x: 0.1,
+      y: 0.2,
+      width: 0.3,
+      height: 0.15,
+    });
+    expect(field.width).toBe(0.3);
+    expect(field.height).toBe(0.15);
+    const [, init] = vi.mocked(fetch).mock.calls[0];
+    expect(JSON.parse(init?.body as string)).toEqual({
+      session_id: "sess-1",
+      type: "signature",
+      page: 1,
+      x: 0.1,
+      y: 0.2,
+      width: 0.3,
+      height: 0.15,
+    });
+  });
+
   it("deleteDocumentField sends DELETE to the field URL", async () => {
     const { deleteDocumentField } = await import("./api");
     vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 204 }));

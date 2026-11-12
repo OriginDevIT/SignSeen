@@ -34,6 +34,8 @@ class DocumentFieldSerializer(serializers.ModelSerializer):
             "page",
             "x",
             "y",
+            "width",
+            "height",
             "required",
             "value",
             "completed",
