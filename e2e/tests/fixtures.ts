@@ -1,4 +1,4 @@
-import { type Page } from "@playwright/test";
+import { type Locator, type Page } from "@playwright/test";
 import path from "node:path";
 
 // Small deterministic fixtures shared by the specs. The PDF is a one-page
@@ -42,9 +42,12 @@ export async function shot(page: Page, name: string) {
 
 // Draw a simple continuous stroke on the signature canvas with the mouse —
 // enough ink for the pad to accept it and enable its continue button.
-export async function drawSignature(page: Page) {
-  const canvas = page.locator("canvas");
-  const box = await canvas.boundingBox();
+// Defaults to the first canvas on the page; pass a locator when the page
+// has more than one pad (the ceremony renders the main pad plus one pad
+// per signature field).
+export async function drawSignature(page: Page, canvas?: Locator) {
+  const target = canvas ?? page.locator("canvas");
+  const box = await target.boundingBox();
   if (!box) throw new Error("signature canvas not visible");
   const y = box.y + box.height / 2;
   await page.mouse.move(box.x + box.width * 0.15, y);

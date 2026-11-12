@@ -78,10 +78,19 @@ test("draw a box, seal it, and verify the sealed document", async ({
   try {
     await signer.goto(signingUrl);
     await signer.getByRole("button", { name: "Start signing" }).click();
-    await expect(signer.locator("canvas")).toBeVisible();
     // The drawn box renders at its size on the page preview too.
     await expect(signer.getByTestId("field-box")).toBeVisible();
-    await drawSignature(signer);
+    // The ceremony renders the main pad first, then one pad per
+    // signature field — the field pad is the second canvas. Its height
+    // follows the drawn box (260px for this 30% × 15% box), not the
+    // main pad's 200px.
+    const fieldPad = signer.getByLabel("Draw your signature here").nth(1);
+    await expect(fieldPad).toBeVisible();
+    const padBox = await fieldPad.boundingBox();
+    expect(padBox).not.toBeNull();
+    expect(padBox!.height).toBeGreaterThan(240);
+    expect(padBox!.height).toBeLessThan(280);
+    await drawSignature(signer, fieldPad);
     await signer.getByRole("button", { name: "Use this signature" }).click();
     await expect(signer.getByAltText("signature preview")).toBeVisible();
     await signer
