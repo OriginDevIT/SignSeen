@@ -32,6 +32,10 @@ export default function SendPage() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [accountEmail, setAccountEmail] = useState<string | null>(null);
   const [isPremium, setIsPremium] = useState(false);
+  // Whether the session check has settled. Until it does, the page
+  // must not render the logged-out view: a signed-in sender would
+  // briefly see the anonymous copy and a disabled photo checkbox.
+  const [accountLoaded, setAccountLoaded] = useState(false);
   const [nextSignerName, setNextSignerName] = useState("");
   const [nextSignerEmail, setNextSignerEmail] = useState("");
   const [addingSigner, setAddingSigner] = useState(false);
@@ -39,14 +43,19 @@ export default function SendPage() {
   // Logged-in senders: prefill their email and attach documents to the
   // account (the API does this from the token automatically).
   useEffect(() => {
-    if (!getAuthToken()) return;
+    if (!getAuthToken()) {
+      // No token: the sender is anonymous, and that is already known.
+      setAccountLoaded(true);
+      return;
+    }
     myAccount()
       .then((account) => {
         setAccountEmail(account.email);
         setSenderEmail(account.email);
         setIsPremium(account.is_premium);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setAccountLoaded(true));
   }, []);
 
   const submit = async (e: React.FormEvent) => {
@@ -138,7 +147,11 @@ export default function SendPage() {
         Upload a PDF — the signer is emailed their signing link and the
         document to sign. The signer needs no account.
       </p>
-      {accountEmail ? (
+      {!accountLoaded ? (
+        <p style={{ fontSize: "0.9rem", opacity: 0.7, marginTop: "-1rem", marginBottom: "1.5rem" }}>
+          Loading…
+        </p>
+      ) : accountEmail ? (
         <p style={{ fontSize: "0.9rem", opacity: 0.7, marginTop: "-1rem", marginBottom: "1.5rem" }}>
           Signed in as {accountEmail} — this document will appear in your{" "}
           <a href="/dashboard">dashboard</a>.
@@ -249,7 +262,9 @@ export default function SendPage() {
               <span style={{ opacity: 0.6 }}>
                 (every signer must attach a photo to complete signing)
               </span>
-              {!isPremium && " Premium feature — upgrade to enable it."}
+              {!isPremium &&
+                accountLoaded &&
+                " Premium feature — upgrade to enable it."}
             </span>
           </label>
           <label style={{ display: "grid", gap: "0.35rem" }}>
