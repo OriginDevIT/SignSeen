@@ -86,6 +86,10 @@ test("draw a box, seal it, and verify the sealed document", async ({
     // main pad's 200px.
     const fieldPad = signer.getByLabel("Draw your signature here").nth(1);
     await expect(fieldPad).toBeVisible();
+    // The field pad sits below the page previews, off-screen; the
+    // mouse stroke only reaches the canvas once it is scrolled into
+    // view.
+    await fieldPad.scrollIntoViewIfNeeded();
     const padBox = await fieldPad.boundingBox();
     expect(padBox).not.toBeNull();
     expect(padBox!.height).toBeGreaterThan(240);
