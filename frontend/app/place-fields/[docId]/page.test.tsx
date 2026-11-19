@@ -21,9 +21,11 @@ if (typeof window.PointerEvent === "undefined") {
 import PlaceFieldsPage from "./page";
 import {
   createDocumentField,
+  deleteDocumentField,
   fetchDocumentPageImageUrl,
   getDocument,
   getDocumentFields,
+  updateDocumentField,
 } from "../../../lib/api";
 
 vi.mock("next/navigation", () => ({
@@ -39,6 +41,7 @@ vi.mock("../../../lib/api", async (importOriginal) => {
     fetchDocumentPageImageUrl: vi.fn(),
     createDocumentField: vi.fn(),
     deleteDocumentField: vi.fn(),
+    updateDocumentField: vi.fn(),
   };
 });
 
@@ -213,5 +216,146 @@ describe("PlaceFieldsPage drag-to-draw (#78)", () => {
 
     await screen.findByText("That box is too small — drag a larger one.");
     expect(vi.mocked(createDocumentField)).not.toHaveBeenCalled();
+  });
+});
+
+describe("PlaceFieldsPage toolbar, move and delete (#84)", () => {
+  beforeEach(() => {
+    vi.stubGlobal("URL", { ...URL, revokeObjectURL: vi.fn() });
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    vi.clearAllMocks();
+  });
+
+  it("the add-field toolbar is sticky and its selects truncate", async () => {
+    await renderLoaded();
+
+    const toolbar = screen.getByTestId("field-toolbar");
+    expect(toolbar.style.position).toBe("sticky");
+    expect(toolbar.style.top).toBe("0px");
+    const signerSelect = screen.getByLabelText(
+      "Assigned signer"
+    ) as HTMLSelectElement;
+    expect(signerSelect.style.width).toBe("100%");
+    expect(signerSelect.style.textOverflow).toBe("ellipsis");
+    // The full label stays available as a tooltip.
+    expect(signerSelect.title).toContain("Alice");
+    expect(signerSelect.title).toContain("alice@example.com");
+    expect(screen.getByText("Page 1 of 2")).toBeTruthy();
+  });
+
+  it("dragging a drawn box moves it and persists the new position", async () => {
+    // Echo the moved field back, so the rendered box is the new one.
+    vi.mocked(updateDocumentField).mockImplementation(
+      async (_docId: string, _fieldId: string, pos) =>
+        ({ ...DRAWN_FIELD, x: pos.x, y: pos.y }) as never
+    );
+    const img = await renderLoaded([DRAWN_FIELD]);
+    await screen.findByTestId("field-box");
+
+    // Grab inside the box (x 0.1–0.4 -> 70–280px, y 0.2–0.35 ->
+    // 180–315px) and drag it 100px right and down.
+    fireEvent.pointerDown(img, { clientX: 150, clientY: 250, pointerId: 1 });
+    fireEvent.pointerMove(img, { clientX: 250, clientY: 350, pointerId: 1 });
+    fireEvent.pointerUp(img, { clientX: 250, clientY: 350, pointerId: 1 });
+
+    await waitFor(() =>
+      expect(vi.mocked(updateDocumentField)).toHaveBeenCalled()
+    );
+    expect(vi.mocked(updateDocumentField).mock.calls[0]).toEqual([
+      "doc-1",
+      "f1",
+      { x: 0.2429, y: 0.3111 },
+    ]);
+    expect(vi.mocked(createDocumentField)).not.toHaveBeenCalled();
+
+    const box = screen.getByTestId("field-box");
+    await waitFor(() => expect(box.style.left).toContain("24.29"));
+    expect(box.style.top).toContain("31.11");
+  });
+
+  it("a move clamps the box inside the page", async () => {
+    vi.mocked(updateDocumentField).mockImplementation(
+      async (_docId: string, _fieldId: string, pos) =>
+        ({ ...DRAWN_FIELD, x: pos.x, y: pos.y }) as never
+    );
+    const img = await renderLoaded([DRAWN_FIELD]);
+    await screen.findByTestId("field-box");
+
+    // Drag far past the bottom-right corner.
+    fireEvent.pointerDown(img, { clientX: 150, clientY: 250, pointerId: 1 });
+    fireEvent.pointerMove(img, { clientX: 700, clientY: 900, pointerId: 1 });
+    fireEvent.pointerUp(img, { clientX: 700, clientY: 900, pointerId: 1 });
+
+    await waitFor(() =>
+      expect(vi.mocked(updateDocumentField)).toHaveBeenCalled()
+    );
+    // Box is 0.3 wide, 0.15 tall: x stops at 0.7, y at 0.85.
+    expect(vi.mocked(updateDocumentField).mock.calls[0][2]).toEqual({
+      x: 0.7,
+      y: 0.85,
+    });
+  });
+
+  it("dragging a click-placed marker moves it by its anchor", async () => {
+    vi.mocked(updateDocumentField).mockImplementation(
+      async (_docId: string, _fieldId: string, pos) =>
+        ({ ...CLICK_FIELD, x: pos.x, y: pos.y }) as never
+    );
+    const img = await renderLoaded([CLICK_FIELD]);
+
+    // Marker anchor at (0.1, 0.2) -> (70px, 180px).
+    fireEvent.pointerDown(img, { clientX: 70, clientY: 180, pointerId: 1 });
+    fireEvent.pointerMove(img, { clientX: 170, clientY: 280, pointerId: 1 });
+    fireEvent.pointerUp(img, { clientX: 170, clientY: 280, pointerId: 1 });
+
+    await waitFor(() =>
+      expect(vi.mocked(updateDocumentField)).toHaveBeenCalled()
+    );
+    expect(vi.mocked(updateDocumentField).mock.calls[0][2]).toEqual({
+      x: 0.2429,
+      y: 0.3111,
+    });
+    expect(vi.mocked(createDocumentField)).not.toHaveBeenCalled();
+  });
+
+  it("dragging a completed field moves nothing and draws nothing", async () => {
+    const completed = {
+      ...DRAWN_FIELD,
+      completed: true,
+      completed_at: "2026-11-11T01:00:00Z",
+    };
+    const img = await renderLoaded([completed]);
+    await screen.findByTestId("field-box");
+
+    fireEvent.pointerDown(img, { clientX: 150, clientY: 250, pointerId: 1 });
+    fireEvent.pointerMove(img, { clientX: 250, clientY: 350, pointerId: 1 });
+    fireEvent.pointerUp(img, { clientX: 250, clientY: 350, pointerId: 1 });
+
+    expect(vi.mocked(updateDocumentField)).not.toHaveBeenCalled();
+    expect(vi.mocked(createDocumentField)).not.toHaveBeenCalled();
+    // No delete control on a completed field either.
+    expect(screen.queryByTestId("delete-field-button")).toBeNull();
+  });
+
+  it("the × on a selected box deletes the field", async () => {
+    vi.mocked(deleteDocumentField).mockResolvedValue(undefined as never);
+    const img = await renderLoaded([DRAWN_FIELD]);
+    await screen.findByTestId("field-box");
+
+    // No × until a box is selected.
+    expect(screen.queryByTestId("delete-field-button")).toBeNull();
+    fireEvent.pointerDown(img, { clientX: 150, clientY: 250, pointerId: 1 });
+    fireEvent.pointerUp(img, { clientX: 150, clientY: 250, pointerId: 1 });
+
+    const del = await screen.findByTestId("delete-field-button");
+    fireEvent.click(del);
+    await waitFor(() =>
+      expect(vi.mocked(deleteDocumentField)).toHaveBeenCalledWith("doc-1", "f1")
+    );
   });
 });

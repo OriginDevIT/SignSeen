@@ -2068,6 +2068,69 @@ def test_drawn_box_field_create_and_validation():
 
 
 @pytest.mark.django_db
+def test_field_move_patch_endpoint():
+    client, doc_id, alice, bob = _premium_fields_setup("sequential")
+
+    # A drawn box moves and the new position persists on the listing.
+    field = _place(
+        client, doc_id, alice["id"], "signature",
+        page=1, x=0.1, y=0.2, width=0.3, height=0.15,
+    )
+    url = f"/api/documents/{doc_id}/fields/{field['id']}/"
+    moved = client.patch(url, {"x": 0.5, "y": 0.6}, format="json")
+    assert moved.status_code == 200, moved.content
+    assert moved.json()["x"] == 0.5
+    assert moved.json()["y"] == 0.6
+    assert moved.json()["width"] == 0.3
+    assert moved.json()["height"] == 0.15
+    listed = client.get(f"/api/documents/{doc_id}/fields/").json()
+    assert next(f for f in listed["fields"] if f["id"] == field["id"])["x"] == 0.5
+
+    # A click-placed field (no stored size) moves by its anchor point.
+    clicked = _place(client, doc_id, alice["id"], "text", page=1, x=0.6, y=0.6)
+    ok = client.patch(
+        f"/api/documents/{doc_id}/fields/{clicked['id']}/",
+        {"x": 0.2, "y": 0.7},
+        format="json",
+    )
+    assert ok.status_code == 200, ok.content
+    assert ok.json()["x"] == 0.2 and ok.json()["width"] is None
+
+    # Validation: numbers in range, and a drawn box must stay inside the page.
+    assert client.patch(url, {"x": 1.5, "y": 0.6}, format="json").status_code == 400
+    assert client.patch(url, {"x": -0.1, "y": 0.6}, format="json").status_code == 400
+    assert client.patch(url, {"x": "left", "y": 0.6}, format="json").status_code == 400
+    assert client.patch(url, {"x": 0.8, "y": 0.6}, format="json").status_code == 400  # 0.8 + 0.3 > 1
+    assert client.patch(url, {"y": 0.9}, format="json").status_code == 400  # x missing
+
+    # Non-owner and unknown field.
+    other = _auth_client(_make_account(email="mover@example.com"))
+    assert other.patch(url, {"x": 0.1, "y": 0.1}, format="json").status_code == 403
+    assert client.patch(
+        f"/api/documents/{doc_id}/fields/00000000-0000-0000-0000-000000000000/",
+        {"x": 0.1, "y": 0.1},
+        format="json",
+    ).status_code == 404
+
+    # A completed field cannot be moved: Alice signs both her fields.
+    done = _sign_with_fields(
+        alice["token"],
+        [
+            {"field_id": field["id"], "value": SIG_DATA_URL},
+            {"field_id": clicked["id"], "value": "agreed"},
+        ],
+    )
+    assert done.status_code == 200, done.content
+    assert client.patch(url, {"x": 0.1, "y": 0.1}, format="json").status_code == 409
+
+    # Once the document is sealed, no field can move.
+    final = _sign_with_fields(bob["token"], [])
+    assert final.status_code == 200, final.content
+    assert final.json()["document_final"] is True
+    assert client.patch(url, {"x": 0.1, "y": 0.1}, format="json").status_code == 409
+
+
+@pytest.mark.django_db
 @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
 def test_drawn_box_stamping_fits_inside():
     client, doc_id, alice, bob = _premium_fields_setup("sequential")

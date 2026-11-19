@@ -19,8 +19,8 @@ urlpatterns = [
     ),
     path(
         "documents/<uuid:doc_id>/fields/<uuid:field_id>/",
-        views.delete_document_field,
-        name="document-field-delete",
+        views.document_field_detail,
+        name="document-field-detail",
     ),
     path(
         "documents/<uuid:doc_id>/page/<int:page>.png",

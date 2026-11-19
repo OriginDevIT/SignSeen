@@ -362,6 +362,20 @@ export function deleteDocumentField(
   });
 }
 
+/** Move a field to a new position on the same page. Only x/y change;
+ * type, assignment and size stay as placed. */
+export function updateDocumentField(
+  docId: string,
+  fieldId: string,
+  position: { x: number; y: number }
+): Promise<DocumentFieldInfo> {
+  return req<DocumentFieldInfo>(`/api/documents/${docId}/fields/${fieldId}/`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(position),
+  });
+}
+
 /** Owner-only page render for placement. The endpoint needs the
  * Authorization header, so it is fetched as a blob (an <img> tag
  * cannot send headers). Caller owns revoking the object URL. */
