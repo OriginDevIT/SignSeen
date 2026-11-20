@@ -92,28 +92,32 @@ test("draw a box, seal it, and verify the sealed document", async ({
         (img as HTMLImageElement).naturalWidth > 0
       );
     });
-    // The ceremony renders the main pad first, then one pad per
-    // signature field — the field pad is the second canvas. Its height
-    // follows the drawn box (260px for this 30% × 15% box), not the
-    // main pad's 200px.
-    const fieldPad = signer.getByLabel("Draw your signature here").nth(1);
+    // The field box is clickable now: it opens a modal holding the
+    // pad, and the document pad sits after the fields, not before.
+    // The modal pad's height follows the drawn box (260px for this
+    // 30% × 15% box), not the document pad's 200px.
+    await signer.getByTestId("field-box").click();
+    const dialog = signer.getByRole("dialog", {
+      name: "Signature — page 1",
+    });
+    await expect(dialog).toBeVisible();
+    const fieldPad = dialog.getByLabel("Draw your signature here");
     await expect(fieldPad).toBeVisible();
-    // The field pad sits below the page previews, off-screen; the
-    // mouse stroke only reaches the canvas once it is scrolled into
-    // view.
-    await fieldPad.scrollIntoViewIfNeeded();
     const padBox = await fieldPad.boundingBox();
     expect(padBox).not.toBeNull();
     expect(padBox!.height).toBeGreaterThan(240);
     expect(padBox!.height).toBeLessThan(280);
     await drawSignature(signer, fieldPad);
-    await signer.getByRole("button", { name: "Use this signature" }).click();
-    await expect(signer.getByAltText("signature preview")).toBeVisible();
-    // The main pad needs ink too: "Looks good — continue" ignores the
-    // click while it is empty, even once every field is complete.
-    const mainPad = signer.getByLabel("Draw your signature here").first();
-    await mainPad.scrollIntoViewIfNeeded();
-    await drawSignature(signer, mainPad);
+    await dialog
+      .getByRole("button", { name: "Use this signature" })
+      .click();
+    await expect(dialog).toBeHidden();
+    // Completing the field offers the drawn signature for reuse on
+    // the document pad, which comes after the fields.
+    await signer
+      .getByRole("button", { name: "Use your signature" })
+      .click();
+    await expect(signer.getByAltText("Signature preview")).toBeVisible();
     await signer
       .getByRole("button", { name: "Looks good — continue" })
       .click();

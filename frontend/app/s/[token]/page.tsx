@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import SignaturePad, { type SignaturePadHandle } from "../../../components/SignaturePad";
+import FieldModal from "../../../components/FieldModal";
 import PhotoStep from "../../../components/PhotoStep";
 import {
   ApiError,
@@ -18,7 +19,7 @@ import {
   type SignResult,
 } from "../../../lib/api";
 import { CEREMONY_STEPS } from "../../../lib/ceremony";
-import { fieldBox, signaturePadHeight } from "../../../lib/fieldBox";
+import { fieldBox } from "../../../lib/fieldBox";
 
 type Step = "loading" | "intro" | "sign" | "photo" | "submitting" | "done" | "waiting" | "unavailable";
 
@@ -95,13 +96,20 @@ export default function SignPage() {
   const [copyError, setCopyError] = useState("");
 
   const [fieldValues, setFieldValues] = useState<Record<string, string | boolean>>({});
-  const fieldPadRefs = useRef(new Map<string, SignaturePadHandle>());
   // Rendered page aspect (width/height) per page, from the preview
   // image's natural size — used to size field pads to drawn boxes.
   // Letter (612/792) until the image reports its own size.
   const [pageAspects, setPageAspects] = useState<Record<number, number>>({});
+  // Field whose modal is open, if any.
+  const [modalField, setModalField] = useState<DocumentFieldInfo | null>(null);
+  // A signature/initials image drawn anywhere in this ceremony —
+  // offered for reuse in later field modals and the document pad.
+  const [savedSignature, setSavedSignature] = useState<string | null>(null);
+  const [savedInitials, setSavedInitials] = useState<string | null>(null);
 
   const padRef = useRef<SignaturePadHandle>(null);
+  const fieldBoxRefs = useRef(new Map<string, HTMLDivElement>());
+  const continueRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     getSession(token)
@@ -129,9 +137,17 @@ export default function SignPage() {
   const startSigning = () => setStep("sign");
 
   const confirmSignature = () => {
+    // A signature already chosen (drawn here or reused from a field
+    // modal) goes straight on; otherwise the pad must hold ink.
+    if (signatureUrl) {
+      setStep("photo");
+      return;
+    }
     const pad = padRef.current;
     if (!pad || pad.isEmpty()) return;
-    setSignatureUrl(pad.toDataURL());
+    const url = pad.toDataURL();
+    setSignatureUrl(url);
+    setSavedSignature(url);
     setStep("photo");
   };
 
@@ -148,8 +164,11 @@ export default function SignPage() {
     setCameraOpen(true);
   };
 
-  const fieldComplete = (f: DocumentFieldInfo): boolean => {
-    const v = fieldValues[f.id];
+  const fieldComplete = (
+    f: DocumentFieldInfo,
+    values: Record<string, string | boolean> = fieldValues
+  ): boolean => {
+    const v = values[f.id];
     if (f.type === "checkbox") return v === true;
     if (f.type === "text") return typeof v === "string" && v.trim().length > 0;
     return typeof v === "string" && v.length > 0;
@@ -159,12 +178,55 @@ export default function SignPage() {
   const hasFields = sessionFields.length > 0;
   const allRequiredComplete = sessionFields
     .filter((f) => f.required)
-    .every(fieldComplete);
+    .every((f) => fieldComplete(f));
 
-  const captureFieldPad = (f: DocumentFieldInfo) => {
-    const pad = fieldPadRefs.current.get(f.id);
-    if (!pad || pad.isEmpty()) return;
-    setFieldValues((prev) => ({ ...prev, [f.id]: pad.toDataURL() }));
+  const scrollToField = (f: DocumentFieldInfo) => {
+    fieldBoxRefs.current
+      .get(f.id)
+      ?.scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+
+  // Entering the sign step scrolls to the first field still to
+  // complete, so the signer starts where the work is.
+  useEffect(() => {
+    if (step !== "sign" || !hasFields) return;
+    const t = setTimeout(() => {
+      const first = sessionFields.find((f) => !fieldComplete(f));
+      if (first) scrollToField(first);
+    }, 100);
+    return () => clearTimeout(t);
+    // Only on entering the sign step: the field list is fixed for
+    // the session.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
+
+  /** Save one field's modal value, then scroll to the next field
+   * still to complete — or to the continue button when this was the
+   * last one. A drawn signature/initials image joins the reuse pool
+   * for later modals and the document pad. */
+  const saveFieldValue = (f: DocumentFieldInfo, value: string | boolean) => {
+    const nextValues = { ...fieldValues, [f.id]: value };
+    setFieldValues(nextValues);
+    if (f.type === "signature" && typeof value === "string" && value) {
+      setSavedSignature(value);
+    }
+    if (f.type === "initials" && typeof value === "string" && value) {
+      setSavedInitials(value);
+    }
+    setModalField(null);
+    const idx = sessionFields.findIndex((x) => x.id === f.id);
+    const after = [...sessionFields.slice(idx + 1), ...sessionFields.slice(0, idx + 1)];
+    const next = after.find((x) => !fieldComplete(x, nextValues));
+    setTimeout(() => {
+      if (next) {
+        scrollToField(next);
+      } else {
+        continueRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
+      }
+    }, 50);
   };
 
   const submit = async () => {
@@ -321,11 +383,12 @@ export default function SignPage() {
 
       {step === "sign" && (
         <section style={{ display: "grid", gap: "1rem" }}>
-          <h2 style={{ margin: 0 }}>1. Signed — draw your signature</h2>
-          <SignaturePad ref={padRef} />
           {hasFields && (
             <div style={{ display: "grid", gap: "1rem" }}>
-              <h3 style={{ margin: 0 }}>Your fields on this document</h3>
+              <h2 style={{ margin: 0 }}>1. Your fields on this document</h2>
+              <p style={{ opacity: 0.65, margin: 0 }}>
+                Tap a field on the document to complete it.
+              </p>
               {[...new Set(sessionFields.map((f) => f.page))]
                 .sort((a, b) => a - b)
                 .map((pg) => (
@@ -363,6 +426,21 @@ export default function SignPage() {
                           return (
                             <div
                               key={f.id}
+                              ref={(el) => {
+                                if (el) fieldBoxRefs.current.set(f.id, el);
+                                else fieldBoxRefs.current.delete(f.id);
+                              }}
+                              role="button"
+                              tabIndex={0}
+                              aria-label={`${f.type} field on page ${f.page}${f.required ? ", required" : ""}${fieldComplete(f) ? ", completed" : ", not completed yet"}`}
+                              data-testid="field-pill"
+                              onClick={() => setModalField(f)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.preventDefault();
+                                  setModalField(f);
+                                }
+                              }}
                               style={{
                                 position: "absolute",
                                 left: `${f.x * 100}%`,
@@ -373,7 +451,7 @@ export default function SignPage() {
                                 fontSize: "0.7rem",
                                 padding: "0.15rem 0.45rem",
                                 borderRadius: 999,
-                                pointerEvents: "none",
+                                cursor: "pointer",
                                 whiteSpace: "nowrap",
                               }}
                             >
@@ -385,7 +463,21 @@ export default function SignPage() {
                         return (
                           <div
                             key={f.id}
+                            ref={(el) => {
+                              if (el) fieldBoxRefs.current.set(f.id, el);
+                              else fieldBoxRefs.current.delete(f.id);
+                            }}
+                            role="button"
+                            tabIndex={0}
+                            aria-label={`${f.type} field on page ${f.page}${f.required ? ", required" : ""}${fieldComplete(f) ? ", completed" : ", not completed yet"}`}
                             data-testid="field-box"
+                            onClick={() => setModalField(f)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                setModalField(f);
+                              }
+                            }}
                             style={{
                               position: "absolute",
                               left: `${b.x * 100}%`,
@@ -395,7 +487,7 @@ export default function SignPage() {
                               border: `2px solid ${bg}`,
                               background: "rgba(17, 24, 39, 0.08)",
                               borderRadius: 2,
-                              pointerEvents: "none",
+                              cursor: "pointer",
                               overflow: "hidden",
                             }}
                           >
@@ -419,107 +511,6 @@ export default function SignPage() {
                       })}
                   </div>
                 ))}
-              {sessionFields.map((f) => (
-                <div
-                  key={f.id}
-                  style={{
-                    display: "grid",
-                    gap: "0.4rem",
-                    border: "1px solid #e5e7eb",
-                    borderRadius: 8,
-                    padding: "0.75rem",
-                  }}
-                >
-                  <span style={{ fontWeight: 600, textTransform: "capitalize" }}>
-                    {f.type} <span style={{ opacity: 0.6, fontWeight: 400 }}>(page {f.page}{f.required ? ", required" : ", optional"})</span>
-                  </span>
-                  {(f.type === "signature" || f.type === "initials") &&
-                    (typeof fieldValues[f.id] === "string" && fieldValues[f.id] ? (
-                      <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={fieldValues[f.id] as string}
-                          alt={`${f.type} preview`}
-                          style={{ height: 48, border: "1px solid #e5e7eb", borderRadius: 6 }}
-                        />
-                        <button
-                          onClick={() =>
-                            setFieldValues((prev) => ({ ...prev, [f.id]: "" }))
-                          }
-                          style={{ ...ghostBtn, width: "auto" }}
-                        >
-                          Redo
-                        </button>
-                      </div>
-                    ) : (
-                      <>
-                        <SignaturePad
-                          ref={(h) => {
-                            if (h) fieldPadRefs.current.set(f.id, h);
-                          }}
-                          height={signaturePadHeight(
-                            f.width,
-                            f.height,
-                            pageAspects[f.page] ?? 612 / 792
-                          )}
-                        />
-                        <button
-                          onClick={() => captureFieldPad(f)}
-                          style={{ ...ghostBtn }}
-                        >
-                          Use this {f.type}
-                        </button>
-                      </>
-                    ))}
-                  {f.type === "checkbox" && (
-                    <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", cursor: "pointer" }}>
-                      <input
-                        type="checkbox"
-                        checked={fieldValues[f.id] === true}
-                        onChange={(e) =>
-                          setFieldValues((prev) => ({ ...prev, [f.id]: e.target.checked }))
-                        }
-                      />
-                      Check the box
-                    </label>
-                  )}
-                  {f.type === "text" && (
-                    <input
-                      type="text"
-                      value={(fieldValues[f.id] as string) || ""}
-                      onChange={(e) =>
-                        setFieldValues((prev) => ({ ...prev, [f.id]: e.target.value }))
-                      }
-                      placeholder="Type here"
-                      style={{
-                        padding: "0.65rem 0.8rem",
-                        border: "1px solid #d1d5db",
-                        borderRadius: 8,
-                        fontSize: "1rem",
-                        boxSizing: "border-box",
-                        width: "100%",
-                      }}
-                    />
-                  )}
-                  {f.type === "date" && (
-                    <input
-                      type="date"
-                      value={(fieldValues[f.id] as string) || ""}
-                      onChange={(e) =>
-                        setFieldValues((prev) => ({ ...prev, [f.id]: e.target.value }))
-                      }
-                      style={{
-                        padding: "0.65rem 0.8rem",
-                        border: "1px solid #d1d5db",
-                        borderRadius: 8,
-                        fontSize: "1rem",
-                        boxSizing: "border-box",
-                        width: "100%",
-                      }}
-                    />
-                  )}
-                </div>
-              ))}
               {!allRequiredComplete && (
                 <p style={{ opacity: 0.65, margin: 0, fontSize: "0.9rem" }}>
                   Complete every required field (marked *) to continue.
@@ -527,11 +518,55 @@ export default function SignPage() {
               )}
             </div>
           )}
+          {/* The document signature comes after the fields, not before. */}
+          <h2 style={{ margin: 0 }}>
+            {hasFields
+              ? "2. Sign the document — draw your signature"
+              : "1. Signed — draw your signature"}
+          </h2>
+          {signatureUrl ? (
+            <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={signatureUrl}
+                alt="Signature preview"
+                style={{ height: 48, border: "1px solid #e5e7eb", borderRadius: 6 }}
+              />
+              <button
+                onClick={() => {
+                  setSignatureUrl("");
+                  padRef.current?.clear();
+                }}
+                style={{ ...ghostBtn, width: "auto" }}
+              >
+                Redo
+              </button>
+            </div>
+          ) : (
+            <>
+              {savedSignature && (
+                <button
+                  onClick={() => setSignatureUrl(savedSignature)}
+                  style={ghostBtn}
+                >
+                  Use your signature
+                </button>
+              )}
+              <SignaturePad ref={padRef} />
+            </>
+          )}
           <div style={{ display: "flex", gap: "0.75rem" }}>
-            <button onClick={() => padRef.current?.clear()} style={{ ...ghostBtn, width: "auto", flex: 1 }}>
+            <button
+              onClick={() => {
+                padRef.current?.clear();
+                setSignatureUrl("");
+              }}
+              style={{ ...ghostBtn, width: "auto", flex: 1 }}
+            >
               Clear
             </button>
             <button
+              ref={continueRef}
               onClick={confirmSignature}
               disabled={hasFields && !allRequiredComplete}
               style={{
@@ -545,6 +580,17 @@ export default function SignPage() {
               Looks good — continue
             </button>
           </div>
+          {modalField && (
+            <FieldModal
+              field={modalField}
+              pageAspect={pageAspects[modalField.page] ?? 612 / 792}
+              savedSignature={savedSignature}
+              savedInitials={savedInitials}
+              initialValue={fieldValues[modalField.id]}
+              onSave={(value) => saveFieldValue(modalField, value)}
+              onClose={() => setModalField(null)}
+            />
+          )}
         </section>
       )}
 

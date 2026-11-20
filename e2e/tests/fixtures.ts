@@ -43,8 +43,8 @@ export async function shot(page: Page, name: string) {
 // Draw a simple continuous stroke on the signature canvas with the mouse —
 // enough ink for the pad to accept it and enable its continue button.
 // Defaults to the first canvas on the page; pass a locator when the page
-// has more than one pad (the ceremony renders the main pad plus one pad
-// per signature field).
+// has more than one pad (the ceremony renders the document pad plus one
+// pad per signature field, inside its modal).
 export async function drawSignature(page: Page, canvas?: Locator) {
   const target = canvas ?? page.locator("canvas");
   const box = await target.boundingBox();

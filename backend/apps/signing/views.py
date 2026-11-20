@@ -461,19 +461,39 @@ def document_fields(request, doc_id):
     return Response(DocumentFieldSerializer(field).data, status=201)
 
 
-@api_view(["DELETE"])
+@api_view(["PATCH", "DELETE"])
 @permission_classes([IsAuthenticated])
-def delete_document_field(request, doc_id, field_id):
+def document_field_detail(request, doc_id, field_id):
     doc, err = _owner_document(request, doc_id)
     if err is not None:
         return err
     field = get_object_or_404(DocumentField, pk=field_id, document=doc)
-    if field.is_completed:
-        return _error("a completed field cannot be deleted", 409)
     if doc.status != Document.Status.PENDING:
         return _error("fields can only change on a pending document", 409)
-    field.delete()
-    return Response(status=status.HTTP_204_NO_CONTENT)
+    if request.method == "DELETE":
+        if field.is_completed:
+            return _error("a completed field cannot be deleted", 409)
+        field.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    # PATCH: move the field to a new position on the same page.
+    # Only x/y change; type, assignment and size stay as placed.
+    if field.is_completed:
+        return _error("a completed field cannot be moved", 409)
+    try:
+        x = float(request.data.get("x"))
+        y = float(request.data.get("y"))
+    except (TypeError, ValueError):
+        return _error("x and y must be numbers between 0 and 1")
+    if not (0.0 <= x <= 1.0 and 0.0 <= y <= 1.0):
+        return _error("x and y must be between 0 and 1")
+    if field.width is not None and field.height is not None:
+        if x + field.width > 1.0 or y + field.height > 1.0:
+            return _error("the box must fit inside the page")
+    field.x = x
+    field.y = y
+    field.save(update_fields=["x", "y"])
+    return Response(DocumentFieldSerializer(field).data)
 
 
 @api_view(["GET"])

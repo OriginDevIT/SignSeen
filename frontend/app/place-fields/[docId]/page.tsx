@@ -9,6 +9,7 @@ import {
   fetchDocumentPageImageUrl,
   getDocument,
   getDocumentFields,
+  updateDocumentField,
   type DocumentFieldInfo,
   type DocumentInfo,
   type FieldType,
@@ -37,6 +38,38 @@ const inputStyle: React.CSSProperties = {
   boxSizing: "border-box",
 };
 
+/** The toolbar selects shrink to their share of the row and truncate
+ * long labels instead of pushing the page navigation off the row. */
+const toolbarSelectStyle: React.CSSProperties = {
+  ...inputStyle,
+  width: "100%",
+  minWidth: 0,
+  textOverflow: "ellipsis",
+};
+
+// A drag on the page is one of three gestures: drawing a new box on
+// empty canvas, moving a placed box, or selecting a completed box
+// (which cannot move). The drag start (in client pixels, for the
+// click test) lives in a ref so pointerup can read the end point from
+// its own event instead of stale state.
+type DragState =
+  | {
+      kind: "draw";
+      clientX: number;
+      clientY: number;
+      x: number;
+      y: number;
+    }
+  | {
+      kind: "move";
+      field: DocumentFieldInfo;
+      grabDx: number;
+      grabDy: number;
+      clientX: number;
+      clientY: number;
+    }
+  | { kind: "select"; field: DocumentFieldInfo };
+
 export default function PlaceFieldsPage() {
   const params = useParams();
   const docId = params.docId as string;
@@ -51,22 +84,22 @@ export default function PlaceFieldsPage() {
   const [error, setError] = useState("");
   const [loadError, setLoadError] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  // In-progress drag, as normalized corner points. The drag start (in
-  // client pixels, for the click test) lives in a ref so pointerup can
-  // read the end point from its own event instead of stale state.
+  // In-progress draw, as normalized corner points.
   const [draft, setDraft] = useState<{
     x0: number;
     y0: number;
     x1: number;
     y1: number;
   } | null>(null);
-  const imgRef = useRef<HTMLImageElement | null>(null);
-  const dragStart = useRef<{
-    clientX: number;
-    clientY: number;
+  // Live position of the box being moved (rendered in place of the
+  // stored position until the drop persists).
+  const [moveDraft, setMoveDraft] = useState<{
+    id: string;
     x: number;
     y: number;
   } | null>(null);
+  const imgRef = useRef<HTMLImageElement | null>(null);
+  const drag = useRef<DragState | null>(null);
 
   useEffect(() => {
     Promise.all([getDocument(docId), getDocumentFields(docId)])
@@ -112,6 +145,16 @@ export default function PlaceFieldsPage() {
     return `Signer ${s.order + 1}${s.signer_name ? ` — ${s.signer_name}` : ""}`;
   };
 
+  /** Full option label for a session, including its email — shown in
+   * the dropdown and as the select's tooltip; the select itself
+   * truncates it with an ellipsis. */
+  const signerOptionLabel = (s: NonNullable<DocumentInfo["sessions"]>[number]): string =>
+    `Signer ${s.order + 1}${s.signer_name ? ` — ${s.signer_name}` : ""}${
+      s.signer_email ? ` (${s.signer_email})` : ""
+    }`;
+
+  const selectedSession = doc?.sessions?.find((x) => x.id === sessionId);
+
   const pageFields = fields.filter((f) => f.page === page);
 
   const pointFromEvent = (e: React.PointerEvent) => {
@@ -124,7 +167,36 @@ export default function PlaceFieldsPage() {
       clientY: e.clientY,
       x: (e.clientX - rect.left) / rect.width,
       y: (e.clientY - rect.top) / rect.height,
+      rect,
     };
+  };
+
+  /** Topmost field under the pointer, if any — a drawn box by
+   * containment, a click-placed marker by a finger-sized radius
+   * around its anchor. grabDx/grabDy is the pointer's offset from
+   * the box origin (0 for a marker, whose anchor follows the
+   * pointer), so a move drags the box without it jumping. */
+  const hitField = (p: NonNullable<ReturnType<typeof pointFromEvent>>) => {
+    for (const f of [...pageFields].reverse()) {
+      const b = fieldBox(f);
+      if (b !== null) {
+        if (
+          p.x >= b.x &&
+          p.x <= b.x + b.width &&
+          p.y >= b.y &&
+          p.y <= b.y + b.height
+        ) {
+          return { field: f, grabDx: p.x - b.x, grabDy: p.y - b.y };
+        }
+      } else {
+        const ax = p.rect.left + f.x * p.rect.width;
+        const ay = p.rect.top + f.y * p.rect.height;
+        if (Math.abs(p.clientX - ax) <= 16 && Math.abs(p.clientY - ay) <= 16) {
+          return { field: f, grabDx: 0, grabDy: 0 };
+        }
+      }
+    }
+    return null;
   };
 
   const placeField = async (
@@ -158,6 +230,19 @@ export default function PlaceFieldsPage() {
     }
   };
 
+  const moveField = async (field: DocumentFieldInfo, x: number, y: number) => {
+    setError("");
+    try {
+      const updated = await updateDocumentField(docId, field.id, {
+        x: Math.round(x * 10000) / 10000,
+        y: Math.round(y * 10000) / 10000,
+      });
+      setFields((prev) => prev.map((f) => (f.id === field.id ? updated : f)));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Could not move the field.");
+    }
+  };
+
   const onPointerDown = (e: React.PointerEvent<HTMLImageElement>) => {
     const p = pointFromEvent(e);
     if (!p) return;
@@ -166,8 +251,32 @@ export default function PlaceFieldsPage() {
       setError("Add a signer to this document before placing fields.");
       return;
     }
-    dragStart.current = p;
-    setDraft({ x0: p.x, y0: p.y, x1: p.x, y1: p.y });
+    const hit = hitField(p);
+    if (hit) {
+      setSelectedId(hit.field.id);
+      if (hit.field.completed) {
+        // Completed fields cannot move; a drag here only selects.
+        drag.current = { kind: "select", field: hit.field };
+      } else {
+        drag.current = {
+          kind: "move",
+          field: hit.field,
+          grabDx: hit.grabDx,
+          grabDy: hit.grabDy,
+          clientX: p.clientX,
+          clientY: p.clientY,
+        };
+      }
+    } else {
+      drag.current = {
+        kind: "draw",
+        clientX: p.clientX,
+        clientY: p.clientY,
+        x: p.x,
+        y: p.y,
+      };
+      setDraft({ x0: p.x, y0: p.y, x1: p.x, y1: p.y });
+    }
     // Pointer capture keeps the drag tracking if the pointer leaves
     // the image mid-drag; not every environment implements it.
     const target = e.currentTarget as HTMLImageElement & {
@@ -177,35 +286,56 @@ export default function PlaceFieldsPage() {
   };
 
   const onPointerMove = (e: React.PointerEvent<HTMLImageElement>) => {
-    const start = dragStart.current;
+    const start = drag.current;
     if (!start) return;
     const p = pointFromEvent(e);
     if (!p) return;
-    setDraft({ x0: start.x, y0: start.y, x1: p.x, y1: p.y });
+    if (start.kind === "draw") {
+      setDraft({ x0: start.x, y0: start.y, x1: p.x, y1: p.y });
+      return;
+    }
+    if (start.kind === "move") {
+      const b = fieldBox(start.field);
+      const w = b ? b.width : 0;
+      const h = b ? b.height : 0;
+      setMoveDraft({
+        id: start.field.id,
+        x: Math.max(0, Math.min(1 - w, p.x - start.grabDx)),
+        y: Math.max(0, Math.min(1 - h, p.y - start.grabDy)),
+      });
+    }
   };
 
   const onPointerUp = async (e: React.PointerEvent<HTMLImageElement>) => {
-    const start = dragStart.current;
-    dragStart.current = null;
+    const start = drag.current;
+    drag.current = null;
     setDraft(null);
+    setMoveDraft(null);
     if (!start) return;
     const end = pointFromEvent(e);
     if (!end) return;
+    if (start.kind === "select") {
+      return;
+    }
+    if (start.kind === "move") {
+      // A click only selects; a drag drops the box at the new spot.
+      if (isClick(start.clientX, start.clientY, end.clientX, end.clientY)) {
+        return;
+      }
+      const b = fieldBox(start.field);
+      const w = b ? b.width : 0;
+      const h = b ? b.height : 0;
+      const x = Math.max(0, Math.min(1 - w, end.x - start.grabDx));
+      const y = Math.max(0, Math.min(1 - h, end.y - start.grabDy));
+      await moveField(start.field, x, y);
+      return;
+    }
     if (isClick(start.clientX, start.clientY, end.clientX, end.clientY)) {
       // A click: select the box under the pointer, if any; otherwise
       // place a default-size field at that point.
-      const hit = [...pageFields].reverse().find((f) => {
-        const b = fieldBox(f);
-        return (
-          b !== null &&
-          start.x >= b.x &&
-          start.x <= b.x + b.width &&
-          start.y >= b.y &&
-          start.y <= b.y + b.height
-        );
-      });
+      const hit = hitField(end);
       if (hit) {
-        setSelectedId(hit.id);
+        setSelectedId(hit.field.id);
         return;
       }
       setSelectedId(null);
@@ -222,8 +352,9 @@ export default function PlaceFieldsPage() {
   };
 
   const onPointerCancel = () => {
-    dragStart.current = null;
+    drag.current = null;
     setDraft(null);
+    setMoveDraft(null);
   };
 
   const onDelete = async (field: DocumentFieldInfo) => {
@@ -258,6 +389,7 @@ export default function PlaceFieldsPage() {
   }
 
   const draftBox = draft ? normalizeBox(draft.x0, draft.y0, draft.x1, draft.y1) : null;
+  const selectedField = fields.find((f) => f.id === selectedId) ?? null;
 
   return (
     <main style={shell}>
@@ -267,8 +399,9 @@ export default function PlaceFieldsPage() {
       <p style={{ opacity: 0.65, marginTop: 0 }}>
         Signing mode: {doc.signing_mode}. Pick a field type and the signer it
         belongs to, then drag on the page to draw a box where the field goes
-        — or click to place a default-size field. Each signer only ever
-        sees their own fields.
+        — or click to place a default-size field. Drag a placed box to move
+        it; click a box to select it, then delete it with the ×. Each signer
+        only ever sees their own fields.
       </p>
 
       {error && (
@@ -277,11 +410,30 @@ export default function PlaceFieldsPage() {
         </p>
       )}
 
-      <div style={{ display: "flex", gap: "0.75rem", flexWrap: "wrap", marginBottom: "1rem" }}>
-        <label style={{ display: "grid", gap: "0.3rem", flex: 1, minWidth: 160 }}>
+      {/* Sticky add-field toolbar: the controls stay pinned while the
+          document scrolls beneath them. The selects shrink to their
+          share of the row and truncate long labels; the page
+          navigation never wraps under them. */}
+      <div
+        data-testid="field-toolbar"
+        style={{
+          position: "sticky",
+          top: 0,
+          zIndex: 20,
+          background: "#fff",
+          margin: "0 -1.25rem 1rem",
+          padding: "0.75rem 1.25rem",
+          borderBottom: "1px solid #e5e7eb",
+          display: "flex",
+          gap: "0.75rem",
+          flexWrap: "wrap",
+          alignItems: "end",
+        }}
+      >
+        <label style={{ display: "grid", gap: "0.3rem", flex: "1 1 140px", minWidth: 0 }}>
           Field type
           <select
-            style={inputStyle}
+            style={toolbarSelectStyle}
             value={fieldType}
             onChange={(e) => setFieldType(e.target.value as FieldType)}
           >
@@ -292,23 +444,31 @@ export default function PlaceFieldsPage() {
             ))}
           </select>
         </label>
-        <label style={{ display: "grid", gap: "0.3rem", flex: 1, minWidth: 200 }}>
+        <label style={{ display: "grid", gap: "0.3rem", flex: "2 1 200px", minWidth: 0 }}>
           Assigned signer
           <select
-            style={inputStyle}
+            style={toolbarSelectStyle}
             value={sessionId}
+            title={selectedSession ? signerOptionLabel(selectedSession) : undefined}
             onChange={(e) => setSessionId(e.target.value)}
           >
             {(doc.sessions ?? []).map((s) => (
               <option key={s.id} value={s.id}>
-                Signer {s.order + 1}
-                {s.signer_name ? ` — ${s.signer_name}` : ""}
-                {s.signer_email ? ` (${s.signer_email})` : ""}
+                {signerOptionLabel(s)}
               </option>
             ))}
           </select>
         </label>
-        <div style={{ display: "flex", gap: "0.5rem", alignItems: "end" }}>
+        <div
+          style={{
+            display: "flex",
+            gap: "0.5rem",
+            alignItems: "center",
+            flex: "0 0 auto",
+            marginLeft: "auto",
+            whiteSpace: "nowrap",
+          }}
+        >
           <button
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page <= 1}
@@ -379,6 +539,11 @@ export default function PlaceFieldsPage() {
           const b = fieldBox(f);
           const signerNo =
             (doc.sessions?.find((s) => s.id === f.session)?.order ?? 0) + 1;
+          // The live position while this box is being dragged.
+          const pos =
+            moveDraft && moveDraft.id === f.id
+              ? { x: moveDraft.x, y: moveDraft.y }
+              : { x: f.x, y: f.y };
           if (b === null) {
             // Click-placed field: no stored size, marker pill as before.
             return (
@@ -387,8 +552,8 @@ export default function PlaceFieldsPage() {
                 title={`${f.type} — ${signerLabel(f.session)}`}
                 style={{
                   position: "absolute",
-                  left: `${f.x * 100}%`,
-                  top: `${f.y * 100}%`,
+                  left: `${pos.x * 100}%`,
+                  top: `${pos.y * 100}%`,
                   transform: "translate(-2px, -50%)",
                   background: "#111827",
                   color: "#fff",
@@ -411,8 +576,8 @@ export default function PlaceFieldsPage() {
               data-testid="field-box"
               style={{
                 position: "absolute",
-                left: `${b.x * 100}%`,
-                top: `${b.y * 100}%`,
+                left: `${pos.x * 100}%`,
+                top: `${pos.y * 100}%`,
                 width: `${b.width * 100}%`,
                 height: `${b.height * 100}%`,
                 border: selected ? "2px solid #2563eb" : "2px solid #111827",
@@ -441,6 +606,60 @@ export default function PlaceFieldsPage() {
             </div>
           );
         })}
+        {/* Delete control on the selected box itself. It sits above
+            the page image (not inside the pointer-events-none box),
+            so clicking it never starts a draw or a move. */}
+        {selectedField &&
+          !selectedField.completed &&
+          selectedField.page === page &&
+          (() => {
+            const b = fieldBox(selectedField);
+            const pos =
+              moveDraft && moveDraft.id === selectedField.id
+                ? { x: moveDraft.x, y: moveDraft.y }
+                : { x: selectedField.x, y: selectedField.y };
+            const style: React.CSSProperties =
+              b === null
+                ? {
+                    left: `${pos.x * 100}%`,
+                    top: `${pos.y * 100}%`,
+                    transform: "translate(10px, -50%)",
+                  }
+                : {
+                    left: `${(pos.x + b.width) * 100}%`,
+                    top: `${pos.y * 100}%`,
+                    transform: "translate(-50%, -50%)",
+                  };
+            return (
+              <button
+                type="button"
+                aria-label="Delete field"
+                title="Delete field"
+                data-testid="delete-field-button"
+                onClick={() => onDelete(selectedField)}
+                style={{
+                  ...style,
+                  position: "absolute",
+                  width: 22,
+                  height: 22,
+                  padding: 0,
+                  borderRadius: "50%",
+                  border: "2px solid #fff",
+                  background: "#111827",
+                  color: "#fff",
+                  fontSize: 13,
+                  lineHeight: 1,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  zIndex: 5,
+                }}
+              >
+                ×
+              </button>
+            );
+          })()}
       </div>
 
       <h2 style={{ fontSize: "1.15rem", marginTop: "1.5rem" }}>
