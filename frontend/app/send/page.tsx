@@ -935,15 +935,6 @@ export default function SendPage() {
             document to sign. Links expire in 30 days — no account
             needed on their end.
           </p>
-          {draft && (
-            <p style={{ fontSize: "0.95rem", margin: 0 }}>
-              <a href={`/place-fields/${draft.id}`}>Place fields on this document →</a>{" "}
-              <span style={{ opacity: 0.6 }}>
-                (signature / initials / checkbox / text / date fields, each
-                assigned to a signer)
-              </span>
-            </p>
-          )}
           <p style={{ fontSize: "0.95rem", margin: 0 }}>
             <a href="/dashboard">View in dashboard</a>
           </p>

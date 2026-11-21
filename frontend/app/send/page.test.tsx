@@ -263,6 +263,15 @@ describe("SendPage wizard (#89)", () => {
     ).toContain("tok-s");
     // The post-send page has no add-another-signer block.
     expect(screen.queryByText(/Add another signer/)).toBeNull();
+    // The sent confirmation offers no way back to field placement:
+    // fields are placed before sending (#95).
+    expect(
+      screen.queryByRole("link", { name: /Place fields on this document/ }),
+    ).toBeNull();
+    // The dashboard link still offers a way out of the confirmation.
+    expect(
+      screen.getByRole("link", { name: "View in dashboard" }),
+    ).toBeTruthy();
   });
 
   it("discard draft deletes it and returns to a fresh step 1", async () => {
