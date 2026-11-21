@@ -90,8 +90,11 @@ const CLICK_FIELD = {
 
 /** The rendered page image is 700x900 in the test, so normalized
  * coordinates are client pixels / 700 (x) and / 900 (y). */
-async function renderLoaded(fields: typeof DRAWN_FIELD[] = []) {
-  vi.mocked(getDocument).mockResolvedValue(DOC);
+async function renderLoaded(
+  fields: typeof DRAWN_FIELD[] = [],
+  doc: typeof DOC = DOC
+) {
+  vi.mocked(getDocument).mockResolvedValue(doc);
   vi.mocked(getDocumentFields).mockResolvedValue({
     page_count: 2,
     fields: fields as never,
@@ -397,8 +400,11 @@ describe("PlaceFieldsPage draft mode (#89)", () => {
     updated_at: "2026-11-11T00:00:00Z",
   };
 
-  async function renderDraft(fields: typeof DRAWN_FIELD[] = []) {
-    vi.mocked(getDocument).mockResolvedValue(DRAFT_DOC as never);
+  async function renderDraft(
+    fields: typeof DRAWN_FIELD[] = [],
+    doc: typeof DRAFT_DOC = DRAFT_DOC
+  ) {
+    vi.mocked(getDocument).mockResolvedValue(doc as never);
     vi.mocked(getDocumentFields).mockResolvedValue({
       page_count: 1,
       fields: fields as never,
@@ -473,6 +479,29 @@ describe("PlaceFieldsPage draft mode (#89)", () => {
     // it is collapsed by default, #97).
     fireEvent.click(screen.getByRole("button", { name: /Placed fields/ }));
     expect(screen.getAllByText(/Signer 2 — Bob/).length).toBeGreaterThan(0);
+  });
+
+  it("a field assigned to a nameless slot shows the slot email in the list (#114)", async () => {
+    const namelessDoc = {
+      ...DRAFT_DOC,
+      signer_list: [
+        { name: "Alice", email: "alice@example.com" },
+        { name: "", email: "bob@example.com" },
+      ],
+    };
+    const bobField = {
+      ...DRAWN_FIELD,
+      id: "f2",
+      session: null,
+      signer_index: 1,
+    };
+    await renderDraft([bobField as never], namelessDoc as never);
+    await screen.findByTestId("field-box");
+    // Expand the placed-fields list: it is collapsed by default (#97).
+    fireEvent.click(screen.getByRole("button", { name: /Placed fields/ }));
+    expect(
+      screen.getAllByText(/Signer 2 — bob@example\.com/).length
+    ).toBeGreaterThan(0);
   });
 
   it("exits lead back to the wizard, never to a blank form", async () => {
@@ -551,5 +580,29 @@ describe("PlaceFieldsPage placed-fields list (#97)", () => {
     expect(screen.queryByText(/No fields yet/)).toBeNull();
     fireEvent.click(toggle);
     await screen.findByText(/No fields yet/);
+  });
+
+  it("a field whose session has no name shows the session email in the list (#114)", async () => {
+    const namelessDoc = {
+      ...DOC,
+      sessions: [
+        {
+          id: "sess-1",
+          signer_name: "",
+          signer_email: "carol@example.com",
+          status: "pending",
+          order: 0,
+        },
+      ],
+    };
+    await renderLoaded([DRAWN_FIELD], namelessDoc as never);
+
+    const toggle = screen.getByRole("button", {
+      name: /Placed fields \(1\)/,
+    });
+    fireEvent.click(toggle);
+    expect(
+      screen.getAllByText(/Signer 1 — carol@example\.com/).length
+    ).toBeGreaterThan(0);
   });
 });

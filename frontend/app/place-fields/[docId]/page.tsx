@@ -188,11 +188,19 @@ export default function PlaceFieldsPage() {
     if (field.session) {
       const s = doc?.sessions?.find((x) => x.id === field.session);
       if (!s) return "Unknown signer";
-      return `Signer ${s.order + 1}${s.signer_name ? ` — ${s.signer_name}` : ""}`;
+      return `Signer ${s.order + 1}${
+        s.signer_name
+          ? ` — ${s.signer_name}`
+          : s.signer_email
+            ? ` — ${s.signer_email}`
+            : ""
+      }`;
     }
     const slot = doc?.signer_list?.[field.signer_index];
     if (!slot) return "Unknown signer";
-    return `Signer ${field.signer_index + 1}${slot.name ? ` — ${slot.name}` : ""}`;
+    return `Signer ${field.signer_index + 1}${
+      slot.name ? ` — ${slot.name}` : slot.email ? ` — ${slot.email}` : ""
+    }`;
   };
 
   /** Full option label for a session, including its email — shown in
