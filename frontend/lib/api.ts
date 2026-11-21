@@ -30,6 +30,17 @@ export interface DocumentInfo {
   signing_mode: "sequential" | "parallel";
   /** Sender option (#73): every signer must attach a witness photo. */
   photo_required: boolean;
+  /** Step-1 signer list (#89): name/email dicts in signing order.
+   * Present on draft payloads (creation, detail, PATCH); the input
+   * key for create/PATCH is "signers", the response field is
+   * "signer_list". */
+  signer_list?: { name: string; email: string }[];
+  /** Anonymous sender's draft credential (#89): exposed only on
+   * draft creation and to the owner / token holder; omitted
+   * otherwise. */
+  draft_token?: string;
+  /** Original uploaded filename, for the review step. */
+  original_filename?: string;
   sessions?: SessionSummary[];
   /** The active signing session's URL. Returned to the document's
    * owner only: present (URL or null) in dashboard payloads and in
@@ -46,7 +57,13 @@ export type FieldType = "signature" | "initials" | "checkbox" | "text" | "date";
 export interface DocumentFieldInfo {
   id: string;
   document: string;
-  session: string;
+  /** The session this field belongs to once the document is sent;
+   * null on a draft, where the field is assigned to a signer slot
+   * (signer_index) until send links it (#89). */
+  session: string | null;
+  /** Position in the draft's signer list (#89); the session order
+   * once sent. */
+  signer_index: number;
   type: FieldType;
   page: number;
   /** Normalized coordinates (0-1 fractions of the page size). */
@@ -146,6 +163,56 @@ interface ReqOptions {
    * false: the signing token in the URL is their credential, and a
    * stale sender token must never break a signing link. */
   auth?: boolean;
+  /** Anonymous draft credential (#89): sent as X-Draft-Token. */
+  draftToken?: string;
+}
+
+const DRAFT_TOKEN_KEY_PREFIX = "signseen_draft_token:";
+
+/** Anonymous sender's draft credential (#89), kept in sessionStorage
+ * keyed by draft id: it authorizes field edits, PATCH, discard and
+ * send on that draft only, and it dies with the tab. */
+export function getDraftToken(docId: string): string | null {
+  if (typeof window === "undefined") return null;
+  return window.sessionStorage.getItem(`${DRAFT_TOKEN_KEY_PREFIX}${docId}`);
+}
+
+export function setDraftToken(docId: string, token: string | null): void {
+  if (typeof window === "undefined") return;
+  if (token) {
+    window.sessionStorage.setItem(`${DRAFT_TOKEN_KEY_PREFIX}${docId}`, token);
+  } else {
+    window.sessionStorage.removeItem(`${DRAFT_TOKEN_KEY_PREFIX}${docId}`);
+  }
+}
+
+export function clearDraftToken(docId: string): void {
+  setDraftToken(docId, null);
+}
+
+/** Post-send confirmation (#89), kept in sessionStorage keyed by
+ * document id so a refresh still shows the signing links. */
+export function getSendResult(docId: string): SessionInfo[] | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(`signseen_send_result:${docId}`);
+    return raw ? (JSON.parse(raw) as SessionInfo[]) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setSendResult(docId: string, sessions: SessionInfo[]): void {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.setItem(
+    `signseen_send_result:${docId}`,
+    JSON.stringify(sessions)
+  );
+}
+
+export function clearSendResult(docId: string): void {
+  if (typeof window === "undefined") return;
+  window.sessionStorage.removeItem(`signseen_send_result:${docId}`);
 }
 
 async function req<T>(
@@ -158,6 +225,9 @@ async function req<T>(
   const headers = new Headers(init?.headers);
   if (token) {
     headers.set("Authorization", `Token ${token}`);
+  }
+  if (options?.draftToken) {
+    headers.set("X-Draft-Token", options.draftToken);
   }
   // A string body without an explicit Content-Type makes fetch send
   // text/plain, which the API rejects with 415 (#51) — JSON is the
@@ -181,13 +251,22 @@ async function req<T>(
   return body as T;
 }
 
-/** Sender: upload a PDF to start a signing request. */
+/** Step-1 signer list (#89): one entry per signer, in order. */
+export interface SignerInput {
+  name: string;
+  email: string;
+}
+
+/** Sender: upload a PDF to start a signing request. Step 1 (#89)
+ * creates a DRAFT — no sessions, no emails — and returns the draft
+ * (with its draft token for anonymous senders). */
 export function uploadDocument(
   file: File,
   title: string,
   senderEmail: string,
   signingMode: "sequential" | "parallel" = "sequential",
-  photoRequired: boolean = false
+  photoRequired: boolean = false,
+  signers?: SignerInput[]
 ): Promise<DocumentInfo> {
   const form = new FormData();
   form.append("file", file);
@@ -195,6 +274,9 @@ export function uploadDocument(
   form.append("sender_email", senderEmail);
   form.append("signing_mode", signingMode);
   form.append("photo_required", String(photoRequired));
+  if (signers !== undefined) {
+    form.append("signers", JSON.stringify(signers));
+  }
   return req<DocumentInfo>("/api/documents/", { method: "POST", body: form });
 }
 
@@ -211,13 +293,15 @@ export function createSession(
   });
 }
 
-/** Sender: render a web page URL to PDF, then it flows like any upload. */
+/** Sender: render a web page URL to PDF, then it flows like any upload.
+ * Step 1 (#89): creates a DRAFT, no sessions, no emails. */
 export function createDocumentFromUrl(
   url: string,
   title: string,
   senderEmail: string,
   signingMode: "sequential" | "parallel" = "sequential",
-  photoRequired: boolean = false
+  photoRequired: boolean = false,
+  signers?: SignerInput[]
 ): Promise<DocumentInfo> {
   return req<DocumentInfo>("/api/documents/from-url/", {
     method: "POST",
@@ -228,8 +312,61 @@ export function createDocumentFromUrl(
       sender_email: senderEmail,
       signing_mode: signingMode,
       photo_required: photoRequired,
+      ...(signers !== undefined ? { signers } : {}),
     }),
   });
+}
+
+/** Step 3 Send (#89): turn a draft into a pending document — one
+ * session per signer in list order, signer emails sent. The free
+ * 1-pending-document limit is enforced here, at send time. */
+export function sendDocument(
+  docId: string,
+  draftToken?: string | null
+): Promise<{ document: DocumentInfo; sessions: SessionInfo[] }> {
+  return req<{ document: DocumentInfo; sessions: SessionInfo[] }>(
+    `/api/documents/${docId}/send/`,
+    { method: "POST", body: "{}" },
+    { draftToken: draftToken ?? undefined }
+  );
+}
+
+export interface DraftPatch {
+  title?: string;
+  signing_mode?: "sequential" | "parallel";
+  photo_required?: boolean;
+  signers?: SignerInput[];
+}
+
+/** Draft-only (#89): edit a draft's title, signing mode, photo flag
+ * or signer list. Removing a signer who has placed fields is
+ * rejected until those fields are deleted first. */
+export function patchDocument(
+  docId: string,
+  patch: DraftPatch,
+  draftToken?: string | null
+): Promise<DocumentInfo> {
+  return req<DocumentInfo>(
+    `/api/documents/${docId}/`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(patch),
+    },
+    { draftToken: draftToken ?? undefined }
+  );
+}
+
+/** Discard a draft (#89): deletes the document and its files. */
+export function discardDraft(
+  docId: string,
+  draftToken?: string | null
+): Promise<void> {
+  return req<void>(
+    `/api/documents/${docId}/`,
+    { method: "DELETE" },
+    { draftToken: draftToken ?? undefined }
+  );
 }
 
 /** Signer: fetch session info (no account; the token is the auth). */
@@ -327,14 +464,22 @@ export interface DocumentFieldsData {
   fields: DocumentFieldInfo[];
 }
 
-export function getDocumentFields(docId: string): Promise<DocumentFieldsData> {
-  return req<DocumentFieldsData>(`/api/documents/${docId}/fields/`);
+export function getDocumentFields(
+  docId: string,
+  draftToken?: string | null
+): Promise<DocumentFieldsData> {
+  return req<DocumentFieldsData>(`/api/documents/${docId}/fields/`, undefined, {
+    draftToken: draftToken ?? undefined,
+  });
 }
 
 export function createDocumentField(
   docId: string,
   field: {
-    session_id: string;
+    /** Sent documents (#13): the session the field belongs to. */
+    session_id?: string;
+    /** Drafts (#89): the signer slot in the draft's signer list. */
+    signer_index?: number;
     type: FieldType;
     page: number;
     x: number;
@@ -344,22 +489,30 @@ export function createDocumentField(
     width?: number;
     height?: number;
     required?: boolean;
-  }
+  },
+  draftToken?: string | null
 ): Promise<DocumentFieldInfo> {
-  return req<DocumentFieldInfo>(`/api/documents/${docId}/fields/`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(field),
-  });
+  return req<DocumentFieldInfo>(
+    `/api/documents/${docId}/fields/`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(field),
+    },
+    { draftToken: draftToken ?? undefined }
+  );
 }
 
 export function deleteDocumentField(
   docId: string,
-  fieldId: string
+  fieldId: string,
+  draftToken?: string | null
 ): Promise<void> {
-  return req(`/api/documents/${docId}/fields/${fieldId}/`, {
-    method: "DELETE",
-  });
+  return req(
+    `/api/documents/${docId}/fields/${fieldId}/`,
+    { method: "DELETE" },
+    { draftToken: draftToken ?? undefined }
+  );
 }
 
 /** Move a field to a new position on the same page. Only x/y change;
@@ -367,13 +520,18 @@ export function deleteDocumentField(
 export function updateDocumentField(
   docId: string,
   fieldId: string,
-  position: { x: number; y: number }
+  position: { x: number; y: number },
+  draftToken?: string | null
 ): Promise<DocumentFieldInfo> {
-  return req<DocumentFieldInfo>(`/api/documents/${docId}/fields/${fieldId}/`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(position),
-  });
+  return req<DocumentFieldInfo>(
+    `/api/documents/${docId}/fields/${fieldId}/`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(position),
+    },
+    { draftToken: draftToken ?? undefined }
+  );
 }
 
 /** Owner-only page render for placement. The endpoint needs the
@@ -381,12 +539,16 @@ export function updateDocumentField(
  * cannot send headers). Caller owns revoking the object URL. */
 export async function fetchDocumentPageImageUrl(
   docId: string,
-  page: number
+  page: number,
+  draftToken?: string | null
 ): Promise<string> {
   const token = getAuthToken();
   const headers = new Headers();
   if (token) {
     headers.set("Authorization", `Token ${token}`);
+  }
+  if (draftToken) {
+    headers.set("X-Draft-Token", draftToken);
   }
   const res = await fetch(`${API_BASE}/api/documents/${docId}/page/${page}.png`, {
     headers,
@@ -590,9 +752,15 @@ export function myDashboard(): Promise<DashboardData> {
  * Sends the stored sender token when there is one: the server
  * returns the owner-only signing_url to the document's owner and
  * the public fields to everyone else (anonymous or stale-token
- * requests included). */
-export function getDocument(docId: string): Promise<DocumentInfo> {
-  return req<DocumentInfo>(`/api/documents/${docId}/`);
+ * requests included). A draft token opens the draft detail (and its
+ * draft_token) to the anonymous sender who holds it. */
+export function getDocument(
+  docId: string,
+  draftToken?: string | null
+): Promise<DocumentInfo> {
+  return req<DocumentInfo>(`/api/documents/${docId}/`, undefined, {
+    draftToken: draftToken ?? undefined,
+  });
 }
 
 /* ------------------------------------------------------------------ */

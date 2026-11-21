@@ -10,10 +10,12 @@ export function apiContext() {
   return request.newContext({ baseURL: API_URL });
 }
 
-// Create a document + signing link through the desktop /send form.
-// The signer email is required by the form since the email-first send
-// change (#58), so it is a required option here: a spec that forgets
-// it would stall at "Ready to sign" instead of failing at the call.
+// Create a document + signing link through the desktop /send wizard
+// (#89): step 1 creates a draft (no sessions, no emails), step 2 is
+// skipped, step 3 sends. The signer email is required by the form
+// since the email-first send change (#58), so it is a required option
+// here: a spec that forgets it would stall at "Ready to sign" instead
+// of failing at the call.
 export async function createSigningLink(
   page: Page,
   opts: {
@@ -34,7 +36,13 @@ export async function createSigningLink(
       .check();
   }
   await page.locator('input[type="file"]').setInputFiles(samplePdf());
-  await page.getByRole("button", { name: "Create signing link" }).click();
+  await page.getByRole("button", { name: "Create draft" }).click();
+  await expect(page.getByText(/Step 2 of 3/)).toBeVisible();
+  await page
+    .getByRole("button", { name: "Skip — no fields needed, continue to review" })
+    .click();
+  await expect(page.getByText(/Step 3 of 3/)).toBeVisible();
+  await page.getByRole("button", { name: "Send document" }).click();
   await expect(page.getByText("Ready to sign")).toBeVisible();
   const signingUrl = (await page.locator("code").first().innerText()).trim();
   expect(signingUrl).toContain("/s/");

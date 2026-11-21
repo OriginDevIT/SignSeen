@@ -1,33 +1,64 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import {
   ApiError,
+  clearDraftToken,
+  clearSendResult,
   createDocumentFromUrl,
-  createSession,
+  discardDraft,
   getAuthToken,
+  getDocument,
+  getDocumentFields,
+  getDraftToken,
+  getSendResult,
   myAccount,
+  patchDocument,
+  sendDocument,
+  setDraftToken,
+  setSendResult,
   uploadDocument,
+  type DocumentFieldInfo,
+  type DocumentInfo,
   type SessionInfo,
+  type SignerInput,
 } from "../../lib/api";
 
-type Phase = "form" | "working" | "done";
+type Step = 1 | 2 | 3 | "done";
 type Intake = "file" | "url";
 
+const FREE_MAX_SIGNERS = 2;
+const PREMIUM_MAX_SIGNERS = 10;
+
+function readQuery(): { draftId: string | null; sentId: string | null; step: Step } {
+  if (typeof window === "undefined") {
+    return { draftId: null, sentId: null, step: 1 };
+  }
+  const q = new URLSearchParams(window.location.search);
+  const draftId = q.get("draft");
+  const sentId = q.get("sent");
+  const rawStep = q.get("step");
+  const step: Step =
+    sentId ? "done" : rawStep === "2" ? 2 : rawStep === "3" ? 3 : 1;
+  return { draftId, sentId, step };
+}
+
 export default function SendPage() {
-  const [phase, setPhase] = useState<Phase>("form");
+  const [step, setStep] = useState<Step>(1);
   const [intake, setIntake] = useState<Intake>("file");
   const [title, setTitle] = useState("");
   const [senderEmail, setSenderEmail] = useState("");
-  const [signerName, setSignerName] = useState("");
-  const [signerEmail, setSignerEmail] = useState("");
-  const [signingMode, setSigningMode] = useState<"sequential" | "parallel">("sequential");
+  const [signers, setSigners] = useState<SignerInput[]>([{ name: "", email: "" }]);
+  const [includeMe, setIncludeMe] = useState(false);
+  const [signingMode, setSigningMode] = useState<"sequential" | "parallel">("parallel");
   const [photoRequired, setPhotoRequired] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [pageUrl, setPageUrl] = useState("");
+  const [draft, setDraft] = useState<DocumentInfo | null>(null);
+  const [draftLoading, setDraftLoading] = useState(false);
+  const [fields, setFields] = useState<DocumentFieldInfo[]>([]);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
-  const [docId, setDocId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [accountEmail, setAccountEmail] = useState<string | null>(null);
@@ -36,9 +67,22 @@ export default function SendPage() {
   // must not render the logged-out view: a signed-in sender would
   // briefly see the anonymous copy and a disabled photo checkbox.
   const [accountLoaded, setAccountLoaded] = useState(false);
-  const [nextSignerName, setNextSignerName] = useState("");
-  const [nextSignerEmail, setNextSignerEmail] = useState("");
-  const [addingSigner, setAddingSigner] = useState(false);
+  const [working, setWorking] = useState(false);
+
+  const goStep = useCallback((next: Step, draftId?: string | null, sentId?: string | null) => {
+    setStep(next);
+    if (typeof window !== "undefined") {
+      const q = new URLSearchParams();
+      if (sentId) {
+        q.set("sent", sentId);
+      } else if (draftId) {
+        q.set("draft", draftId);
+        if (next === 2 || next === 3) q.set("step", String(next));
+      }
+      const suffix = q.toString();
+      window.history.replaceState(null, "", suffix ? `/send?${suffix}` : "/send");
+    }
+  }, []);
 
   // Logged-in senders: prefill their email and attach documents to the
   // account (the API does this from the token automatically).
@@ -58,35 +102,187 @@ export default function SendPage() {
       .finally(() => setAccountLoaded(true));
   }, []);
 
-  const submit = async (e: React.FormEvent) => {
+  // Refreshing mid-flow resumes the draft: the draft id is in the URL
+  // and the draft token is in sessionStorage, keyed by draft id.
+  useEffect(() => {
+    const { draftId, sentId, step: initialStep } = readQuery();
+    if (sentId) {
+      const saved = getSendResult(sentId);
+      if (saved) {
+        setSessions(saved);
+        setStep("done");
+      }
+      return;
+    }
+    if (!draftId) return;
+    setDraftLoading(true);
+    getDocument(draftId, getDraftToken(draftId))
+      .then((doc) => {
+        if (doc.status !== "draft") {
+          setError("That document is no longer a draft.");
+          return;
+        }
+        setDraft(doc);
+        setTitle(doc.title);
+        setSenderEmail(doc.sender_email);
+        const list = doc.signer_list ?? [];
+        setSigners(list.length > 0 ? list : [{ name: "", email: "" }]);
+        // The sender-as-signer shows as the last list entry matching
+        // the sender email; the checkbox is a step-1 convenience, so
+        // a resumed draft keeps its list as-is.
+        setSigningMode(doc.signing_mode);
+        setPhotoRequired(doc.photo_required);
+        setStep(initialStep === 1 ? 1 : initialStep);
+      })
+      .catch(() => {
+        setError("Could not load that draft — it may have been discarded or expired.");
+      })
+      .finally(() => setDraftLoading(false));
+  }, []);
+
+  // Placed-field counts for steps 2 and 3, re-read when the step
+  // changes (fields are placed on the place-fields page, then the
+  // sender returns here).
+  useEffect(() => {
+    if (!draft || (step !== 2 && step !== 3)) return;
+    getDocumentFields(draft.id, getDraftToken(draft.id))
+      .then((data) => setFields(data.fields))
+      .catch(() => {});
+  }, [draft, step]);
+
+  const maxSigners = isPremium ? PREMIUM_MAX_SIGNERS : FREE_MAX_SIGNERS;
+  // The "Send to me" checkbox adds the sender as a signer, so it
+  // counts toward the same cap as a signer row.
+  const effectiveSigners: SignerInput[] = [
+    ...signers,
+    ...(includeMe && senderEmail.trim()
+      ? [{ name: "", email: senderEmail.trim() }]
+      : []),
+  ];
+  const canAddSigner = effectiveSigners.length < maxSigners;
+
+  const updateSigner = (index: number, patch: Partial<SignerInput>) => {
+    setSigners((prev) =>
+      prev.map((s, i) => (i === index ? { ...s, ...patch } : s))
+    );
+  };
+
+  const removeSigner = (index: number) => {
+    setSigners((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const submitStep1 = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (intake === "file" && !file) return;
+    const cleaned = effectiveSigners.map((s) => ({
+      name: s.name.trim(),
+      email: s.email.trim(),
+    }));
+    if (cleaned.some((s) => !s.email)) {
+      setError("Every signer needs an email — the signer is emailed their signing link and the document to sign.");
+      return;
+    }
+    if (includeMe && !senderEmail.trim()) {
+      setError("Enter your email to add yourself as a signer.");
+      return;
+    }
+    if (intake === "file" && !draft && !file) return;
     setError("");
-    setPhase("working");
+    setWorking(true);
     try {
-      const doc =
-        intake === "file"
-          ? await uploadDocument(
-              file!,
-              title.trim(),
-              senderEmail.trim(),
-              signingMode,
-              photoRequired
-            )
-          : await createDocumentFromUrl(
-              pageUrl.trim(),
-              title.trim(),
-              senderEmail.trim(),
-              signingMode,
-              photoRequired
-            );
-      const sess = await createSession(doc.id, signerName.trim(), signerEmail.trim());
-      setSessions([sess]);
-      setDocId(doc.id);
-      setPhase("done");
+      if (draft) {
+        // Editing a resumed draft: the file is already uploaded, so
+        // step 1 only patches the details.
+        const updated = await patchDocument(
+          draft.id,
+          {
+            title: title.trim(),
+            signing_mode: signingMode,
+            photo_required: photoRequired,
+            signers: cleaned,
+          },
+          getDraftToken(draft.id)
+        );
+        setDraft(updated);
+        goStep(2, draft.id);
+      } else {
+        const created =
+          intake === "file"
+            ? await uploadDocument(
+                file!,
+                title.trim(),
+                senderEmail.trim(),
+                signingMode,
+                photoRequired,
+                cleaned
+              )
+            : await createDocumentFromUrl(
+                pageUrl.trim(),
+                title.trim(),
+                senderEmail.trim(),
+                signingMode,
+                photoRequired,
+                cleaned
+              );
+        if (created.draft_token) {
+          setDraftToken(created.id, created.draft_token);
+        }
+        setDraft(created);
+        goStep(2, created.id);
+      }
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Something went wrong.");
-      setPhase("form");
+    } finally {
+      setWorking(false);
+    }
+  };
+
+  const discard = async () => {
+    if (!draft) {
+      resetAll();
+      return;
+    }
+    setError("");
+    setWorking(true);
+    try {
+      await discardDraft(draft.id, getDraftToken(draft.id));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Something went wrong.");
+      setWorking(false);
+      return;
+    }
+    clearDraftToken(draft.id);
+    resetAll();
+  };
+
+  const resetAll = () => {
+    setDraft(null);
+    setSessions([]);
+    setFields([]);
+    setSigners([{ name: "", email: "" }]);
+    setIncludeMe(false);
+    setSigningMode("parallel");
+    setPhotoRequired(false);
+    setFile(null);
+    setPageUrl("");
+    setTitle("");
+    setWorking(false);
+    goStep(1);
+  };
+
+  const send = async () => {
+    if (!draft) return;
+    setError("");
+    setWorking(true);
+    try {
+      const result = await sendDocument(draft.id, getDraftToken(draft.id));
+      setSessions(result.sessions);
+      setSendResult(draft.id, result.sessions);
+      clearDraftToken(draft.id);
+      goStep("done", null, draft.id);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Something went wrong.");
+    } finally {
+      setWorking(false);
     }
   };
 
@@ -96,31 +292,8 @@ export default function SendPage() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  // Premium senders can add more signers to the same document. Sessions
-  // sign strictly in order: signer 2's link activates only after
-  // signer 1 has signed, and the document seals at the final signature.
-  const addSigner = async () => {
-    if (!docId) return;
-    // The add-signer block is not a <form>, so `required` on the input
-    // would not block this click — guard here instead (the API also
-    // rejects a missing signer email with 400).
-    if (!nextSignerEmail.trim()) {
-      setError("A signer email is required — the signer is emailed their signing link and the document to sign.");
-      return;
-    }
-    setError("");
-    setAddingSigner(true);
-    try {
-      const sess = await createSession(docId, nextSignerName.trim(), nextSignerEmail.trim());
-      setSessions((prev) => [...prev, sess]);
-      setNextSignerName("");
-      setNextSignerEmail("");
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Something went wrong.");
-    } finally {
-      setAddingSigner(false);
-    }
-  };
+  const fieldCountFor = (index: number) =>
+    fields.filter((f) => f.signer_index === index).length;
 
   const inputStyle: React.CSSProperties = {
     width: "100%",
@@ -130,6 +303,15 @@ export default function SendPage() {
     fontSize: "1rem",
     boxSizing: "border-box",
   };
+
+  const stepLabel =
+    step === 1
+      ? "Step 1 of 3 — Signers & document"
+      : step === 2
+        ? "Step 2 of 3 — Place fields (optional)"
+        : step === 3
+          ? "Step 3 of 3 — Review & send"
+          : "Sent";
 
   return (
     <main
@@ -143,11 +325,20 @@ export default function SendPage() {
       <h1 style={{ fontSize: "1.75rem", marginBottom: "0.25rem" }}>
         Send a document for signature
       </h1>
-      <p style={{ opacity: 0.65, marginTop: 0, marginBottom: "1.5rem" }}>
-        Upload a PDF — the signer is emailed their signing link and the
-        document to sign. The signer needs no account.
+      <p style={{ opacity: 0.65, marginTop: 0, marginBottom: "0.5rem" }}>
+        {step === "done"
+          ? "Your document is on its way — each signer was emailed their signing link and the document to sign."
+          : "Upload a PDF, place fields if you want them, review, then send. Nothing is emailed until you press Send in step 3."}
       </p>
-      {!accountLoaded ? (
+      <p style={{ fontSize: "0.9rem", fontWeight: 600, marginTop: 0, marginBottom: "1rem" }}>
+        {stepLabel}
+        {draft && step !== "done" && (
+          <span style={{ fontWeight: 400, opacity: 0.6 }}>
+            {" "}· Draft saved — refreshing resumes here.
+          </span>
+        )}
+      </p>
+      {!accountLoaded || draftLoading ? (
         <p style={{ fontSize: "0.9rem", opacity: 0.7, marginTop: "-1rem", marginBottom: "1.5rem" }}>
           Loading…
         </p>
@@ -176,13 +367,14 @@ export default function SendPage() {
         </p>
       )}
 
-      {phase !== "done" && (
-        <form onSubmit={submit} style={{ display: "grid", gap: "1rem" }}>
+      {step === 1 && (
+        <form onSubmit={submitStep1} style={{ display: "grid", gap: "1rem" }}>
           <div style={{ display: "flex", gap: "0.5rem" }}>
             {(["file", "url"] as Intake[]).map((mode) => (
               <button
                 key={mode}
                 type="button"
+                disabled={!!draft}
                 onClick={() => setIntake(mode)}
                 style={{
                   flex: 1,
@@ -191,8 +383,9 @@ export default function SendPage() {
                   border: "1px solid #d1d5db",
                   background: intake === mode ? "#111827" : "#fff",
                   color: intake === mode ? "#fff" : "inherit",
-                  cursor: "pointer",
+                  cursor: draft ? "not-allowed" : "pointer",
                   fontWeight: 600,
+                  opacity: draft ? 0.5 : 1,
                 }}
               >
                 {mode === "file" ? "Upload a file" : "From a web page"}
@@ -220,26 +413,118 @@ export default function SendPage() {
               required
             />
           </label>
-          <label style={{ display: "grid", gap: "0.35rem" }}>
-            Signer name <span style={{ opacity: 0.6 }}>(optional)</span>
-            <input
-              style={inputStyle}
-              value={signerName}
-              onChange={(e) => setSignerName(e.target.value)}
-              placeholder="Jane Doe"
-            />
-          </label>
-          <label style={{ display: "grid", gap: "0.35rem" }}>
-            Signer email <span style={{ opacity: 0.6 }}>(required — the signer is emailed their signing link and the document to sign)</span>
-            <input
-              style={inputStyle}
-              type="email"
-              required
-              value={signerEmail}
-              onChange={(e) => setSignerEmail(e.target.value)}
-              placeholder="jane@example.com"
-            />
-          </label>
+
+          <fieldset
+            style={{
+              border: "1px solid #e5e7eb",
+              borderRadius: 8,
+              padding: "1rem",
+              display: "grid",
+              gap: "0.75rem",
+              margin: 0,
+            }}
+          >
+            <legend style={{ fontWeight: 600, padding: "0 0.35rem" }}>
+              Signers, in order
+            </legend>
+            {signers.map((signer, i) => (
+              <div key={i} style={{ display: "grid", gap: "0.5rem" }}>
+                <div style={{ fontWeight: 600, fontSize: "0.95rem" }}>
+                  Signer {i + 1}
+                </div>
+                <label style={{ display: "grid", gap: "0.35rem" }}>
+                  Signer name <span style={{ opacity: 0.6 }}>(optional)</span>
+                  <input
+                    style={inputStyle}
+                    value={signer.name}
+                    onChange={(e) => updateSigner(i, { name: e.target.value })}
+                    placeholder="Jane Doe"
+                  />
+                </label>
+                <label style={{ display: "grid", gap: "0.35rem" }}>
+                  Signer email <span style={{ opacity: 0.6 }}>(required — the signer is emailed their signing link and the document to sign)</span>
+                  <input
+                    style={inputStyle}
+                    type="email"
+                    required
+                    value={signer.email}
+                    onChange={(e) => updateSigner(i, { email: e.target.value })}
+                    placeholder="jane@example.com"
+                  />
+                </label>
+                {signers.length > 1 && (
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => removeSigner(i)}
+                      aria-label={`Remove signer ${i + 1}`}
+                      style={{
+                        padding: "0.4rem 0.8rem",
+                        borderRadius: 8,
+                        border: "1px solid #d1d5db",
+                        background: "#fff",
+                        cursor: "pointer",
+                      }}
+                    >
+                      Remove signer {i + 1}
+                    </button>
+                  </div>
+                )}
+              </div>
+            ))}
+            <div>
+              <button
+                type="button"
+                onClick={() =>
+                  setSigners((prev) => [...prev, { name: "", email: "" }])
+                }
+                disabled={!canAddSigner}
+                style={{
+                  padding: "0.5rem 0.9rem",
+                  borderRadius: 8,
+                  border: "1px solid #d1d5db",
+                  background: "#fff",
+                  cursor: canAddSigner ? "pointer" : "not-allowed",
+                  fontWeight: 600,
+                  opacity: canAddSigner ? 1 : 0.55,
+                }}
+              >
+                Add another signer
+              </button>
+              {!canAddSigner && (
+                <p style={{ fontSize: "0.9rem", opacity: 0.7, margin: "0.5rem 0 0" }}>
+                  {isPremium
+                    ? `The maximum is ${PREMIUM_MAX_SIGNERS} signers per document.`
+                    : "The free plan allows up to 2 signers — the second signer must be you, via “Send to me for signature also” below. Upgrade for up to 10 signers."}
+                </p>
+              )}
+            </div>
+            <label
+              style={{
+                display: "flex",
+                gap: "0.5rem",
+                alignItems: "flex-start",
+                fontSize: "0.95rem",
+                cursor: signers.length >= maxSigners ? "not-allowed" : "pointer",
+                opacity: signers.length >= maxSigners ? 0.6 : 1,
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={includeMe}
+                disabled={signers.length >= maxSigners}
+                onChange={(e) => setIncludeMe(e.target.checked)}
+                style={{ marginTop: "0.2rem" }}
+              />
+              <span>
+                Send to me for signature also{" "}
+                <span style={{ opacity: 0.6 }}>
+                  (adds you as a signer — in sequential mode you sign last)
+                </span>
+              </span>
+            </label>
+          </fieldset>
+
           <label
             style={{
               display: "flex",
@@ -274,11 +559,24 @@ export default function SendPage() {
               value={signingMode}
               onChange={(e) => setSigningMode(e.target.value as "sequential" | "parallel")}
             >
-              <option value="sequential">Sequential — signers sign one after another, in order</option>
+              <option value="sequential" disabled={!isPremium}>
+                Sequential — signers sign one after another, in order
+              </option>
               <option value="parallel">Parallel — all signers can sign in any order</option>
             </select>
+            {!isPremium && accountLoaded && (
+              <span style={{ fontSize: "0.9rem", opacity: 0.7 }}>
+                Sequential order is a premium feature — free documents are parallel only.
+              </span>
+            )}
           </label>
-          {intake === "file" ? (
+          {draft ? (
+            <p style={{ fontSize: "0.95rem", opacity: 0.75, margin: 0 }}>
+              Document already uploaded
+              {draft.original_filename ? ` (${draft.original_filename})` : ""} —
+              discard the draft to upload a different file.
+            </p>
+          ) : intake === "file" ? (
             <label style={{ display: "grid", gap: "0.35rem" }}>
               Document{" "}
               <span style={{ opacity: 0.6 }}>
@@ -312,7 +610,7 @@ export default function SendPage() {
           )}
           <button
             type="submit"
-            disabled={phase === "working"}
+            disabled={working}
             style={{
               padding: "0.8rem",
               fontSize: "1.05rem",
@@ -321,15 +619,222 @@ export default function SendPage() {
               background: "#111827",
               border: "none",
               borderRadius: 8,
-              cursor: phase === "working" ? "wait" : "pointer",
+              cursor: working ? "wait" : "pointer",
             }}
           >
-            {phase === "working" ? "Creating…" : "Create signing link"}
+            {working
+              ? draft
+                ? "Saving…"
+                : "Creating draft…"
+              : draft
+                ? "Save changes"
+                : "Create draft"}
+          </button>
+          <button
+            type="button"
+            onClick={discard}
+            disabled={working}
+            style={{
+              padding: "0.6rem",
+              borderRadius: 8,
+              border: "1px solid #d1d5db",
+              background: "#fff",
+              cursor: working ? "wait" : "pointer",
+            }}
+          >
+            {draft ? "Discard draft" : "Start over"}
           </button>
         </form>
       )}
 
-      {phase === "done" && sessions.length > 0 && (
+      {step === 2 && draft && (
+        <section style={{ display: "grid", gap: "1rem" }}>
+          <p style={{ margin: 0, opacity: 0.75 }}>
+            Draft saved — no email has been sent yet. Place signature,
+            initials, checkbox, text, or date fields on the document, or
+            skip ahead: signers sign on a blank page when there are no
+            fields.
+          </p>
+          <p style={{ margin: 0 }}>
+            {fields.length === 0
+              ? "No fields placed yet."
+              : `${fields.length} field${fields.length === 1 ? "" : "s"} placed.`}
+          </p>
+          <a
+            href={`/place-fields/${draft.id}?draft=1`}
+            style={{
+              display: "block",
+              textAlign: "center",
+              padding: "0.8rem",
+              fontSize: "1.05rem",
+              fontWeight: 600,
+              color: "#fff",
+              background: "#111827",
+              borderRadius: 8,
+              textDecoration: "none",
+            }}
+          >
+            Place fields
+          </a>
+          <button
+            type="button"
+            onClick={() => goStep(3, draft.id)}
+            style={{
+              padding: "0.8rem",
+              fontSize: "1.05rem",
+              fontWeight: 600,
+              borderRadius: 8,
+              border: "1px solid #d1d5db",
+              background: "#fff",
+              cursor: "pointer",
+            }}
+          >
+            Skip — no fields needed, continue to review
+          </button>
+          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+            <button
+              type="button"
+              onClick={() => goStep(1, draft.id)}
+              style={{
+                padding: "0.6rem 0.9rem",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+                background: "#fff",
+                cursor: "pointer",
+              }}
+            >
+              ← Back to details
+            </button>
+            <button
+              type="button"
+              onClick={discard}
+              disabled={working}
+              style={{
+                padding: "0.6rem 0.9rem",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+                background: "#fff",
+                cursor: working ? "wait" : "pointer",
+              }}
+            >
+              Discard draft
+            </button>
+          </div>
+        </section>
+      )}
+
+      {step === 3 && draft && (
+        <section style={{ display: "grid", gap: "1rem" }}>
+          <div
+            style={{
+              border: "1px solid #e5e7eb",
+              borderRadius: 12,
+              padding: "1.25rem",
+              display: "grid",
+              gap: "0.5rem",
+            }}
+          >
+            <div>
+              <strong>Document:</strong> {draft.title}
+              {draft.original_filename ? ` (${draft.original_filename})` : ""}
+            </div>
+            <div>
+              <strong>Your email:</strong> {draft.sender_email}
+            </div>
+            <div>
+              <strong>Signing order:</strong>{" "}
+              {draft.signing_mode === "sequential"
+                ? "Sequential — signers sign one after another, in order"
+                : "Parallel — all signers can sign in any order"}
+            </div>
+            <div>
+              <strong>Witness photo:</strong>{" "}
+              {draft.photo_required ? "Required" : "Optional"}
+            </div>
+            <div>
+              <strong>Signers:</strong>
+              <ol style={{ margin: "0.5rem 0 0", paddingLeft: "1.25rem" }}>
+                {(draft.signer_list ?? []).map((s, i) => (
+                  <li key={i} style={{ marginBottom: "0.25rem" }}>
+                    {s.name ? `${s.name} — ` : ""}
+                    {s.email}
+                    {` · ${fieldCountFor(i)} field${fieldCountFor(i) === 1 ? "" : "s"}`}
+                  </li>
+                ))}
+              </ol>
+            </div>
+            <div>
+              <strong>Fields placed:</strong> {fields.length}
+            </div>
+          </div>
+          <p style={{ margin: 0, opacity: 0.75 }}>
+            Sending creates one signing session per signer, in the order
+            above, and emails each signer their link and the document.
+          </p>
+          <button
+            type="button"
+            onClick={send}
+            disabled={working}
+            style={{
+              padding: "0.8rem",
+              fontSize: "1.05rem",
+              fontWeight: 600,
+              color: "#fff",
+              background: "#111827",
+              border: "none",
+              borderRadius: 8,
+              cursor: working ? "wait" : "pointer",
+            }}
+          >
+            {working ? "Sending…" : "Send document"}
+          </button>
+          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+            <a
+              href={`/place-fields/${draft.id}?draft=1`}
+              style={{
+                padding: "0.6rem 0.9rem",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+                background: "#fff",
+                cursor: "pointer",
+                textDecoration: "none",
+                color: "inherit",
+              }}
+            >
+              ← Back to place fields
+            </a>
+            <button
+              type="button"
+              onClick={() => goStep(1, draft.id)}
+              style={{
+                padding: "0.6rem 0.9rem",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+                background: "#fff",
+                cursor: "pointer",
+              }}
+            >
+              ← Back to details
+            </button>
+            <button
+              type="button"
+              onClick={discard}
+              disabled={working}
+              style={{
+                padding: "0.6rem 0.9rem",
+                borderRadius: 8,
+                border: "1px solid #d1d5db",
+                background: "#fff",
+                cursor: working ? "wait" : "pointer",
+              }}
+            >
+              Discard draft
+            </button>
+          </div>
+        </section>
+      )}
+
+      {step === "done" && sessions.length > 0 && (
         <section style={{ display: "grid", gap: "1.25rem" }}>
           <div
             style={{
@@ -343,7 +848,7 @@ export default function SendPage() {
             <h2 style={{ margin: "0 0 0.5rem" }}>Ready to sign</h2>
             <p style={{ opacity: 0.7, margin: 0 }}>
               {sessions.length > 1
-                ? signingMode === "parallel"
+                ? draft?.signing_mode === "parallel"
                   ? "Signers can sign in any order — the document seals when everyone has signed."
                   : "Signers sign in order — each link activates after the previous signer has signed, and the document seals at the final signature."
                 : "On a phone? Open the link directly. On a computer? Scan the QR code with your phone."}
@@ -430,56 +935,22 @@ export default function SendPage() {
             document to sign. Links expire in 30 days — no account
             needed on their end.
           </p>
-          {docId && (
+          {draft && (
             <p style={{ fontSize: "0.95rem", margin: 0 }}>
-              <a href={`/place-fields/${docId}`}>Place fields on this document →</a>{" "}
+              <a href={`/place-fields/${draft.id}`}>Place fields on this document →</a>{" "}
               <span style={{ opacity: 0.6 }}>
                 (signature / initials / checkbox / text / date fields, each
-                assigned to a signer — owner account required)
+                assigned to a signer)
               </span>
             </p>
           )}
-          {isPremium && (
-            <div style={{ display: "grid", gap: "0.5rem" }}>
-              <label style={{ display: "grid", gap: "0.35rem" }}>
-                Add another signer <span style={{ opacity: 0.6 }}>(premium — signs after the signer(s) above, in order)</span>
-                <input
-                  style={inputStyle}
-                  value={nextSignerName}
-                  onChange={(e) => setNextSignerName(e.target.value)}
-                  placeholder="Next signer name (optional)"
-                />
-                <input
-                  style={inputStyle}
-                  type="email"
-                  value={nextSignerEmail}
-                  onChange={(e) => setNextSignerEmail(e.target.value)}
-                  placeholder="Next signer email (required — emailed their link and the document on their turn)"
-                />
-              </label>
-              <button
-                onClick={addSigner}
-                disabled={addingSigner}
-                style={{
-                  padding: "0.6rem",
-                  borderRadius: 8,
-                  border: "1px solid #d1d5db",
-                  background: "#fff",
-                  cursor: addingSigner ? "wait" : "pointer",
-                  fontWeight: 600,
-                }}
-              >
-                {addingSigner ? "Adding…" : "Add another signer"}
-              </button>
-            </div>
-          )}
+          <p style={{ fontSize: "0.95rem", margin: 0 }}>
+            <a href="/dashboard">View in dashboard</a>
+          </p>
           <button
             onClick={() => {
-              setPhase("form");
-              setSessions([]);
-              setDocId(null);
-              setFile(null);
-              setTitle("");
+              if (draft) clearSendResult(draft.id);
+              resetAll();
             }}
             style={{
               padding: "0.6rem",

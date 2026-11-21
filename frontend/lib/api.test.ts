@@ -832,3 +832,111 @@ describe("verifyDocument", () => {
     });
   });
 });
+
+describe("send flow drafts (#89)", () => {
+  it("uploadDocument sends the signer list as a JSON string", async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse({ id: "doc-1" }, 201));
+    const file = new File(["%PDF-"], "contract.pdf", {
+      type: "application/pdf",
+    });
+    await uploadDocument(file, "Contract", "s@example.com", "parallel", false, [
+      { name: "Jane", email: "jane@example.com" },
+    ]);
+    const [, init] = vi.mocked(fetch).mock.calls[0];
+    const form = init?.body as FormData;
+    expect(form.get("signers")).toBe(
+      JSON.stringify([{ name: "Jane", email: "jane@example.com" }])
+    );
+    expect(form.get("signing_mode")).toBe("parallel");
+  });
+
+  it("createDocumentFromUrl sends the signer list in the JSON body", async () => {
+    vi.mocked(fetch).mockResolvedValue(jsonResponse({ id: "doc-9" }, 201));
+    await createDocumentFromUrl(
+      "https://example.com/terms",
+      "ToS",
+      "s@example.com",
+      "parallel",
+      false,
+      [{ name: "", email: "jane@example.com" }]
+    );
+    const [, init] = vi.mocked(fetch).mock.calls[0];
+    expect(JSON.parse(init?.body as string)).toMatchObject({
+      signers: [{ name: "", email: "jane@example.com" }],
+    });
+  });
+
+  it("sendDocument posts to the send endpoint with the draft token", async () => {
+    const { sendDocument } = await import("./api");
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({ document: { id: "doc-1", status: "pending" }, sessions: [] })
+    );
+    const result = await sendDocument("doc-1", "tok-1");
+    expect(result.document.status).toBe("pending");
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toContain("/api/documents/doc-1/send/");
+    expect(init?.method).toBe("POST");
+    expect((init?.headers as Headers).get("X-Draft-Token")).toBe("tok-1");
+  });
+
+  it("patchDocument patches the draft with the draft token", async () => {
+    const { patchDocument } = await import("./api");
+    vi.mocked(fetch).mockResolvedValue(jsonResponse({ id: "doc-1", title: "New" }));
+    const doc = await patchDocument(
+      "doc-1",
+      { title: "New", signers: [{ name: "", email: "jane@example.com" }] },
+      "tok-1"
+    );
+    expect(doc.title).toBe("New");
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toContain("/api/documents/doc-1/");
+    expect(init?.method).toBe("PATCH");
+    expect((init?.headers as Headers).get("X-Draft-Token")).toBe("tok-1");
+    expect(JSON.parse(init?.body as string)).toMatchObject({
+      title: "New",
+      signers: [{ name: "", email: "jane@example.com" }],
+    });
+  });
+
+  it("discardDraft sends DELETE with the draft token", async () => {
+    const { discardDraft } = await import("./api");
+    vi.mocked(fetch).mockResolvedValue(new Response(null, { status: 204 }));
+    await discardDraft("doc-1", "tok-1");
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toContain("/api/documents/doc-1/");
+    expect(init?.method).toBe("DELETE");
+    expect((init?.headers as Headers).get("X-Draft-Token")).toBe("tok-1");
+  });
+
+  it("createDocumentField posts a signer slot for drafts", async () => {
+    const { createDocumentField } = await import("./api");
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({ id: "f1", type: "signature", page: 1, x: 0.1, y: 0.2 }, 201)
+    );
+    const field = await createDocumentField(
+      "doc-1",
+      { signer_index: 1, type: "signature", page: 1, x: 0.1, y: 0.2 },
+      "tok-1"
+    );
+    expect(field.id).toBe("f1");
+    const [, init] = vi.mocked(fetch).mock.calls[0];
+    expect(JSON.parse(init?.body as string)).toEqual({
+      signer_index: 1,
+      type: "signature",
+      page: 1,
+      x: 0.1,
+      y: 0.2,
+    });
+    expect((init?.headers as Headers).get("X-Draft-Token")).toBe("tok-1");
+  });
+
+  it("getDocumentFields sends the draft token when given", async () => {
+    const { getDocumentFields } = await import("./api");
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({ page_count: 1, fields: [] })
+    );
+    await getDocumentFields("doc-1", "tok-1");
+    const [, init] = vi.mocked(fetch).mock.calls[0];
+    expect((init?.headers as Headers).get("X-Draft-Token")).toBe("tok-1");
+  });
+});

@@ -20,7 +20,13 @@ test("docx intake: converts, renders as PDF, seals", async ({
   await page
     .locator('input[type="file"]')
     .setInputFiles(path.join(__dirname, "sample.docx"));
-  await page.getByRole("button", { name: "Create signing link" }).click();
+  await page.getByRole("button", { name: "Create draft" }).click();
+  await expect(page.getByText(/Step 2 of 3/)).toBeVisible();
+  await page
+    .getByRole("button", { name: "Skip — no fields needed, continue to review" })
+    .click();
+  await expect(page.getByText(/Step 3 of 3/)).toBeVisible();
+  await page.getByRole("button", { name: "Send document" }).click();
   await expect(page.getByText("Ready to sign")).toBeVisible();
   const signingUrl = (await page.locator("code").first().innerText()).trim();
   await shot(page, "11-docx-link.png");
@@ -60,7 +66,13 @@ test("web page intake: renders the page to PDF, seals", async ({
   await page.getByPlaceholder("jane@example.com").fill(`e2e-intake-signer-${id}@example.com`);
   await page.getByRole("button", { name: "From a web page" }).click();
   await page.getByPlaceholder("https://example.com/terms").fill(pageUrl);
-  await page.getByRole("button", { name: "Create signing link" }).click();
+  await page.getByRole("button", { name: "Create draft" }).click();
+  await expect(page.getByText(/Step 2 of 3/)).toBeVisible();
+  await page
+    .getByRole("button", { name: "Skip — no fields needed, continue to review" })
+    .click();
+  await expect(page.getByText(/Step 3 of 3/)).toBeVisible();
+  await page.getByRole("button", { name: "Send document" }).click();
   await expect(page.getByText("Ready to sign")).toBeVisible();
   const signingUrl = (await page.locator("code").first().innerText()).trim();
   await shot(page, "12-webpage-link.png");

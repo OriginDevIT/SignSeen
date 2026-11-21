@@ -19,6 +19,8 @@ test("happy path: send -> sign with photo -> sealed, audit chain valid", async (
   const signerEmail = `e2e-signer-${id}@example.com`;
 
   // --- Sender (desktop) -------------------------------------------------
+  // Wizard (#89): step 1 creates a draft, step 2 is skipped, step 3
+  // sends — the signer email goes out only at Send.
   await page.goto("/send");
   await page.getByPlaceholder("e.g. Contractor Agreement").fill(title);
   await expect(page.getByPlaceholder("Jane Doe")).toHaveCount(1);
@@ -26,7 +28,13 @@ test("happy path: send -> sign with photo -> sealed, audit chain valid", async (
   // Email-first delivery: the signer email is required at send.
   await page.getByPlaceholder("jane@example.com").fill(signerEmail);
   await page.locator('input[type="file"]').setInputFiles(samplePdf());
-  await page.getByRole("button", { name: "Create signing link" }).click();
+  await page.getByRole("button", { name: "Create draft" }).click();
+  await expect(page.getByText(/Step 2 of 3/)).toBeVisible();
+  await page
+    .getByRole("button", { name: "Skip — no fields needed, continue to review" })
+    .click();
+  await expect(page.getByText(/Step 3 of 3/)).toBeVisible();
+  await page.getByRole("button", { name: "Send document" }).click();
 
   await expect(page.getByText("Ready to sign")).toBeVisible();
   const signingUrl = (await page.locator("code").first().innerText()).trim();

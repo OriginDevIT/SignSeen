@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { signup } from "../../lib/api";
+import AuthBrandHeader from "../../components/AuthBrandHeader";
 import GoogleSignIn from "../../components/GoogleSignIn";
 
 const card: React.CSSProperties = {
@@ -63,6 +64,7 @@ export default function SignupPage() {
 
   return (
     <main style={card}>
+      <AuthBrandHeader />
       <h1 style={{ margin: 0 }}>Create an account</h1>
       <p style={{ opacity: 0.6, margin: 0 }}>
         Keep a library of your documents with their status. Same free limits

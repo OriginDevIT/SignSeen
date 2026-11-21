@@ -9,6 +9,7 @@ import {
   fetchDocumentPageImageUrl,
   getDocument,
   getDocumentFields,
+  getDraftToken,
   updateDocumentField,
   type DocumentFieldInfo,
   type DocumentInfo,
@@ -80,10 +81,33 @@ export default function PlaceFieldsPage() {
   const [page, setPage] = useState(1);
   const [imgUrl, setImgUrl] = useState<string | null>(null);
   const [fieldType, setFieldType] = useState<FieldType>("signature");
+  // Session mode (sent document): the session id the field belongs
+  // to. Draft mode (#89): the signer slot in the draft's signer list,
+  // held as a string so one select serves both.
   const [sessionId, setSessionId] = useState("");
   const [error, setError] = useState("");
   const [loadError, setLoadError] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // True when this visit is step 2 of the send wizard
+  // (/place-fields/<id>?draft=1): exits lead back to the wizard,
+  // never to a blank form.
+  const [inWizard] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("draft") === "1"
+  );
+  // The anonymous sender's draft credential (#89), keyed by draft id.
+  const draftToken = getDraftToken(docId);
+
+  // A draft has a signer list and no sessions yet: fields are
+  // assigned to a signer slot (signer_index) and linked to the
+  // session for that slot at send time. A sent document keeps the
+  // session assignment from before.
+  const isDraft =
+    doc !== null &&
+    doc.status === "draft" &&
+    Array.isArray(doc.signer_list) &&
+    doc.signer_list.length > 0;
   // In-progress draw, as normalized corner points.
   const [draft, setDraft] = useState<{
     x0: number;
@@ -102,19 +126,31 @@ export default function PlaceFieldsPage() {
   const drag = useRef<DragState | null>(null);
 
   useEffect(() => {
-    Promise.all([getDocument(docId), getDocumentFields(docId)])
+    Promise.all([
+      getDocument(docId, draftToken),
+      getDocumentFields(docId, draftToken),
+    ])
       .then(([d, f]) => {
         setDoc(d);
         setFields(f.fields);
         setPageCount(f.page_count);
         if (d.sessions && d.sessions.length > 0) {
           setSessionId(d.sessions[0].id);
+        } else if (
+          d.status === "draft" &&
+          Array.isArray(d.signer_list) &&
+          d.signer_list.length > 0
+        ) {
+          // Draft mode: the first signer slot is the default.
+          setSessionId("0");
         }
       })
       .catch((err) => {
         setLoadError(
           err instanceof ApiError && (err.status === 401 || err.status === 403)
-            ? "Field placement is only available to the document's owner — log in with the account that sent this document."
+            ? draftToken || inWizard
+              ? "Could not open this draft — return to the send flow and continue from step 2."
+              : "Field placement is only available to the document's owner — log in with the account that sent this document."
             : "Could not load this document's fields."
         );
       });
@@ -123,7 +159,7 @@ export default function PlaceFieldsPage() {
   useEffect(() => {
     let url: string | null = null;
     let cancelled = false;
-    fetchDocumentPageImageUrl(docId, page)
+    fetchDocumentPageImageUrl(docId, page, draftToken)
       .then((u) => {
         if (cancelled) {
           URL.revokeObjectURL(u);
@@ -139,10 +175,15 @@ export default function PlaceFieldsPage() {
     };
   }, [docId, page]);
 
-  const signerLabel = (sid: string): string => {
-    const s = doc?.sessions?.find((x) => x.id === sid);
-    if (!s) return "Unknown signer";
-    return `Signer ${s.order + 1}${s.signer_name ? ` — ${s.signer_name}` : ""}`;
+  const signerLabel = (field: DocumentFieldInfo): string => {
+    if (field.session) {
+      const s = doc?.sessions?.find((x) => x.id === field.session);
+      if (!s) return "Unknown signer";
+      return `Signer ${s.order + 1}${s.signer_name ? ` — ${s.signer_name}` : ""}`;
+    }
+    const slot = doc?.signer_list?.[field.signer_index];
+    if (!slot) return "Unknown signer";
+    return `Signer ${field.signer_index + 1}${slot.name ? ` — ${slot.name}` : ""}`;
   };
 
   /** Full option label for a session, including its email — shown in
@@ -153,7 +194,21 @@ export default function PlaceFieldsPage() {
       s.signer_email ? ` (${s.signer_email})` : ""
     }`;
 
-  const selectedSession = doc?.sessions?.find((x) => x.id === sessionId);
+  /** Full option label for a draft signer slot. */
+  const draftSignerOptionLabel = (index: number): string => {
+    const slot = doc?.signer_list?.[index];
+    if (!slot) return `Signer ${index + 1}`;
+    return `Signer ${index + 1}${slot.name ? ` — ${slot.name}` : ""} (${slot.email})`;
+  };
+
+  const selectedSession = isDraft
+    ? undefined
+    : doc?.sessions?.find((x) => x.id === sessionId);
+  const selectedSignerLabel = isDraft
+    ? draftSignerOptionLabel(Number(sessionId) || 0)
+    : selectedSession
+      ? signerOptionLabel(selectedSession)
+      : undefined;
 
   const pageFields = fields.filter((f) => f.page === page);
 
@@ -207,23 +262,34 @@ export default function PlaceFieldsPage() {
   ) => {
     setError("");
     if (!sessionId) {
-      setError("Add a signer to this document before placing fields.");
+      setError(
+        isDraft
+          ? "Add a signer to this draft before placing fields."
+          : "Add a signer to this document before placing fields."
+      );
       return;
     }
     try {
-      const field = await createDocumentField(docId, {
-        session_id: sessionId,
-        type: fieldType,
-        page,
-        x: Math.round(x * 10000) / 10000,
-        y: Math.round(y * 10000) / 10000,
-        ...(width !== undefined && height !== undefined
-          ? {
-              width: Math.round(width * 10000) / 10000,
-              height: Math.round(height * 10000) / 10000,
-            }
-          : {}),
-      });
+      const field = await createDocumentField(
+        docId,
+        {
+          // Drafts assign by signer slot; sent documents by session.
+          ...(isDraft
+            ? { signer_index: Number(sessionId) || 0 }
+            : { session_id: sessionId }),
+          type: fieldType,
+          page,
+          x: Math.round(x * 10000) / 10000,
+          y: Math.round(y * 10000) / 10000,
+          ...(width !== undefined && height !== undefined
+            ? {
+                width: Math.round(width * 10000) / 10000,
+                height: Math.round(height * 10000) / 10000,
+              }
+            : {}),
+        },
+        draftToken
+      );
       setFields((prev) => [...prev, field]);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not place the field.");
@@ -233,10 +299,15 @@ export default function PlaceFieldsPage() {
   const moveField = async (field: DocumentFieldInfo, x: number, y: number) => {
     setError("");
     try {
-      const updated = await updateDocumentField(docId, field.id, {
-        x: Math.round(x * 10000) / 10000,
-        y: Math.round(y * 10000) / 10000,
-      });
+      const updated = await updateDocumentField(
+        docId,
+        field.id,
+        {
+          x: Math.round(x * 10000) / 10000,
+          y: Math.round(y * 10000) / 10000,
+        },
+        draftToken
+      );
       setFields((prev) => prev.map((f) => (f.id === field.id ? updated : f)));
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not move the field.");
@@ -248,7 +319,11 @@ export default function PlaceFieldsPage() {
     if (!p) return;
     setError("");
     if (!sessionId) {
-      setError("Add a signer to this document before placing fields.");
+      setError(
+        isDraft
+          ? "Add a signer to this draft before placing fields."
+          : "Add a signer to this document before placing fields."
+      );
       return;
     }
     const hit = hitField(p);
@@ -360,7 +435,7 @@ export default function PlaceFieldsPage() {
   const onDelete = async (field: DocumentFieldInfo) => {
     setError("");
     try {
-      await deleteDocumentField(docId, field.id);
+      await deleteDocumentField(docId, field.id, draftToken);
       setFields((prev) => prev.filter((f) => f.id !== field.id));
       setSelectedId((prev) => (prev === field.id ? null : prev));
     } catch (err) {
@@ -374,7 +449,13 @@ export default function PlaceFieldsPage() {
         <h1 style={{ fontSize: "1.5rem" }}>Place fields</h1>
         <p style={{ opacity: 0.7 }}>{loadError}</p>
         <p>
-          <a href="/login">Log in</a> · <a href="/send">Back to send</a>
+          {inWizard ? (
+            <a href={`/send?draft=${docId}&step=2`}>← Back to send flow</a>
+          ) : (
+            <>
+              <a href="/login">Log in</a> · <a href="/dashboard">Dashboard</a>
+            </>
+          )}
         </p>
       </main>
     );
@@ -449,14 +530,20 @@ export default function PlaceFieldsPage() {
           <select
             style={toolbarSelectStyle}
             value={sessionId}
-            title={selectedSession ? signerOptionLabel(selectedSession) : undefined}
+            title={selectedSignerLabel}
             onChange={(e) => setSessionId(e.target.value)}
           >
-            {(doc.sessions ?? []).map((s) => (
-              <option key={s.id} value={s.id}>
-                {signerOptionLabel(s)}
-              </option>
-            ))}
+            {isDraft
+              ? (doc.signer_list ?? []).map((s, i) => (
+                  <option key={i} value={String(i)}>
+                    {draftSignerOptionLabel(i)}
+                  </option>
+                ))
+              : (doc.sessions ?? []).map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {signerOptionLabel(s)}
+                  </option>
+                ))}
           </select>
         </label>
         <div
@@ -537,8 +624,9 @@ export default function PlaceFieldsPage() {
         )}
         {pageFields.map((f) => {
           const b = fieldBox(f);
-          const signerNo =
-            (doc.sessions?.find((s) => s.id === f.session)?.order ?? 0) + 1;
+          const signerNo = f.session
+            ? (doc.sessions?.find((s) => s.id === f.session)?.order ?? 0) + 1
+            : f.signer_index + 1;
           // The live position while this box is being dragged.
           const pos =
             moveDraft && moveDraft.id === f.id
@@ -549,7 +637,7 @@ export default function PlaceFieldsPage() {
             return (
               <div
                 key={f.id}
-                title={`${f.type} — ${signerLabel(f.session)}`}
+                title={`${f.type} — ${signerLabel(f)}`}
                 style={{
                   position: "absolute",
                   left: `${pos.x * 100}%`,
@@ -572,7 +660,7 @@ export default function PlaceFieldsPage() {
           return (
             <div
               key={f.id}
-              title={`${f.type} — ${signerLabel(f.session)}`}
+              title={`${f.type} — ${signerLabel(f)}`}
               data-testid="field-box"
               style={{
                 position: "absolute",
@@ -694,7 +782,7 @@ export default function PlaceFieldsPage() {
                   ? ` · ${f.width.toFixed(2)} × ${f.height.toFixed(2)}`
                   : ""}
                 {" · "}
-                {signerLabel(f.session)}
+                {signerLabel(f)}
                 {f.required ? " · required" : " · optional"}
                 {f.completed ? " · completed" : ""}
               </span>
@@ -717,9 +805,16 @@ export default function PlaceFieldsPage() {
           ))}
         </div>
       )}
-      <p style={{ marginTop: "1.5rem" }}>
-        <a href="/send">← Back to send</a>
-      </p>
+      {isDraft || inWizard ? (
+        <p style={{ marginTop: "1.5rem", display: "flex", gap: "1rem", flexWrap: "wrap" }}>
+          <a href={`/send?draft=${docId}&step=1`}>← Back to details</a>
+          <a href={`/send?draft=${docId}&step=3`}>Continue to review →</a>
+        </p>
+      ) : (
+        <p style={{ marginTop: "1.5rem" }}>
+          <a href={`/d/${docId}`}>← Back to document</a>
+        </p>
+      )}
     </main>
   );
 }

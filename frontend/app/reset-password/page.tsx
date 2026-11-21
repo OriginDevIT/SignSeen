@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { confirmPasswordReset, requestPasswordReset } from "../../lib/api";
+import AuthBrandHeader from "../../components/AuthBrandHeader";
 
 const card: React.CSSProperties = {
   maxWidth: "24rem",
@@ -77,6 +78,7 @@ export default function ResetPasswordPage() {
 
   return (
     <main style={card}>
+      <AuthBrandHeader />
       <h1 style={{ margin: 0 }}>Reset password</h1>
       {uid && token ? (
         <form onSubmit={confirm} style={{ display: "flex", flexDirection: "column", gap: "0.9rem" }}>

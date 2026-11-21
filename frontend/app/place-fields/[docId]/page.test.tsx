@@ -270,6 +270,7 @@ describe("PlaceFieldsPage toolbar, move and delete (#84)", () => {
       "doc-1",
       "f1",
       { x: 0.2429, y: 0.3111 },
+      null,
     ]);
     expect(vi.mocked(createDocumentField)).not.toHaveBeenCalled();
 
@@ -355,7 +356,129 @@ describe("PlaceFieldsPage toolbar, move and delete (#84)", () => {
     const del = await screen.findByTestId("delete-field-button");
     fireEvent.click(del);
     await waitFor(() =>
-      expect(vi.mocked(deleteDocumentField)).toHaveBeenCalledWith("doc-1", "f1")
+      expect(vi.mocked(deleteDocumentField)).toHaveBeenCalledWith(
+        "doc-1",
+        "f1",
+        null
+      )
     );
+  });
+});
+
+describe("PlaceFieldsPage draft mode (#89)", () => {
+  beforeEach(() => {
+    vi.stubGlobal("URL", { ...URL, revokeObjectURL: vi.fn() });
+    window.sessionStorage.setItem("signseen_draft_token:doc-1", "tok-1");
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    vi.clearAllMocks();
+    window.sessionStorage.clear();
+    window.history.replaceState(null, "", "/");
+  });
+
+  const DRAFT_DOC = {
+    id: "doc-1",
+    title: "Contract",
+    status: "draft",
+    sender_email: "owner@example.com",
+    signed_file: null,
+    signing_mode: "parallel" as const,
+    photo_required: false,
+    signer_list: [
+      { name: "Alice", email: "alice@example.com" },
+      { name: "Bob", email: "bob@example.com" },
+    ],
+    sessions: [],
+    created_at: "2026-11-11T00:00:00Z",
+    updated_at: "2026-11-11T00:00:00Z",
+  };
+
+  async function renderDraft(fields: typeof DRAWN_FIELD[] = []) {
+    vi.mocked(getDocument).mockResolvedValue(DRAFT_DOC as never);
+    vi.mocked(getDocumentFields).mockResolvedValue({
+      page_count: 1,
+      fields: fields as never,
+    });
+    vi.mocked(fetchDocumentPageImageUrl).mockResolvedValue("blob:page-1.png");
+    render(<PlaceFieldsPage />);
+    const img = (await screen.findByAltText(
+      "Document page 1"
+    )) as HTMLImageElement;
+    vi.spyOn(img, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 700,
+      bottom: 900,
+      width: 700,
+      height: 900,
+      toJSON: () => ({}),
+    } as DOMRect);
+    return img;
+  }
+
+  it("offers the draft signer slots and places by signer_index", async () => {
+    vi.mocked(createDocumentField).mockImplementation(
+      async (_docId: string, body) =>
+        ({
+          ...DRAWN_FIELD,
+          id: "f9",
+          session: null,
+          signer_index: (body as { signer_index: number }).signer_index,
+          x: body.x,
+          y: body.y,
+          width: body.width ?? null,
+          height: body.height ?? null,
+        }) as never
+    );
+    const img = await renderDraft();
+
+    const select = screen.getByLabelText("Assigned signer") as HTMLSelectElement;
+    expect(select.options).toHaveLength(2);
+    expect(select.options[0].textContent).toContain("Alice");
+    expect(select.options[0].textContent).toContain("alice@example.com");
+    expect(select.options[1].textContent).toContain("Bob");
+
+    fireEvent.pointerDown(img, { clientX: 200, clientY: 200, pointerId: 1 });
+    fireEvent.pointerUp(img, { clientX: 200, clientY: 200, pointerId: 1 });
+
+    await waitFor(() =>
+      expect(vi.mocked(createDocumentField)).toHaveBeenCalled()
+    );
+    const [, body, token] = vi.mocked(createDocumentField).mock.calls[0];
+    expect(body).toMatchObject({ signer_index: 0, type: "signature" });
+    expect(body).not.toHaveProperty("session_id");
+    expect(token).toBe("tok-1");
+
+    await screen.findByText(/Placed fields \(1\)/);
+  });
+
+  it("a field assigned to the second slot renders as S2 for Bob", async () => {
+    const bobField = {
+      ...DRAWN_FIELD,
+      id: "f2",
+      session: null,
+      signer_index: 1,
+    };
+    await renderDraft([bobField as never]);
+    const box = await screen.findByTestId("field-box");
+    expect(box.textContent).toContain("S2");
+    expect(box.title).toContain("Bob");
+    // The placed-fields list names the same signer.
+    expect(screen.getAllByText(/Signer 2 — Bob/).length).toBeGreaterThan(0);
+  });
+
+  it("exits lead back to the wizard, never to a blank form", async () => {
+    await renderDraft();
+    const back = screen.getByRole("link", { name: "← Back to details" });
+    expect(back.getAttribute("href")).toBe("/send?draft=doc-1&step=1");
+    const next = screen.getByRole("link", { name: "Continue to review →" });
+    expect(next.getAttribute("href")).toBe("/send?draft=doc-1&step=3");
+    expect(screen.queryByText("← Back to send")).toBeNull();
   });
 });

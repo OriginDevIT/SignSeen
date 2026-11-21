@@ -1,4 +1,5 @@
 import { ceremonyTagline } from "../lib/ceremony";
+import HomeHeader from "../components/HomeHeader";
 
 /**
  * Marketing landing page for getsignseen.com (issue #40).
@@ -72,6 +73,9 @@ function Faq({ q, children }: { q: string; children: React.ReactNode }) {
 export default function Home() {
   return (
     <main style={{ color: "#111827", paddingBottom: "3rem" }}>
+      <div style={wrap}>
+        <HomeHeader />
+      </div>
       {/* Hero */}
       <div
         style={{
@@ -202,10 +206,10 @@ export default function Home() {
           <div style={card}>
             <p style={cardTitle}>Free — $0</p>
             <p style={cardText}>
-              1 document pending at a time · 1 signer per document ·
-              100 MB storage · documents pending up to 30 days ·
-              attribution mark on signed PDFs. No account needed to send
-              your first document.
+              1 document pending at a time · up to 2 signers per document
+              (parallel only — add yourself as the second signer) · 100 MB
+              storage · documents pending up to 30 days · attribution mark
+              on signed PDFs. No account needed to send your first document.
             </p>
           </div>
           <div style={card}>
