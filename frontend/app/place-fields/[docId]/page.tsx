@@ -800,12 +800,7 @@ export default function PlaceFieldsPage() {
             >
               <span style={{ fontWeight: 600, textTransform: "capitalize" }}>{f.type}</span>
               <span style={{ opacity: 0.7 }}>
-                page {f.page} · ({f.x.toFixed(2)}, {f.y.toFixed(2)})
-                {f.width != null && f.height != null
-                  ? ` · ${f.width.toFixed(2)} × ${f.height.toFixed(2)}`
-                  : ""}
-                {" · "}
-                {signerLabel(f)}
+                page {f.page} · {signerLabel(f)}
                 {f.required ? " · required" : " · optional"}
                 {f.completed ? " · completed" : ""}
               </span>

@@ -505,9 +505,24 @@ describe("PlaceFieldsPage placed-fields list (#97)", () => {
     });
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByText("Delete")).toBeNull();
-    // The row's coordinates are the list-only text (the signer label
+    // The row's required flag is list-only text (the signer label
     // also appears in the toolbar select).
-    expect(screen.queryByText(/page 1 · \(0\.10, 0\.20\)/)).toBeNull();
+    expect(screen.queryByText(/Signer 1 — Alice · required/)).toBeNull();
+  });
+
+  it("rows show the page reference without coordinates (#113)", async () => {
+    await renderLoaded([DRAWN_FIELD]);
+
+    const toggle = screen.getByRole("button", {
+      name: /Placed fields \(1\)/,
+    });
+    fireEvent.click(toggle);
+
+    expect(
+      screen.getByText(/page 1 · Signer 1 — Alice · required/)
+    ).toBeTruthy();
+    expect(screen.queryByText(/\(0\.10, 0\.20\)/)).toBeNull();
+    expect(screen.queryByText(/0\.30 × 0\.15/)).toBeNull();
   });
 
   it("expanding reveals the rows with working per-row Delete buttons", async () => {
