@@ -102,6 +102,11 @@ export default function SignPage() {
   const [pageAspects, setPageAspects] = useState<Record<number, number>>({});
   // Field whose modal is open, if any.
   const [modalField, setModalField] = useState<DocumentFieldInfo | null>(null);
+  // Whether the signer has opened a field modal since entering the
+  // sign step. The entry scroll below must not fire after that: a
+  // fast signer who completes a field inside its 100ms window would
+  // otherwise be yanked back to the first field.
+  const fieldActedRef = useRef(false);
   // A signature/initials image drawn anywhere in this ceremony —
   // offered for reuse in later field modals and the document pad.
   const [savedSignature, setSavedSignature] = useState<string | null>(null);
@@ -186,13 +191,22 @@ export default function SignPage() {
       ?.scrollIntoView({ behavior: "smooth", block: "center" });
   };
 
+  // Opening a field modal counts as the signer acting: the entry
+  // scroll below must not yank the page afterwards.
+  const openFieldModal = (f: DocumentFieldInfo) => {
+    fieldActedRef.current = true;
+    setModalField(f);
+  };
+
   // Entering the sign step scrolls to the first field still to
-  // complete, so the signer starts where the work is.
+  // complete, so the signer starts where the work is — unless the
+  // signer already opened a field inside the 100ms window.
   useEffect(() => {
     if (step !== "sign" || !hasFields) return;
+    fieldActedRef.current = false;
     const t = setTimeout(() => {
       const first = sessionFields.find((f) => !fieldComplete(f));
-      if (first) scrollToField(first);
+      if (first && !fieldActedRef.current) scrollToField(first);
     }, 100);
     return () => clearTimeout(t);
     // Only on entering the sign step: the field list is fixed for
@@ -434,11 +448,11 @@ export default function SignPage() {
                               tabIndex={0}
                               aria-label={`${f.type} field on page ${f.page}${f.required ? ", required" : ""}${fieldComplete(f) ? ", completed" : ", not completed yet"}`}
                               data-testid="field-pill"
-                              onClick={() => setModalField(f)}
+                              onClick={() => openFieldModal(f)}
                               onKeyDown={(e) => {
                                 if (e.key === "Enter" || e.key === " ") {
                                   e.preventDefault();
-                                  setModalField(f);
+                                  openFieldModal(f);
                                 }
                               }}
                               style={{
@@ -471,11 +485,11 @@ export default function SignPage() {
                             tabIndex={0}
                             aria-label={`${f.type} field on page ${f.page}${f.required ? ", required" : ""}${fieldComplete(f) ? ", completed" : ", not completed yet"}`}
                             data-testid="field-box"
-                            onClick={() => setModalField(f)}
+                            onClick={() => openFieldModal(f)}
                             onKeyDown={(e) => {
                               if (e.key === "Enter" || e.key === " ") {
                                 e.preventDefault();
-                                setModalField(f);
+                                openFieldModal(f);
                               }
                             }}
                             style={{

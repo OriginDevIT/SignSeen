@@ -150,15 +150,17 @@ describe("SignPage field modals (#84)", () => {
     // Completed fields render green.
     expect(getComputedStyle(textBox).borderColor).toBe("rgb(21, 128, 61)");
     // Auto-scroll moved on to the next incomplete field (checkbox).
-    await waitFor(() =>
-      expect(scrollIntoViewMock.mock.instances.length).toBeGreaterThan(1)
-    );
+    // The entry scroll is skipped once the signer has opened a field,
+    // so the checkbox scroll is the last call — counting calls would
+    // depend on whether the 100ms entry timer beat the modal open.
     const checkBox = screen.getByLabelText(/checkbox field on page 1/);
-    expect(
-      scrollIntoViewMock.mock.instances[
-        scrollIntoViewMock.mock.instances.length - 1
-      ]
-    ).toBe(checkBox);
+    await waitFor(() =>
+      expect(
+        scrollIntoViewMock.mock.instances[
+          scrollIntoViewMock.mock.instances.length - 1
+        ]
+      ).toBe(checkBox)
+    );
   });
 
   it("checkbox, date and initials fields each get the right widget", async () => {
