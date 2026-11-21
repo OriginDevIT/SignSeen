@@ -175,8 +175,10 @@ class DocumentField(models.Model):
     Completion happens inside the signer's submit: text/date values
     land in `value_text` (checkboxes as "true"/"false"), signature /
     initials images are stored as files like ceremony evidence and
-    `value_file` carries the path. A field counts as completed iff
-    `completed_at` is set.
+    `value_file` carries the path. A signed-date field is the
+    exception: the signer cannot edit it, so the server fills
+    `value_text` with the submit date (YYYY-MM-DD) at submit time.
+    A field counts as completed iff `completed_at` is set.
     """
 
     class Type(models.TextChoices):
@@ -185,6 +187,7 @@ class DocumentField(models.Model):
         CHECKBOX = "checkbox", "Checkbox"
         TEXT = "text", "Text"
         DATE = "date", "Date"
+        SIGNED_DATE = "signed_date", "Signed date"
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     document = models.ForeignKey(

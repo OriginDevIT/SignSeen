@@ -2061,6 +2061,51 @@ def test_complex_document_fields_end_to_end_sequential():
 
 
 @pytest.mark.django_db
+def test_signed_date_field_fills_with_submit_date():
+    from django.utils import timezone
+
+    client, doc_id, alice, bob = _premium_fields_setup("sequential")
+
+    # The signed-date type places like a date field.
+    a_signed = _place(client, doc_id, alice["id"], "signed_date", page=1, x=0.1, y=0.2)
+    assert a_signed["type"] == "signed_date"
+    a_sig = _place(client, doc_id, alice["id"], "signature", page=1, x=0.1, y=0.45)
+    b_signed = _place(client, doc_id, bob["id"], "signed_date", page=2, x=0.1, y=0.2)
+
+    # The ceremony payload carries the signed-date field.
+    payload = APIClient().get(f"/api/sessions/{alice['token']}/").json()
+    assert [f["type"] for f in payload["fields"]] == ["signed_date", "signature"]
+
+    # A required signed-date field never blocks the submit, even when
+    # the client sends no value for it: the server fills the submit date.
+    today = timezone.now().date().isoformat()
+    done = _sign_with_fields(
+        alice["token"], [{"field_id": a_sig["id"], "value": SIG_DATA_URL}]
+    )
+    assert done.status_code == 200, done.content
+    field = DocumentField.objects.get(pk=a_signed["id"])
+    assert field.is_completed
+    assert field.value_text == today
+
+    # A client-supplied value for a signed-date field is ignored.
+    final = _sign_with_fields(
+        bob["token"], [{"field_id": b_signed["id"], "value": "1999-01-01"}]
+    )
+    assert final.status_code == 200, final.content
+    assert final.json()["document_final"] is True
+    field = DocumentField.objects.get(pk=b_signed["id"])
+    assert field.is_completed
+    assert field.value_text == today
+
+    # The recorded dates are stamped on the sealed PDF.
+    doc = Document.objects.get(pk=doc_id)
+    assert doc.status == Document.Status.SIGNED
+    pdf = pymupdf.open(stream=doc.signed_file.read())
+    text = "".join(page.get_text() for page in pdf)
+    assert text.count(today) >= 2
+
+
+@pytest.mark.django_db
 @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
 def test_ceremony_shows_earlier_signers_completed_fields():
     # Sequential (#105): once Alice signs, Bob's ceremony payload

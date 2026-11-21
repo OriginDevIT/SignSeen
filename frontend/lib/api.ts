@@ -53,7 +53,20 @@ export interface DocumentInfo {
   updated_at: string;
 }
 
-export type FieldType = "signature" | "initials" | "checkbox" | "text" | "date";
+export type FieldType =
+  | "signature"
+  | "initials"
+  | "checkbox"
+  | "text"
+  | "date"
+  | "signed_date";
+
+/** Display form of a field type ("signed date" for the signed-date
+ * type; the bare type name otherwise). The wire name carries an
+ * underscore, which reads badly in the UI. */
+export function fieldTypeLabel(type: FieldType): string {
+  return type === "signed_date" ? "signed date" : type;
+}
 
 /** A sender-placed field (#13), assigned to one signer session. */
 export interface DocumentFieldInfo {

@@ -9,6 +9,7 @@ import PhotoStep from "../../../components/PhotoStep";
 import {
   ApiError,
   collectDeviceInfo,
+  fieldTypeLabel,
   getDocument,
   getSession,
   getSessionEvents,
@@ -405,11 +406,18 @@ export default function SignPage() {
     f: DocumentFieldInfo,
     values: Record<string, string | boolean> = fieldValues
   ): boolean => {
+    // A signed-date field fills itself at submit time, so it never
+    // blocks the signer: it counts as complete from the start.
+    if (f.type === "signed_date") return true;
     const v = values[f.id];
     if (f.type === "checkbox") return v === true;
     if (f.type === "text") return typeof v === "string" && v.trim().length > 0;
     return typeof v === "string" && v.length > 0;
   };
+
+  // Preview of the date a signed-date field will record if the signer
+  // submits now (UTC, YYYY-MM-DD — the server fills the submit date).
+  const signedDatePreview = new Date().toISOString().slice(0, 10);
 
   const sessionFields = session?.fields ?? [];
   const hasFields = sessionFields.length > 0;
@@ -691,6 +699,82 @@ export default function SignPage() {
                       .map((f) => {
                         const b = fieldBox(f);
                         const bg = fieldComplete(f) ? "#15803d" : "#111827";
+                        if (f.type === "signed_date") {
+                          // Read-only: the server fills the submit date,
+                          // so the signer gets no modal and cannot change
+                          // it. Shows the date that will be recorded if
+                          // the signer submits now.
+                          const label = `${fieldTypeLabel(f.type)} field on page ${f.page}${f.required ? ", required" : ""}, filled in automatically when you sign`;
+                          if (b === null) {
+                            return (
+                              <div
+                                key={f.id}
+                                aria-label={label}
+                                data-testid="signed-date-pill"
+                                style={{
+                                  position: "absolute",
+                                  left: `${f.x * 100}%`,
+                                  top: `${f.y * 100}%`,
+                                  transform: "translate(-2px, -50%)",
+                                  background: bg,
+                                  color: "#fff",
+                                  fontSize: "0.7rem",
+                                  padding: "0.15rem 0.45rem",
+                                  borderRadius: 999,
+                                  whiteSpace: "nowrap",
+                                }}
+                              >
+                                {signedDatePreview}
+                              </div>
+                            );
+                          }
+                          return (
+                            <div
+                              key={f.id}
+                              aria-label={label}
+                              data-testid="signed-date-box"
+                              style={{
+                                position: "absolute",
+                                left: `${b.x * 100}%`,
+                                top: `${b.y * 100}%`,
+                                width: `${b.width * 100}%`,
+                                height: `${b.height * 100}%`,
+                                border: `2px solid ${bg}`,
+                                background: "rgba(17, 24, 39, 0.08)",
+                                borderRadius: 2,
+                                overflow: "hidden",
+                              }}
+                            >
+                              <span
+                                style={{
+                                  display: "block",
+                                  background: bg,
+                                  color: "#fff",
+                                  fontSize: "0.7rem",
+                                  padding: "0.1rem 0.4rem",
+                                  whiteSpace: "nowrap",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                }}
+                              >
+                                {fieldTypeLabel(f.type)}
+                                {f.required ? " *" : ""}
+                              </span>
+                              <span
+                                style={{
+                                  display: "block",
+                                  fontSize: "0.7rem",
+                                  padding: "0.1rem 0.4rem",
+                                  whiteSpace: "nowrap",
+                                  overflow: "hidden",
+                                  textOverflow: "ellipsis",
+                                }}
+                              >
+                                {signedDatePreview}
+                              </span>
+                            </div>
+                          );
+                        }
                         if (b === null) {
                           // Click-placed field: no stored size, marker pill.
                           return (

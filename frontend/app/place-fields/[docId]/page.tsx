@@ -7,6 +7,7 @@ import {
   createDocumentField,
   deleteDocumentField,
   fetchDocumentPageImageUrl,
+  fieldTypeLabel,
   getDocument,
   getDocumentFields,
   getDraftToken,
@@ -22,7 +23,14 @@ import {
   normalizeBox,
 } from "../../../lib/fieldBox";
 
-const FIELD_TYPES: FieldType[] = ["signature", "initials", "checkbox", "text", "date"];
+const FIELD_TYPES: FieldType[] = [
+  "signature",
+  "initials",
+  "checkbox",
+  "text",
+  "date",
+  "signed_date",
+];
 
 const shell: React.CSSProperties = {
   maxWidth: 760,
@@ -529,7 +537,7 @@ export default function PlaceFieldsPage() {
           >
             {FIELD_TYPES.map((t) => (
               <option key={t} value={t}>
-                {t}
+                {fieldTypeLabel(t)}
               </option>
             ))}
           </select>
@@ -798,7 +806,7 @@ export default function PlaceFieldsPage() {
                 cursor: "pointer",
               }}
             >
-              <span style={{ fontWeight: 600, textTransform: "capitalize" }}>{f.type}</span>
+              <span style={{ fontWeight: 600, textTransform: "capitalize" }}>{fieldTypeLabel(f.type)}</span>
               <span style={{ opacity: 0.7 }}>
                 page {f.page} · ({f.x.toFixed(2)}, {f.y.toFixed(2)})
                 {f.width != null && f.height != null
