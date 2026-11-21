@@ -10,7 +10,7 @@ class SessionSummarySerializer(serializers.ModelSerializer):
 
     class Meta:
         model = SigningSession
-        fields = ["id", "signer_name", "signer_email", "status", "order"]
+        fields = ["id", "signer_name", "signer_email", "status", "order", "signed_at"]
         read_only_fields = fields
 
 

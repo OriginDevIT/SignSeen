@@ -7,7 +7,7 @@ import http.server
 import io
 import json
 import threading
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pymupdf
 import pytest
@@ -231,6 +231,38 @@ def test_full_ceremony_signs_seals_and_verifies():
         "sealed_file.recorded",
     ]
     assert verify_chain(session) is True
+
+
+@pytest.mark.django_db
+def test_signed_session_reports_signed_at_on_document():
+    client = APIClient()
+    sent = upload_document(client).json()
+    doc_id = sent["document"]["id"]
+    token = sent["sessions"][0]["token"]
+
+    # Pending: no signed time yet.
+    detail = client.get(f"/api/documents/{doc_id}/").json()
+    assert detail["sessions"][0]["status"] == "pending"
+    assert detail["sessions"][0]["signed_at"] is None
+
+    response = client.post(
+        f"/api/sessions/{token}/sign/",
+        {"signature": SIG_DATA_URL, "device_info": {}},
+        format="json",
+    )
+    assert response.status_code == 200
+
+    detail = client.get(f"/api/documents/{doc_id}/").json()
+    session = detail["sessions"][0]
+    assert session["status"] == "signed"
+    assert session["signed_at"] is not None
+    # The reported time is the signature.submitted audit event's time —
+    # the same instant the certificate reports.
+    reported = datetime.fromisoformat(session["signed_at"].replace("Z", "+00:00"))
+    event = SigningSession.objects.get(token=token).events.get(
+        event_type="signature.submitted"
+    )
+    assert abs((reported - event.created_at).total_seconds()) < 5
 
 
 def _seal_document(client, signer_name=None, signer_email="jane@example.com"):

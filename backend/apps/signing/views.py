@@ -1103,11 +1103,16 @@ def submit_signature(request, token):
                 payload["value"] = item["text"]
             record_event(session, "field.completed", payload)
 
-        # This signer's ceremony is complete.
+        # This signer's ceremony is complete. The signed time is the
+        # signature.submitted audit event's timestamp — the same instant
+        # the certificate reports — not a second clock read.
         session.status = SigningSession.Status.SIGNED
+        session.signed_at = submitted.created_at
         if signer_email:
             session.signer_email = signer_email
-        session.save(update_fields=["status", "signer_email", "device_evidence"])
+        session.save(
+            update_fields=["status", "signed_at", "signer_email", "device_evidence"]
+        )
 
         # The document seals only when EVERY session has signed
         # (multi-signer, strictly sequential). Until then it stays
