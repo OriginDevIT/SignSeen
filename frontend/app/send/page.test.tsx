@@ -1,6 +1,22 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+
+// jsdom has no PointerEvent, so without this fireEvent.pointerDown
+// builds a plain Event and clientX/clientY are lost (the drag code
+// then reads NaN coordinates). Polyfill from MouseEvent, which carries
+// the coordinates the page reads.
+if (typeof window.PointerEvent === "undefined") {
+  class TestPointerEvent extends MouseEvent {
+    readonly pointerId: number;
+    constructor(type: string, init: PointerEventInit = {}) {
+      super(type, init);
+      this.pointerId = init.pointerId ?? 0;
+    }
+  }
+  (window as unknown as { PointerEvent: typeof TestPointerEvent }).PointerEvent =
+    TestPointerEvent;
+}
 
 import SendPage from "./page";
 import {
@@ -384,5 +400,236 @@ describe("SendPage wizard (#89)", () => {
     api.clearDraftToken("draft-1");
     expect(api.getDraftToken("draft-1")).toBeNull();
     expect(api.getDraftToken("draft-2")).toBe("tok-2");
+  });
+});
+
+describe("SendPage signer reorder (#111)", () => {
+  function signerEmails() {
+    return screen
+      .getAllByPlaceholderText("jane@example.com")
+      .map((el) => (el as HTMLInputElement).value);
+  }
+
+  async function renderPremiumWithThreeSigners() {
+    vi.mocked(getAuthToken).mockReturnValue("token-1");
+    vi.mocked(myAccount).mockResolvedValue(PREMIUM_ACCOUNT);
+    render(<SendPage />);
+    await waitFor(() =>
+      expect(screen.getByText(/Signed in as owner@example.com/)).toBeTruthy(),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Add another signer" }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Add another signer" }),
+    );
+    const emails = screen.getAllByPlaceholderText("jane@example.com");
+    expect(emails).toHaveLength(3);
+    fireEvent.change(emails[0], { target: { value: "a@example.com" } });
+    fireEvent.change(emails[1], { target: { value: "b@example.com" } });
+    fireEvent.change(emails[2], { target: { value: "c@example.com" } });
+  }
+
+  it("move up/down buttons reorder the signers", async () => {
+    await renderPremiumWithThreeSigners();
+    expect(signerEmails()).toEqual([
+      "a@example.com",
+      "b@example.com",
+      "c@example.com",
+    ]);
+
+    // The first row cannot move up and the last cannot move down.
+    expect(
+      screen.getByRole("button", { name: "Move signer 1 up" }),
+    ).toHaveProperty("disabled", true);
+    expect(
+      screen.getByRole("button", { name: "Move signer 3 down" }),
+    ).toHaveProperty("disabled", true);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Move signer 1 down" }),
+    );
+    expect(signerEmails()).toEqual([
+      "b@example.com",
+      "a@example.com",
+      "c@example.com",
+    ]);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Move signer 3 up" }),
+    );
+    expect(signerEmails()).toEqual([
+      "b@example.com",
+      "c@example.com",
+      "a@example.com",
+    ]);
+  });
+
+  it("dragging a signer row by its handle reorders the list", async () => {
+    await renderPremiumWithThreeSigners();
+    const rows = screen.getAllByTestId("signer-row");
+    expect(rows).toHaveLength(3);
+    // jsdom has no layout, so the rows report zero-size rects. Give
+    // each row a stacked rect, as the place-fields tests do.
+    const rects = new Map<HTMLElement, DOMRect>();
+    rows.forEach((row, idx) => {
+      rects.set(row as HTMLElement, {
+        top: idx * 120,
+        bottom: idx * 120 + 100,
+        height: 100,
+        width: 400,
+        left: 0,
+        right: 400,
+        x: 0,
+        y: idx * 120,
+      } as DOMRect);
+    });
+    const spy = vi
+      .spyOn(Element.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: Element) {
+        return (
+          rects.get(this as HTMLElement) ?? ({} as unknown as DOMRect)
+        );
+      });
+    try {
+      const handle = screen.getByTestId("reorder-handle-0");
+      fireEvent.pointerDown(handle, { clientY: 50, pointerId: 1 });
+      // Row 3 spans 240-340, midpoint 290: dropping at 260 lands
+      // the first signer after the second, at the end of the list.
+      fireEvent.pointerMove(handle, { clientY: 260, pointerId: 1 });
+      fireEvent.pointerUp(handle, { clientY: 260, pointerId: 1 });
+      expect(signerEmails()).toEqual([
+        "b@example.com",
+        "c@example.com",
+        "a@example.com",
+      ]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("a drag that ends on its own row leaves the order unchanged", async () => {
+    await renderPremiumWithThreeSigners();
+    const rows = screen.getAllByTestId("signer-row");
+    const rects = new Map<HTMLElement, DOMRect>();
+    rows.forEach((row, idx) => {
+      rects.set(row as HTMLElement, {
+        top: idx * 120,
+        bottom: idx * 120 + 100,
+        height: 100,
+        width: 400,
+        left: 0,
+        right: 400,
+        x: 0,
+        y: idx * 120,
+      } as DOMRect);
+    });
+    const spy = vi
+      .spyOn(Element.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: Element) {
+        return (
+          rects.get(this as HTMLElement) ?? ({} as unknown as DOMRect)
+        );
+      });
+    try {
+      const handle = screen.getByTestId("reorder-handle-1");
+      // Row 2 spans 120-220, midpoint 170: a small move that stays
+      // above the midpoint keeps the drop target on its own row.
+      fireEvent.pointerDown(handle, { clientY: 140, pointerId: 1 });
+      fireEvent.pointerMove(handle, { clientY: 160, pointerId: 1 });
+      fireEvent.pointerUp(handle, { clientY: 160, pointerId: 1 });
+      expect(signerEmails()).toEqual([
+        "a@example.com",
+        "b@example.com",
+        "c@example.com",
+      ]);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it("submitting step 1 sends the reordered signer list", async () => {
+    vi.mocked(uploadDocument).mockImplementation(
+      async (
+        _file: File,
+        _title: string,
+        _sender: string,
+        _mode: string,
+        _photo: boolean,
+        signers: { name: string; email: string }[],
+      ) =>
+        ({
+          ...DRAFT_DOC,
+          signer_list: signers,
+        }) as never,
+    );
+    vi.mocked(getDocumentFields).mockResolvedValue({
+      page_count: 1,
+      fields: [],
+    });
+    await renderAnonymous();
+    fireEvent.change(
+      screen.getByPlaceholderText("e.g. Contractor Agreement"),
+      { target: { value: "Contract" } },
+    );
+    fireEvent.change(screen.getByPlaceholderText("you@example.com"), {
+      target: { value: "sender@example.com" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Add another signer" }),
+    );
+    const emails = screen.getAllByPlaceholderText("jane@example.com");
+    fireEvent.change(emails[0], { target: { value: "a@example.com" } });
+    fireEvent.change(emails[1], { target: { value: "b@example.com" } });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Move signer 1 down" }),
+    );
+    expect(signerEmails()).toEqual(["b@example.com", "a@example.com"]);
+    const fileInput = document.querySelector(
+      'input[type="file"]',
+    ) as HTMLInputElement;
+    fireEvent.change(fileInput, {
+      target: {
+        files: [
+          new File(["%PDF-"], "contract.pdf", { type: "application/pdf" }),
+        ],
+      },
+    });
+    fireEvent.submit(document.querySelector("form") as HTMLFormElement);
+    await waitFor(() =>
+      expect(
+        screen.getByText("Step 2 of 3 — Place fields (optional)"),
+      ).toBeTruthy(),
+    );
+    expect(vi.mocked(uploadDocument)).toHaveBeenCalledWith(
+      expect.any(File),
+      "Contract",
+      "sender@example.com",
+      "parallel",
+      false,
+      [
+        { name: "", email: "b@example.com" },
+        { name: "", email: "a@example.com" },
+      ],
+    );
+
+    // The review step shows the reordered list, which is what send
+    // turns into sessions, in order.
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Skip — no fields needed, continue to review",
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByText("Step 3 of 3 — Review & send"),
+      ).toBeTruthy(),
+    );
+    const signersBlock = screen.getByText("Signers:").parentElement as HTMLElement;
+    const reviewItems = within(signersBlock)
+      .getAllByRole("listitem")
+      .map((li) => li.textContent ?? "");
+    expect(reviewItems[0]).toContain("b@example.com");
+    expect(reviewItems[1]).toContain("a@example.com");
   });
 });

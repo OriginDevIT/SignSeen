@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import {
   ApiError,
@@ -169,6 +169,88 @@ export default function SendPage() {
 
   const removeSigner = (index: number) => {
     setSigners((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const moveSigner = (from: number, to: number) => {
+    setSigners((prev) => {
+      if (
+        from < 0 ||
+        from >= prev.length ||
+        to < 0 ||
+        to >= prev.length ||
+        from === to
+      ) {
+        return prev;
+      }
+      const next = [...prev];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
+  };
+
+  // Drag-to-reorder for the signer rows, following the place-fields
+  // pattern: pointer events on a grip handle, so mouse and touch both
+  // work. The dragged row stays in place (dimmed) and the row the
+  // pointer is over gets an insertion line until the drop commits.
+  // Keyboard users get the same reorder from the up/down buttons on
+  // each row.
+  const rowRefs = useRef(new Map<number, HTMLDivElement>());
+  const dragStart = useRef<{ from: number } | null>(null);
+  const [dragReorder, setDragReorder] = useState<{
+    from: number;
+    over: number;
+  } | null>(null);
+
+  const reorderTarget = (clientY: number): number => {
+    let target = signers.length - 1;
+    for (let i = 0; i < signers.length; i++) {
+      const rect = rowRefs.current.get(i)?.getBoundingClientRect();
+      if (!rect) continue;
+      if (clientY < rect.top + rect.height / 2) {
+        target = i;
+        break;
+      }
+    }
+    return target;
+  };
+
+  const onReorderPointerDown = (
+    e: React.PointerEvent<HTMLSpanElement>,
+    index: number,
+  ) => {
+    e.preventDefault();
+    // Pointer capture keeps the drag tracking if the pointer leaves
+    // the handle mid-drag; not every environment implements it.
+    const target = e.currentTarget as HTMLSpanElement & {
+      setPointerCapture?: (id: number) => void;
+    };
+    target.setPointerCapture?.(e.pointerId);
+    dragStart.current = { from: index };
+    setDragReorder({ from: index, over: index });
+  };
+
+  const onReorderPointerMove = (e: React.PointerEvent<HTMLSpanElement>) => {
+    if (!dragStart.current) return;
+    setDragReorder((prev) => {
+      if (!prev) return prev;
+      const over = reorderTarget(e.clientY);
+      return over === prev.over ? prev : { ...prev, over };
+    });
+  };
+
+  const onReorderPointerUp = () => {
+    const start = dragStart.current;
+    const drag = dragReorder;
+    dragStart.current = null;
+    setDragReorder(null);
+    if (!start || !drag) return;
+    if (drag.over !== start.from) moveSigner(start.from, drag.over);
+  };
+
+  const onReorderPointerCancel = () => {
+    dragStart.current = null;
+    setDragReorder(null);
   };
 
   const submitStep1 = async (e: React.FormEvent) => {
@@ -428,9 +510,89 @@ export default function SendPage() {
               Signers, in order
             </legend>
             {signers.map((signer, i) => (
-              <div key={i} style={{ display: "grid", gap: "0.5rem" }}>
-                <div style={{ fontWeight: 600, fontSize: "0.95rem" }}>
-                  Signer {i + 1}
+              <div
+                key={i}
+                data-testid="signer-row"
+                ref={(el) => {
+                  if (el) rowRefs.current.set(i, el);
+                  else rowRefs.current.delete(i);
+                }}
+                style={{
+                  display: "grid",
+                  gap: "0.5rem",
+                  opacity: dragReorder && dragReorder.from === i ? 0.55 : 1,
+                  boxShadow:
+                    dragReorder &&
+                    dragReorder.over === i &&
+                    dragReorder.over !== dragReorder.from
+                      ? "inset 0 2px 0 #2563eb"
+                      : "none",
+                }}
+              >
+                <div
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "0.5rem",
+                  }}
+                >
+                  <span
+                    data-testid={`reorder-handle-${i}`}
+                    aria-label={`Drag to reorder signer ${i + 1}`}
+                    title="Drag to reorder"
+                    onPointerDown={(e) => onReorderPointerDown(e, i)}
+                    onPointerMove={onReorderPointerMove}
+                    onPointerUp={onReorderPointerUp}
+                    onPointerCancel={onReorderPointerCancel}
+                    style={{
+                      touchAction: "none",
+                      cursor: "grab",
+                      padding: "0.2rem 0.4rem",
+                      fontSize: "1.1rem",
+                      lineHeight: 1,
+                      userSelect: "none",
+                    }}
+                  >
+                    ⠿
+                  </span>
+                  <span
+                    style={{ fontWeight: 600, fontSize: "0.95rem", flex: 1 }}
+                  >
+                    Signer {i + 1}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => moveSigner(i, i - 1)}
+                    disabled={i === 0}
+                    aria-label={`Move signer ${i + 1} up`}
+                    style={{
+                      padding: "0.3rem 0.6rem",
+                      borderRadius: 8,
+                      border: "1px solid #d1d5db",
+                      background: "#fff",
+                      cursor: i === 0 ? "not-allowed" : "pointer",
+                      opacity: i === 0 ? 0.45 : 1,
+                    }}
+                  >
+                    ↑
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => moveSigner(i, i + 1)}
+                    disabled={i === signers.length - 1}
+                    aria-label={`Move signer ${i + 1} down`}
+                    style={{
+                      padding: "0.3rem 0.6rem",
+                      borderRadius: 8,
+                      border: "1px solid #d1d5db",
+                      background: "#fff",
+                      cursor:
+                        i === signers.length - 1 ? "not-allowed" : "pointer",
+                      opacity: i === signers.length - 1 ? 0.45 : 1,
+                    }}
+                  >
+                    ↓
+                  </button>
                 </div>
                 <label style={{ display: "grid", gap: "0.35rem" }}>
                   Signer name <span style={{ opacity: 0.6 }}>(optional)</span>
