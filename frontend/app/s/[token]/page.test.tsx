@@ -297,21 +297,21 @@ describe("SignPage field modals (#84)", () => {
     await screen.findByAltText("Signature preview");
   });
 
-  it("the continue button unlocks once every required field is complete", async () => {
+  it("the continue button stays greyed out until every field, optional included, is complete (#118)", async () => {
     await renderSigning();
     const continueBtn = screen.getByText(
       "Looks good — continue"
     ) as HTMLButtonElement;
     expect(continueBtn.disabled).toBe(true);
 
-    // Required: signature + text. Optional fields stay undone.
+    // Required: signature + text. Completing only those must NOT
+    // unlock the button while optional fields are still undone.
     fireEvent.click(screen.getByLabelText(/signature field on page 1/));
     await screen.findByRole("dialog");
     fireEvent.click(screen.getByText("Use this signature"));
     await waitFor(() =>
       expect(screen.queryByRole("dialog")).toBeNull()
     );
-    expect(continueBtn.disabled).toBe(true);
 
     fireEvent.click(screen.getByLabelText(/text field on page 1/));
     await screen.findByRole("dialog");
@@ -319,6 +319,44 @@ describe("SignPage field modals (#84)", () => {
       target: { value: "Agreed" },
     });
     fireEvent.click(screen.getByText("Done"));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).toBeNull()
+    );
+    expect(continueBtn.disabled).toBe(true);
+
+    // Optional: checkbox.
+    fireEvent.click(screen.getByLabelText(/checkbox field on page 1/));
+    await screen.findByRole("dialog");
+    fireEvent.click(screen.getByLabelText("Check the box"));
+    fireEvent.click(screen.getByText("Done"));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).toBeNull()
+    );
+    expect(continueBtn.disabled).toBe(true);
+
+    // Optional: date (defaults to today; Done completes it).
+    fireEvent.click(screen.getByLabelText(/date field on page 2/));
+    await screen.findByRole("dialog");
+    fireEvent.click(screen.getByText("Done"));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).toBeNull()
+    );
+    expect(continueBtn.disabled).toBe(true);
+
+    // Optional: initials.
+    fireEvent.click(screen.getByLabelText(/initials field on page 2/));
+    const initialsDialog = await screen.findByRole("dialog");
+    fireEvent.click(within(initialsDialog).getByText("Use this initials"));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).toBeNull()
+    );
+    expect(continueBtn.disabled).toBe(true);
+
+    // Optional: second signature (reuses the drawn signature).
+    const sig2Boxes = screen.getAllByLabelText(/signature field on page 2/);
+    fireEvent.click(sig2Boxes[0]);
+    const sigDialog = await screen.findByRole("dialog");
+    fireEvent.click(within(sigDialog).getByText("Use your signature"));
     await waitFor(() =>
       expect(screen.queryByRole("dialog")).toBeNull()
     );
@@ -389,6 +427,32 @@ describe("SignPage field modals (#84)", () => {
     );
     expect(continueBtn.disabled).toBe(true);
 
+    // Complete the optional fields too; the unconfirmed date must
+    // still hold the button back under the all-fields gate (#118).
+    fireEvent.click(screen.getByLabelText(/checkbox field on page 1/));
+    await screen.findByRole("dialog");
+    fireEvent.click(screen.getByLabelText("Check the box"));
+    fireEvent.click(screen.getByText("Done"));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).toBeNull()
+    );
+
+    fireEvent.click(screen.getByLabelText(/initials field on page 2/));
+    const initialsDialog = await screen.findByRole("dialog");
+    fireEvent.click(within(initialsDialog).getByText("Use this initials"));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).toBeNull()
+    );
+
+    const sig2Boxes = screen.getAllByLabelText(/signature field on page 2/);
+    fireEvent.click(sig2Boxes[0]);
+    const sigDialog = await screen.findByRole("dialog");
+    fireEvent.click(within(sigDialog).getByText("Use your signature"));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).toBeNull()
+    );
+    expect(continueBtn.disabled).toBe(true);
+
     // Confirm the date from its modal; the button unlocks.
     fireEvent.click(screen.getByLabelText(/date field on page 2/));
     await screen.findByRole("dialog");
@@ -399,7 +463,7 @@ describe("SignPage field modals (#84)", () => {
     await waitFor(() => expect(continueBtn.disabled).toBe(false));
   });
 
-  it("submit sends only confirmed fields, not the untouched date default", async () => {
+  it("submit sends the confirmed date value once the signer saves it", async () => {
     vi.mocked(submitSignature).mockResolvedValue({
       status: "signed",
       document_final: false,
@@ -409,7 +473,11 @@ describe("SignPage field modals (#84)", () => {
     } as never);
     await renderSigning();
 
-    // Complete the required fields; leave the date default untouched.
+    // Complete every field; the date is confirmed from its modal
+    // (accepting the today default) rather than left untouched —
+    // under the all-fields gate (#118) submit is unreachable until
+    // the date is confirmed, so the untouched default can never
+    // reach the server at all.
     fireEvent.click(screen.getByLabelText(/signature field on page 1/));
     await screen.findByRole("dialog");
     fireEvent.click(screen.getByText("Use this signature"));
@@ -427,6 +495,36 @@ describe("SignPage field modals (#84)", () => {
       expect(screen.queryByRole("dialog")).toBeNull()
     );
 
+    fireEvent.click(screen.getByLabelText(/checkbox field on page 1/));
+    await screen.findByRole("dialog");
+    fireEvent.click(screen.getByLabelText("Check the box"));
+    fireEvent.click(screen.getByText("Done"));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).toBeNull()
+    );
+
+    fireEvent.click(screen.getByLabelText(/date field on page 2/));
+    await screen.findByRole("dialog");
+    fireEvent.click(screen.getByText("Done"));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).toBeNull()
+    );
+
+    fireEvent.click(screen.getByLabelText(/initials field on page 2/));
+    const initialsDialog = await screen.findByRole("dialog");
+    fireEvent.click(within(initialsDialog).getByText("Use this initials"));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).toBeNull()
+    );
+
+    const sig2Boxes = screen.getAllByLabelText(/signature field on page 2/);
+    fireEvent.click(sig2Boxes[0]);
+    const sigDialog = await screen.findByRole("dialog");
+    fireEvent.click(within(sigDialog).getByText("Use your signature"));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).toBeNull()
+    );
+
     // Continue to the photo step (the stub pad reports ink) and
     // submit without a photo.
     fireEvent.click(screen.getByText("Looks good — continue"));
@@ -435,12 +533,14 @@ describe("SignPage field modals (#84)", () => {
     await screen.findByText("Signature recorded");
 
     const payload = vi.mocked(submitSignature).mock.calls[0][1] as {
-      fieldValues: { field_id: string }[];
+      fieldValues: { field_id: string; value: string | boolean }[];
     };
     const sentIds = payload.fieldValues.map((f) => f.field_id);
     expect(sentIds).toContain("f-sig");
     expect(sentIds).toContain("f-text");
-    expect(sentIds).not.toContain("f-date");
+    expect(sentIds).toContain("f-date");
+    const sentDate = payload.fieldValues.find((f) => f.field_id === "f-date");
+    expect(sentDate?.value).toBe(new Date().toISOString().slice(0, 10));
   });
 });
 
