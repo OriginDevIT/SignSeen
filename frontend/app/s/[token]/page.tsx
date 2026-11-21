@@ -1043,8 +1043,7 @@ export default function SignPage() {
           {signedPdfUrl && (
             <a
               href={signedPdfUrl}
-              target="_blank"
-              rel="noreferrer"
+              download
               style={{ ...brandBtn, textDecoration: "none", boxSizing: "border-box" }}
             >
               Download signed PDF

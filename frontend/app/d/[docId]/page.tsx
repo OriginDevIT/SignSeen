@@ -92,8 +92,7 @@ export default function TrackDocumentPage({
         {doc.status === "signed" && signedUrl && (
           <a
             href={signedUrl}
-            target="_blank"
-            rel="noreferrer"
+            download
             style={{ ...button, marginTop: "1.25rem" }}
           >
             Download signed PDF

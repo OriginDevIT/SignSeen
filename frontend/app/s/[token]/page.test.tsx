@@ -1006,3 +1006,100 @@ describe("SignPage photo removal (#121)", () => {
     expect(submit.disabled).toBe(false);
   });
 });
+
+describe("SignPage signed-PDF download (#122)", () => {
+  let scrollIntoViewMock: ReturnType<typeof vi.fn>;
+  let origScrollIntoView: typeof Element.prototype.scrollIntoView;
+
+  beforeEach(() => {
+    scrollIntoViewMock = vi.fn();
+    origScrollIntoView = Element.prototype.scrollIntoView;
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      value: scrollIntoViewMock,
+      configurable: true,
+      writable: true,
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      value: origScrollIntoView,
+      configurable: true,
+      writable: true,
+    });
+    vi.clearAllMocks();
+  });
+
+  it("the done view's signed-PDF link prompts a download instead of opening a new tab", async () => {
+    vi.mocked(submitSignature).mockResolvedValue({
+      status: "signed",
+      document_final: true,
+      document: {
+        id: "doc-1",
+        title: "Contract",
+        status: "signed",
+        sender_email: "owner@example.com",
+        signed_file: "/media/signed.pdf",
+        signing_mode: "parallel",
+        photo_required: false,
+        signing_url: null,
+        sessions: [],
+        created_at: "2026-11-11T00:00:00Z",
+        updated_at: "2026-11-11T00:00:00Z",
+      },
+      audit_seal: "abc123",
+      chain_valid: true,
+    } as never);
+    await renderSigning();
+
+    // Complete every field — under the all-fields gate (#118) the
+    // continue button stays greyed out until the optional fields
+    // are done too — then submit through the photo step.
+    fireEvent.click(screen.getByLabelText(/signature field on page 1/));
+    await screen.findByRole("dialog");
+    fireEvent.click(screen.getByText("Use this signature"));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    fireEvent.click(screen.getByLabelText(/text field on page 1/));
+    await screen.findByRole("dialog");
+    fireEvent.change(screen.getByPlaceholderText("Type here"), {
+      target: { value: "Agreed" },
+    });
+    fireEvent.click(screen.getByText("Done"));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    fireEvent.click(screen.getByLabelText(/checkbox field on page 1/));
+    await screen.findByRole("dialog");
+    fireEvent.click(screen.getByLabelText("Check the box"));
+    fireEvent.click(screen.getByText("Done"));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    fireEvent.click(screen.getByLabelText(/date field on page 2/));
+    await screen.findByRole("dialog");
+    fireEvent.click(screen.getByText("Done"));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    fireEvent.click(screen.getByLabelText(/initials field on page 2/));
+    const initialsDialog = await screen.findByRole("dialog");
+    fireEvent.click(within(initialsDialog).getByText("Use this initials"));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    const sig2Boxes = screen.getAllByLabelText(/signature field on page 2/);
+    fireEvent.click(sig2Boxes[0]);
+    const sigDialog = await screen.findByRole("dialog");
+    fireEvent.click(within(sigDialog).getByText("Use your signature"));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    fireEvent.click(screen.getByText("Looks good — continue"));
+    await screen.findByText("Skip photo & submit");
+    fireEvent.click(screen.getByText("Skip photo & submit"));
+
+    const link = await screen.findByRole("link", {
+      name: "Download signed PDF",
+    });
+    expect(link.getAttribute("href")).toBe("/media/signed.pdf");
+    expect(link.hasAttribute("download")).toBe(true);
+    expect(link.getAttribute("target")).toBeNull();
+  });
+});

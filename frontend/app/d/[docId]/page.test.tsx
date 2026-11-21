@@ -164,4 +164,25 @@ describe("TrackDocumentPage navigation", () => {
     // The pending row carries no timestamp.
     expect(document.body.textContent).not.toContain(`pending — ${rendered}`);
   });
+
+  it("the signed-PDF link prompts a download instead of opening a new tab (#122)", async () => {
+    mockedGetDocument.mockResolvedValue({
+      ...PENDING_DOC,
+      status: "signed",
+      signed_file: "/media/signed.pdf",
+      signing_url: null,
+      sessions: [
+        { ...PENDING_DOC.sessions![0], status: "signed" },
+      ],
+    });
+    renderPage();
+
+    const link = await screen.findByRole("link", {
+      name: "Download signed PDF",
+    });
+    // The real mediaUrl prepends the API base in this test env.
+    expect(link.getAttribute("href")).toContain("/media/signed.pdf");
+    expect(link.hasAttribute("download")).toBe(true);
+    expect(link.getAttribute("target")).toBeNull();
+  });
 });
