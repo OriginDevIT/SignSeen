@@ -108,7 +108,12 @@ export default function TrackDocumentPage({
                 <span>
                   {s.order + 1}. {s.signer_name || "Signer"}
                 </span>
-                <span style={{ opacity: 0.7 }}>{s.status}</span>
+                <span style={{ opacity: 0.7 }}>
+                  {s.status}
+                  {s.status === "signed" && s.signed_at
+                    ? ` — ${new Date(s.signed_at).toLocaleString()}`
+                    : ""}
+                </span>
               </div>
             ))}
           </div>

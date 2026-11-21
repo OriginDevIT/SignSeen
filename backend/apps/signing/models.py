@@ -115,6 +115,10 @@ class SigningSession(models.Model):
     # the expiring-soon (24h) alert was sent. Null = not yet.
     viewed_at = models.DateTimeField(null=True, blank=True)
     expiry_alert_sent_at = models.DateTimeField(null=True, blank=True)
+    # When the signer submitted their signature (the
+    # signature.submitted audit event's timestamp). Null until signed;
+    # sessions signed before this field existed stay null.
+    signed_at = models.DateTimeField(null=True, blank=True)
     # v1 device evidence: normalized snapshot of the signer's device at
     # submit time (user agent, platform, screen, tz offset). The raw
     # client payload stays in the audit trail; this is the queryable copy.

@@ -19,6 +19,8 @@ export interface SessionSummary {
   signer_email: string;
   status: string;
   order: number;
+  /** When the signer submitted their signature; null until signed. */
+  signed_at: string | null;
 }
 
 export interface DocumentInfo {

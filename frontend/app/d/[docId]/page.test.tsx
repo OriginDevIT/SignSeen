@@ -32,6 +32,7 @@ const PENDING_DOC: DocumentInfo = {
       signer_email: "signer@example.com",
       status: "pending",
       order: 0,
+      signed_at: null,
     },
   ],
   created_at: "2026-11-21T13:00:00Z",
@@ -106,5 +107,35 @@ describe("TrackDocumentPage navigation", () => {
         .getByRole("link", { name: "Send another document" })
         .getAttribute("href")
     ).toBe("/send");
+  });
+
+  it("shows the signed date and time next to a signed signer, and none for a pending one", async () => {
+    const signedAt = "2026-11-21T13:24:14Z";
+    mockedGetDocument.mockResolvedValue({
+      ...PENDING_DOC,
+      status: "signed",
+      signed_file: "/media/signed.pdf",
+      signing_url: null,
+      sessions: [
+        { ...PENDING_DOC.sessions![0], status: "signed", signed_at: signedAt },
+        {
+          id: "sess-2",
+          signer_name: "Signer Two",
+          signer_email: "two@example.com",
+          status: "pending",
+          order: 1,
+          signed_at: null,
+        },
+      ],
+    });
+    renderPage();
+
+    const rendered = new Date(signedAt).toLocaleString();
+    await waitFor(() =>
+      expect(document.body.textContent).toContain(`signed — ${rendered}`)
+    );
+    expect(document.body.textContent).toContain("pending");
+    // The pending row carries no timestamp.
+    expect(document.body.textContent).not.toContain(`pending — ${rendered}`);
   });
 });
