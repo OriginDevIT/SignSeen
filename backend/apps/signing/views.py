@@ -425,8 +425,11 @@ def document_detail(request, doc_id):
     field is omitted entirely. The draft token is exposed only to
     the owner or a caller presenting it.
 
-    PATCH/DELETE are draft-only (#89) and restricted to the sender:
-    the authenticated owner, or anyone holding the draft token.
+    PATCH is draft-only (#89) and restricted to the sender: the
+    authenticated owner, or anyone holding the draft token. DELETE
+    removes the document and its files at any status: drafts via the
+    same draft-editor path, sent/signed/expired documents via the
+    authenticated owner only.
     """
     doc = get_object_or_404(Document, pk=doc_id)
     show_token = _is_owner(request, doc) or (
@@ -443,20 +446,29 @@ def document_detail(request, doc_id):
             data.pop("signing_url", None)
         return Response(data)
 
-    if not _is_draft_editor(request, doc):
-        return _error("only the sender can change this draft", 403)
-    if doc.status != Document.Status.DRAFT:
-        return _error("only a draft can be changed", 409)
-
     if request.method == "DELETE":
-        # Discard draft (#89): remove the files with the row, so an
-        # abandoned draft leaves nothing behind.
+        # Delete the document and its files, whatever its status.
+        # Drafts keep the existing discard path (the authenticated
+        # owner, or anyone holding the draft token); a sent, signed,
+        # or expired document can be deleted only by its
+        # authenticated owner. Sessions, fields, and audit events go
+        # with the row through their cascade deletes.
+        is_draft_discard = _is_draft_editor(
+            request, doc
+        ) and doc.status == Document.Status.DRAFT
+        if not is_draft_discard and not _is_owner(request, doc):
+            return _error("only the sender can delete this document", 403)
         if doc.original_file:
             doc.original_file.delete(save=False)
         if doc.signed_file:
             doc.signed_file.delete(save=False)
         doc.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    if not _is_draft_editor(request, doc):
+        return _error("only the sender can change this draft", 403)
+    if doc.status != Document.Status.DRAFT:
+        return _error("only a draft can be changed", 409)
 
     # PATCH: title, signing mode, photo flag, signer list.
     account = request.user if request.user.is_authenticated else None

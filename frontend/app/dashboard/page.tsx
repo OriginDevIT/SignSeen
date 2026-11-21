@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import SigningLinkPanel from "../../components/SigningLinkPanel";
 import {
   ApiError,
-  discardDraft,
+  deleteDocument,
   getAuthToken,
   getBranding,
   logout,
@@ -21,6 +21,7 @@ import {
   type AccountInfo,
   type BrandingInfo,
   type DashboardData,
+  type DocumentInfo,
 } from "../../lib/api";
 
 function mb(bytes: number): string {
@@ -58,6 +59,33 @@ const ghost: React.CSSProperties = {
   color: "#111",
 };
 
+type DocTab = "in-progress" | "draft" | "complete";
+
+const TABS: { id: DocTab; label: string }[] = [
+  { id: "in-progress", label: "In Progress" },
+  { id: "draft", label: "Draft" },
+  { id: "complete", label: "Complete" },
+];
+
+function tabDocuments(documents: DocumentInfo[], tab: DocTab): DocumentInfo[] {
+  if (tab === "draft") return documents.filter((d) => d.status === "draft");
+  if (tab === "complete") {
+    return documents.filter((d) => d.status === "signed" || d.status === "expired");
+  }
+  return documents.filter((d) => d.status === "pending");
+}
+
+/** The file a dashboard row downloads: the signed copy once the
+ * document is signed, the original upload otherwise. */
+function downloadFile(d: DocumentInfo): { url: string; name: string } | null {
+  if (d.status === "signed" && d.signed_file) {
+    const url = mediaUrl(d.signed_file);
+    return url ? { url, name: `${d.title} (signed).pdf` } : null;
+  }
+  const url = mediaUrl(d.original_file);
+  return url ? { url, name: d.original_filename || `${d.title}.pdf` } : null;
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const [account, setAccount] = useState<AccountInfo | null>(null);
@@ -74,7 +102,9 @@ export default function DashboardPage() {
   const [logoInputKey, setLogoInputKey] = useState(0);
   const [alertsMsg, setAlertsMsg] = useState("");
   const [busyAlerts, setBusyAlerts] = useState(false);
-  const [discardingId, setDiscardingId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<DocTab>("in-progress");
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!getAuthToken()) {
@@ -122,19 +152,22 @@ export default function DashboardPage() {
     }
   };
 
-  const discard = async (docId: string) => {
-    setDiscardingId(docId);
+  // Delete a document at any status (drafts included): removes the
+  // document, its sessions, and its files.
+  const removeDocument = async (docId: string) => {
+    setDeletingId(docId);
     try {
-      await discardDraft(docId);
+      await deleteDocument(docId);
       setDash((prev) =>
         prev
           ? { ...prev, documents: prev.documents.filter((d) => d.id !== docId) }
           : prev
       );
+      setConfirmDeleteId(null);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not discard draft");
+      setError(err instanceof Error ? err.message : "Could not delete document");
     } finally {
-      setDiscardingId(null);
+      setDeletingId(null);
     }
   };
 
@@ -218,6 +251,7 @@ export default function DashboardPage() {
   // a draft from here is never blocked.
   const pendingDoc = dash.documents.find((d) => d.status === "pending");
   const atPendingLimit = !dash.is_premium && pendingDoc !== undefined;
+  const visibleDocs = tabDocuments(dash.documents, activeTab);
 
   return (
     <main style={page}>
@@ -441,60 +475,123 @@ export default function DashboardPage() {
           No documents yet. <a href="/send">Send your first document</a>.
         </p>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
-          {dash.documents.map((d) => (
-            <div key={d.id} style={card}>
-              <a
-                href={d.status === "draft" ? `/send?draft=${d.id}&step=1` : `/d/${d.id}`}
-                style={{ textDecoration: "none", color: "inherit", display: "block" }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
-                  <div style={{ fontWeight: 600 }}>{d.title}</div>
-                  <div
-                    style={{
-                      fontSize: "0.8rem",
-                      padding: "0.2rem 0.6rem",
-                      borderRadius: "999px",
-                      background:
-                        d.status === "signed"
-                          ? "#dcfce7"
-                          : d.status === "draft"
-                            ? "#dbeafe"
-                            : "#fef3c7",
-                      whiteSpace: "nowrap",
-                      height: "fit-content",
-                    }}
-                  >
-                    {d.status === "draft" ? "draft" : d.status}
+        <>
+          <div
+            role="tablist"
+            aria-label="Documents"
+            style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}
+          >
+            {TABS.map((t) => {
+              const active = activeTab === t.id;
+              return (
+                <button
+                  key={t.id}
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setActiveTab(t.id)}
+                  style={active ? button : ghost}
+                >
+                  {t.label} ({tabDocuments(dash.documents, t.id).length})
+                </button>
+              );
+            })}
+          </div>
+          {visibleDocs.length === 0 ? (
+            <p style={{ opacity: 0.6 }}>
+              {activeTab === "in-progress"
+                ? "No documents in progress."
+                : activeTab === "draft"
+                  ? "No drafts."
+                  : "No completed documents."}
+            </p>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              {visibleDocs.map((d) => {
+                const file = downloadFile(d);
+                return (
+                  <div key={d.id} data-testid={`doc-row-${d.id}`} style={card}>
+                    <a
+                      href={d.status === "draft" ? `/send?draft=${d.id}&step=1` : `/d/${d.id}`}
+                      style={{ textDecoration: "none", color: "inherit", display: "block" }}
+                    >
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: "1rem", flexWrap: "wrap" }}>
+                        <div style={{ fontWeight: 600 }}>{d.title}</div>
+                        <div
+                          style={{
+                            fontSize: "0.8rem",
+                            padding: "0.2rem 0.6rem",
+                            borderRadius: "999px",
+                            background:
+                              d.status === "signed"
+                                ? "#dcfce7"
+                                : d.status === "draft"
+                                  ? "#dbeafe"
+                                  : "#fef3c7",
+                            whiteSpace: "nowrap",
+                            height: "fit-content",
+                          }}
+                        >
+                          {d.status === "draft" ? "draft" : d.status}
+                        </div>
+                      </div>
+                      <div style={{ fontSize: "0.85rem", opacity: 0.6, marginTop: "0.25rem" }}>
+                        {new Date(d.created_at).toLocaleString()} · {d.sender_email}
+                      </div>
+                    </a>
+                    <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.75rem", flexWrap: "wrap", alignItems: "center" }}>
+                      {d.status === "draft" && (
+                        <a
+                          href={`/send?draft=${d.id}&step=1`}
+                          style={{ ...ghost, textDecoration: "none" }}
+                        >
+                          Continue draft
+                        </a>
+                      )}
+                      {file && (
+                        <a
+                          href={file.url}
+                          download={file.name}
+                          style={{ ...ghost, textDecoration: "none" }}
+                        >
+                          Download
+                        </a>
+                      )}
+                      {confirmDeleteId === d.id ? (
+                        <>
+                          <span style={{ fontSize: "0.9rem" }}>
+                            Delete this document? The document and its files
+                            will be removed.
+                          </span>
+                          <button
+                            onClick={() => removeDocument(d.id)}
+                            disabled={deletingId === d.id}
+                            style={ghost}
+                          >
+                            {deletingId === d.id ? "Deleting…" : "Confirm delete"}
+                          </button>
+                          <button
+                            onClick={() => setConfirmDeleteId(null)}
+                            disabled={deletingId === d.id}
+                            style={ghost}
+                          >
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <button onClick={() => setConfirmDeleteId(d.id)} style={ghost}>
+                          Delete
+                        </button>
+                      )}
+                    </div>
+                    {d.status === "pending" && d.signing_url && (
+                      <SigningLinkPanel signingUrl={d.signing_url} />
+                    )}
                   </div>
-                </div>
-                <div style={{ fontSize: "0.85rem", opacity: 0.6, marginTop: "0.25rem" }}>
-                  {new Date(d.created_at).toLocaleString()} · {d.sender_email}
-                </div>
-              </a>
-              {d.status === "draft" && (
-                <div style={{ display: "flex", gap: "0.5rem", marginTop: "0.75rem", flexWrap: "wrap" }}>
-                  <a
-                    href={`/send?draft=${d.id}&step=1`}
-                    style={{ ...ghost, textDecoration: "none" }}
-                  >
-                    Continue draft
-                  </a>
-                  <button
-                    onClick={() => discard(d.id)}
-                    disabled={discardingId === d.id}
-                    style={ghost}
-                  >
-                    {discardingId === d.id ? "Discarding…" : "Discard"}
-                  </button>
-                </div>
-              )}
-              {d.status === "pending" && d.signing_url && (
-                <SigningLinkPanel signingUrl={d.signing_url} />
-              )}
+                );
+              })}
             </div>
-          ))}
-        </div>
+          )}
+        </>
       )}
 
       {dash.signed_documents.length > 0 && (

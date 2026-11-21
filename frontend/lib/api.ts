@@ -26,6 +26,8 @@ export interface DocumentInfo {
   title: string;
   status: string;
   sender_email: string;
+  /** Original uploaded file, for downloading an unsigned document. */
+  original_file: string | null;
   signed_file: string | null;
   signing_mode: "sequential" | "parallel";
   /** Sender option (#73): every signer must attach a witness photo. */
@@ -367,6 +369,12 @@ export function discardDraft(
     { method: "DELETE" },
     { draftToken: draftToken ?? undefined }
   );
+}
+
+/** Delete an owned document at any status: removes the document,
+ * its sessions, and its files. */
+export function deleteDocument(docId: string): Promise<void> {
+  return req<void>(`/api/documents/${docId}/`, { method: "DELETE" });
 }
 
 /** Signer: fetch session info (no account; the token is the auth). */

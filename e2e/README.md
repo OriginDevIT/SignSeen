@@ -68,6 +68,10 @@ npm test
   `/dashboard?upgraded=1`, then posts a locally signed
   `checkout.session.completed` event — Stripe cannot deliver webhooks
   to localhost — and asserts the dashboard flips to Premium.
+- `tests/dashboard-tabs.spec.ts` — dashboard tabs (#104): a draft shows
+  in the Draft tab and a sent document in In Progress, each row with a
+  Download link and a Delete that asks for confirmation first and then
+  removes the row.
 - `tests/draw-boxes.spec.ts` — drag a box on the place-fields page to
   place a signature field at its true size, sign inside it in the
   ceremony, and verify the sealed document as valid on /verify (#78).
