@@ -1,6 +1,7 @@
 "use client";
 
 import { use, useEffect, useState } from "react";
+import AuthBrandHeader from "../../../components/AuthBrandHeader";
 import SigningLinkPanel from "../../../components/SigningLinkPanel";
 import { getDocument, mediaUrl, type DocumentInfo } from "../../../lib/api";
 
@@ -49,6 +50,7 @@ export default function TrackDocumentPage({
   if (error) {
     return (
       <main style={page}>
+        <AuthBrandHeader />
         <h1>Document not found</h1>
         <p style={{ opacity: 0.6 }}>{error}</p>
       </main>
@@ -57,6 +59,7 @@ export default function TrackDocumentPage({
   if (!doc) {
     return (
       <main style={page}>
+        <AuthBrandHeader />
         <p>Loading…</p>
       </main>
     );
@@ -66,6 +69,7 @@ export default function TrackDocumentPage({
 
   return (
     <main style={page}>
+      <AuthBrandHeader />
       <h1 style={{ margin: 0 }}>{doc.title}</h1>
       <div style={card}>
         <div style={{ display: "flex", gap: "1.5rem", flexWrap: "wrap" }}>

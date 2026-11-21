@@ -62,6 +62,32 @@ afterEach(() => {
   vi.resetAllMocks();
 });
 
+describe("TrackDocumentPage branding", () => {
+  it("shows the SignSeen brand header linking home", async () => {
+    mockedGetDocument.mockResolvedValue(PENDING_DOC);
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByRole("link", { name: "SignSeen" })).toBeTruthy()
+    );
+    expect(
+      screen.getByRole("link", { name: "SignSeen" }).getAttribute("href")
+    ).toBe("/");
+  });
+
+  it("shows the brand header on the not-found state", async () => {
+    mockedGetDocument.mockRejectedValue(new Error("Not found"));
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByText("Document not found")).toBeTruthy()
+    );
+    expect(
+      screen.getByRole("link", { name: "SignSeen" }).getAttribute("href")
+    ).toBe("/");
+  });
+});
+
 describe("TrackDocumentPage navigation", () => {
   it("links back to the dashboard and to sending another document", async () => {
     mockedGetDocument.mockResolvedValue(PENDING_DOC);
