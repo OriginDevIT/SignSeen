@@ -801,6 +801,28 @@ def session_page_png(request, token, page):
     return HttpResponse(png, content_type="image/png")
 
 
+@api_view(["GET"])
+@authentication_classes([])
+def session_field_image(request, token, field_id):
+    """A completed signature/initials field's stored image, for the
+    ceremony's read-only view of earlier signers' completed fields
+    (#105). Possession of the token is the auth, and the image is
+    served only while the session is usable or already signed. The
+    field must belong to the session's document and be completed —
+    anything else is a 404, so no field (or document) existence
+    leaks across sessions."""
+    session = get_object_or_404(SigningSession, token=token)
+    if not session.is_usable() and session.status != SigningSession.Status.SIGNED:
+        return _error("session is no longer available", 410)
+    field = get_object_or_404(
+        DocumentField, pk=field_id, document=session.document
+    )
+    if not field.is_completed or not field.value_file:
+        return _error("field has no stored image", 404)
+    with open(field.value_file.path, "rb") as fh:
+        return HttpResponse(fh.read(), content_type="image/png")
+
+
 @api_view(["POST"])
 @parser_classes([JSONParser, FormParser, MultiPartParser])
 @authentication_classes([OptionalTokenAuthentication])

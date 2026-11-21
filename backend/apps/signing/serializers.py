@@ -119,6 +119,13 @@ class SigningSessionSerializer(serializers.ModelSerializer):
     usable = serializers.SerializerMethodField()
     waiting = serializers.SerializerMethodField()
     fields = DocumentFieldSerializer(many=True, read_only=True)
+    # Fields other signers already completed on this document (#105):
+    # completed only, so a later signer in the sequence sees the
+    # signatures and filled-in fields on the document, while other
+    # signers' empty fields stay hidden. Values come from the stored
+    # field records; signature/initials images are served separately
+    # by the token-addressed field-image endpoint.
+    completed_fields = serializers.SerializerMethodField()
     branding = serializers.SerializerMethodField()
     document_title = serializers.CharField(source="document.title", read_only=True)
     document_status = serializers.CharField(source="document.status", read_only=True)
@@ -148,12 +155,19 @@ class SigningSessionSerializer(serializers.ModelSerializer):
             "usable",
             "waiting",
             "fields",
+            "completed_fields",
             "branding",
             "expires_at",
             "created_at",
             "signing_url",
         ]
         read_only_fields = fields
+
+    def get_completed_fields(self, obj) -> list:
+        others = DocumentField.objects.filter(
+            document=obj.document, completed_at__isnull=False
+        ).exclude(session=obj)
+        return DocumentFieldSerializer(others, many=True).data
 
     def get_signing_url(self, obj) -> str:
         return build_signing_url(obj.token)

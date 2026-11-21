@@ -15,6 +15,7 @@ import {
   mediaUrl,
   setSignerEmail,
   sessionDocumentUrl,
+  sessionFieldImageUrl,
   sessionPageUrl,
   submitSignature,
   type DocumentFieldInfo,
@@ -148,6 +149,109 @@ function PhoneQr({ signingUrl }: { signingUrl: string }) {
           </code>
         </div>
       )}
+    </div>
+  );
+}
+
+/** The stored value inside a completed field's box. */
+function completedFieldValue(f: DocumentFieldInfo, token: string) {
+  if (f.type === "signature" || f.type === "initials") {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img
+        src={sessionFieldImageUrl(token, f.id)}
+        alt={`${f.type} completed by an earlier signer`}
+        style={{ width: "100%", height: "100%", objectFit: "contain", display: "block" }}
+      />
+    );
+  }
+  if (f.type === "checkbox") {
+    return (
+      <span style={{ fontSize: "1.1rem", lineHeight: 1 }}>
+        {f.value === "true" ? "✓" : "—"}
+      </span>
+    );
+  }
+  return (
+    <span
+      style={{
+        fontSize: "0.85rem",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        whiteSpace: "nowrap",
+        display: "block",
+        width: "100%",
+        textAlign: "center",
+      }}
+    >
+      {f.value}
+    </span>
+  );
+}
+
+/** A field an earlier signer already completed (#105): read-only and
+ * non-clickable, visually distinct from the signer's own fields
+ * (dashed border / grey pill instead of the solid dark box), with
+ * the stored value rendered inside. */
+function CompletedField({ field: f, token }: { field: DocumentFieldInfo; token: string }) {
+  const label = `${f.type} field on page ${f.page}, completed by an earlier signer`;
+  const b = fieldBox(f);
+  if (b === null) {
+    // Click-placed field: marker pill, grey instead of dark.
+    const pillText =
+      f.type === "signature" || f.type === "initials"
+        ? `${f.type} ✓`
+        : f.type === "checkbox"
+          ? `checkbox ${f.value === "true" ? "✓" : "—"}`
+          : `${f.type}: ${f.value}`;
+    return (
+      <div
+        data-testid="completed-field-pill"
+        aria-label={label}
+        title={pillText}
+        style={{
+          position: "absolute",
+          left: `${f.x * 100}%`,
+          top: `${f.y * 100}%`,
+          transform: "translate(-2px, -50%)",
+          background: "#6b7280",
+          color: "#fff",
+          fontSize: "0.7rem",
+          padding: "0.15rem 0.45rem",
+          borderRadius: 999,
+          whiteSpace: "nowrap",
+          maxWidth: "70%",
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+        }}
+      >
+        {pillText}
+      </div>
+    );
+  }
+  return (
+    <div
+      data-testid="completed-field-box"
+      aria-label={label}
+      title={`${f.type} — completed by an earlier signer`}
+      style={{
+        position: "absolute",
+        left: `${b.x * 100}%`,
+        top: `${b.y * 100}%`,
+        width: `${b.width * 100}%`,
+        height: `${b.height * 100}%`,
+        border: "2px dashed #6b7280",
+        background: "rgba(255, 255, 255, 0.7)",
+        borderRadius: 2,
+        overflow: "hidden",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "0.1rem 0.25rem",
+        boxSizing: "border-box",
+      }}
+    >
+      {completedFieldValue(f, token)}
     </div>
   );
 }
@@ -309,6 +413,13 @@ export default function SignPage() {
 
   const sessionFields = session?.fields ?? [];
   const hasFields = sessionFields.length > 0;
+  // Fields other signers already completed (#105): read-only, never
+  // counted toward this signer's progress or the continue gate.
+  const completedFields = session?.completed_fields ?? [];
+  // The fields section renders when there is anything to show on the
+  // document — the signer's own fields, or earlier signers' completed
+  // ones (a signer with no fields of their own still sees those).
+  const showFieldsSection = hasFields || completedFields.length > 0;
   const allRequiredComplete = sessionFields
     .filter((f) => f.required)
     .every((f) => fieldComplete(f));
@@ -527,13 +638,28 @@ export default function SignPage() {
       {step === "sign" && (
         <section style={{ display: "grid", gap: "1rem" }}>
           <PhoneQr signingUrl={signingLink} />
-          {hasFields && (
+          {showFieldsSection && (
             <div style={{ display: "grid", gap: "1rem" }}>
-              <h2 style={{ margin: 0 }}>1. Your fields on this document</h2>
-              <p style={{ opacity: 0.65, margin: 0 }}>
-                Tap a field on the document to complete it.
-              </p>
-              {[...new Set(sessionFields.map((f) => f.page))]
+              <h2 style={{ margin: 0 }}>
+                {hasFields
+                  ? "1. Your fields on this document"
+                  : "1. Fields already completed on this document"}
+              </h2>
+              {hasFields ? (
+                <p style={{ opacity: 0.65, margin: 0 }}>
+                  Tap a field on the document to complete it.
+                </p>
+              ) : (
+                <p style={{ opacity: 0.65, margin: 0 }}>
+                  An earlier signer completed these fields — they are shown for reference.
+                </p>
+              )}
+              {hasFields && completedFields.length > 0 && (
+                <p style={{ opacity: 0.65, margin: 0, fontSize: "0.9rem" }}>
+                  Fields already completed by an earlier signer are shown with a dashed border and cannot be changed.
+                </p>
+              )}
+              {[...new Set([...sessionFields, ...completedFields].map((f) => f.page))]
                 .sort((a, b) => a - b)
                 .map((pg) => (
                   <div
@@ -653,9 +779,14 @@ export default function SignPage() {
                           </div>
                         );
                       })}
+                    {completedFields
+                      .filter((f) => f.page === pg)
+                      .map((f) => (
+                        <CompletedField key={f.id} field={f} token={token} />
+                      ))}
                   </div>
                 ))}
-              {!allRequiredComplete && (
+              {hasFields && !allRequiredComplete && (
                 <p style={{ opacity: 0.65, margin: 0, fontSize: "0.9rem" }}>
                   Complete every required field (marked *) to continue.
                 </p>
@@ -664,7 +795,7 @@ export default function SignPage() {
           )}
           {/* The document signature comes after the fields, not before. */}
           <h2 style={{ margin: 0 }}>
-            {hasFields
+            {showFieldsSection
               ? "2. Sign the document — draw your signature"
               : "1. Signed — draw your signature"}
           </h2>

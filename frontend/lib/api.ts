@@ -120,6 +120,10 @@ export interface SessionInfo {
   signing_url: string;
   /** This signer's assigned fields (#13); empty for simple documents. */
   fields: DocumentFieldInfo[];
+  /** Fields other signers already completed on this document (#105),
+   * completed only — other signers' empty fields stay hidden. Shown
+   * read-only in the ceremony; never the signer's own fields. */
+  completed_fields: DocumentFieldInfo[];
 }
 
 export interface SignResult {
@@ -564,6 +568,12 @@ export async function fetchDocumentPageImageUrl(
 /** Signer page render URL (token-addressed; plain <img> works). */
 export function sessionPageUrl(token: string, page: number): string {
   return `${API_BASE}/api/sessions/${token}/page/${page}.png`;
+}
+
+/** Stored image for a completed signature/initials field (#105),
+ * token-addressed like the page renders. */
+export function sessionFieldImageUrl(token: string, fieldId: string): string {
+  return `${API_BASE}/api/sessions/${token}/fields/${fieldId}/image/`;
 }
 
 /** Absolute URL for a media path returned by the API (e.g. signed_file). */
