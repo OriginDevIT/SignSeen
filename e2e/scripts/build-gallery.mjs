@@ -26,6 +26,8 @@ const SHOT_CAPTIONS = {
   "08-stale-token-link.png": "Stale sender token: signing link still loads",
   "09-dashboard-send.png": "Dashboard send: confirmation after a logged-in send",
   "10-premium-branding.png": "Premium dashboard: branding saved, branded send",
+  "11-docx-link.png": "DOCX intake: signing link for the converted PDF renders, link copies",
+  "12-webpage-link.png": "Web page intake: signing link for the rendered PDF renders, link copies",
 };
 
 const esc = (s) =>
