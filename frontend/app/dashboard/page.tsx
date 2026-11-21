@@ -236,13 +236,13 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {atPendingLimit && pendingDoc && (
+      {atPendingLimit && (
         <p style={{ margin: 0, opacity: 0.75, fontSize: "0.9rem" }}>
-          The free plan allows 1 document pending signature at a time —{" "}
-          <strong>{pendingDoc.title}</strong> is still pending. You can
-          still start a draft (drafts don&apos;t count toward the limit);
-          the limit applies when you send, once the pending document has
-          been signed or expires, or upgrade to premium to send more now.
+          The free plan allows 1 document pending signature at a time — one
+          document is still pending. You can still start a draft (drafts
+          don&apos;t count toward the limit); the limit applies when you
+          send, once the pending document has been signed or expires, or
+          upgrade to premium to send more now.
         </p>
       )}
 

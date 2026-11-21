@@ -186,7 +186,8 @@ test("second signing session on one document: API 409", async ({
     data: { signer_email: `e2e-second-2-${id}@example.com` },
   });
   expect(res.status()).toBe(409);
-  expect(await res.text()).toContain("This document already has a signing session.");
+  // A free document's second session is the sender only (#89).
+  expect(await res.text()).toContain("the second signer must be you");
 });
 
 test("regression: a stale sender token in localStorage must not break a signing link", async ({
