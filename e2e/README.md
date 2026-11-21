@@ -73,6 +73,16 @@ npm test
   ceremony, and verify the sealed document as valid on /verify (#78).
   The stamped signature's pixel geometry is asserted in backend
   tests, where the sealed PDF can be read directly.
+- `tests/mobile-qr.spec.ts` — the QR codes on /send and in the
+  dashboard signing-link panel fit a 360px phone.
+- `tests/photo-required.spec.ts` — a premium sender sets photo-required
+  and the signer cannot seal without a photo (#73).
+- `tests/verify.spec.ts` — manual script §J: a sealed download verifies
+  valid on /verify and an unsigned PDF verifies invalid (#74).
+- `tests/send-loading.spec.ts` — the /send loading state (#82/#83): a
+  signed-in sender sees "Loading…" while the session check settles,
+  never the anonymous copy, and the photo checkbox is disabled until
+  the check resolves; an anonymous sender settles on the anonymous copy.
 - `tests/helpers.ts` — shared send/seal flows, Mailpit polling, and
   `recordGalleryDoc`, which appends a sealed document to the review
   manifest.
