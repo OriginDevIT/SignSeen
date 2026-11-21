@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
+import { QRCodeSVG } from "qrcode.react";
 import SignaturePad, { type SignaturePadHandle } from "../../../components/SignaturePad";
 import FieldModal from "../../../components/FieldModal";
 import PhotoStep from "../../../components/PhotoStep";
@@ -75,6 +76,76 @@ function StepDots({ active }: { active: number }) {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+/** Continue-on-your-phone QR (#94): a signer who opened the signing
+ * link on a desktop scans it to continue signing on their phone. The
+ * QR stays behind a button so signers already on a phone never see it
+ * unless they ask for it. Same QR block as the other renderings in
+ * the app. */
+function PhoneQr({ signingUrl }: { signingUrl: string }) {
+  const [showQr, setShowQr] = useState(false);
+  if (!signingUrl) return null;
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={() => setShowQr((v) => !v)}
+        style={{
+          padding: "0.6rem 0.9rem",
+          fontSize: "0.85rem",
+          borderRadius: 8,
+          border: "1px solid #d1d5db",
+          background: "#fff",
+          cursor: "pointer",
+        }}
+      >
+        {showQr ? "Hide QR code" : "Continue on your phone"}
+      </button>
+      {showQr && (
+        <div
+          style={{
+            marginTop: "0.75rem",
+            display: "grid",
+            gap: "0.75rem",
+            justifyItems: "center",
+          }}
+        >
+          <p style={{ margin: 0, fontSize: "0.9rem", opacity: 0.7, textAlign: "center" }}>
+            Scan the code with your phone to open the same signing link
+            and continue signing there.
+          </p>
+          <div
+            style={{
+              background: "#fff",
+              padding: 10,
+              borderRadius: 8,
+              border: "1px solid #e5e7eb",
+              // Fixed-size QR overflows narrow phones; the SVG scales
+              // down with the viewport instead (#47).
+              width: "min(182px, 72vw)",
+              boxSizing: "border-box",
+            }}
+          >
+            <QRCodeSVG
+              value={signingUrl}
+              size={160}
+              style={{ width: "100%", height: "auto", display: "block" }}
+            />
+          </div>
+          <code
+            style={{
+              overflowWrap: "anywhere",
+              fontSize: "0.8rem",
+              opacity: 0.75,
+            }}
+          >
+            {signingUrl}
+          </code>
+        </div>
+      )}
     </div>
   );
 }
@@ -392,11 +463,13 @@ export default function SignPage() {
           <button onClick={startSigning} style={brandBtn}>
             Start signing
           </button>
+          <PhoneQr signingUrl={signingLink} />
         </section>
       )}
 
       {step === "sign" && (
         <section style={{ display: "grid", gap: "1rem" }}>
+          <PhoneQr signingUrl={signingLink} />
           {hasFields && (
             <div style={{ display: "grid", gap: "1rem" }}>
               <h2 style={{ margin: 0 }}>1. Your fields on this document</h2>

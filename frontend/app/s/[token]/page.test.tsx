@@ -89,13 +89,61 @@ const SESSION = {
   ],
 };
 
-async function renderSigning() {
+async function renderIntro() {
   vi.mocked(getSession).mockResolvedValue(SESSION as never);
   render(<SignPage />);
   await screen.findByText("Contract");
+}
+
+async function renderSigning() {
+  await renderIntro();
   fireEvent.click(screen.getByText("Start signing"));
   await screen.findByText("1. Your fields on this document");
 }
+
+describe("SignPage phone QR (#94)", () => {
+  let scrollIntoViewMock: ReturnType<typeof vi.fn>;
+  let origScrollIntoView: typeof Element.prototype.scrollIntoView;
+
+  beforeEach(() => {
+    scrollIntoViewMock = vi.fn();
+    origScrollIntoView = Element.prototype.scrollIntoView;
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      value: scrollIntoViewMock,
+      configurable: true,
+      writable: true,
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      value: origScrollIntoView,
+      configurable: true,
+      writable: true,
+    });
+    vi.clearAllMocks();
+  });
+
+  it("intro step offers a continue-on-your-phone QR with the signing URL", async () => {
+    await renderIntro();
+    expect(screen.queryByText("https://example.com/s/tok-1")).toBeNull();
+    fireEvent.click(screen.getByText("Continue on your phone"));
+    expect(screen.getByText("https://example.com/s/tok-1")).toBeTruthy();
+    expect(screen.getByText("Hide QR code")).toBeTruthy();
+    // Toggling hides it again.
+    fireEvent.click(screen.getByText("Hide QR code"));
+    expect(screen.queryByText("https://example.com/s/tok-1")).toBeNull();
+  });
+
+  it("sign step offers the same QR", async () => {
+    await renderIntro();
+    fireEvent.click(screen.getByText("Start signing"));
+    await screen.findByText("1. Your fields on this document");
+    fireEvent.click(screen.getByText("Continue on your phone"));
+    expect(screen.getByText("https://example.com/s/tok-1")).toBeTruthy();
+  });
+});
 
 describe("SignPage field modals (#84)", () => {
   let scrollIntoViewMock: ReturnType<typeof vi.fn>;
