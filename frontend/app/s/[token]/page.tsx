@@ -85,12 +85,18 @@ function StepDots({ active }: { active: number }) {
 }
 
 /** Continue-on-your-phone QR (#94): a signer who opened the signing
- * link on a desktop scans it to continue signing on their phone. The
- * QR stays behind a button so signers already on a phone never see it
- * unless they ask for it. Same QR block as the other renderings in
- * the app. */
+ * link on a desktop scans it to continue signing on their phone.
+ * The QR opens by default on desktop viewports (#117) — a desktop
+ * signer is the one who benefits from scanning it — and stays closed
+ * on phones, where the signer is already on the device. The viewport
+ * check runs after mount so the server render and the first client
+ * render agree (#91 hydration). Same QR block as the other renderings
+ * in the app. */
 function PhoneQr({ signingUrl }: { signingUrl: string }) {
   const [showQr, setShowQr] = useState(false);
+  useEffect(() => {
+    if (window.innerWidth >= 768) setShowQr(true);
+  }, []);
   if (!signingUrl) return null;
   return (
     <div>

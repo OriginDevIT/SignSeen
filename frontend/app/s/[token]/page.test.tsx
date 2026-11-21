@@ -107,6 +107,7 @@ async function renderSigning() {
 describe("SignPage phone QR (#94)", () => {
   let scrollIntoViewMock: ReturnType<typeof vi.fn>;
   let origScrollIntoView: typeof Element.prototype.scrollIntoView;
+  let origInnerWidth: number;
 
   beforeEach(() => {
     scrollIntoViewMock = vi.fn();
@@ -116,12 +117,25 @@ describe("SignPage phone QR (#94)", () => {
       configurable: true,
       writable: true,
     });
+    // Phone viewport: the QR starts closed here (#117), so these
+    // tests exercise the toggle from its closed state.
+    origInnerWidth = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", {
+      value: 375,
+      configurable: true,
+      writable: true,
+    });
   });
 
   afterEach(() => {
     cleanup();
     Object.defineProperty(Element.prototype, "scrollIntoView", {
       value: origScrollIntoView,
+      configurable: true,
+      writable: true,
+    });
+    Object.defineProperty(window, "innerWidth", {
+      value: origInnerWidth,
       configurable: true,
       writable: true,
     });
@@ -145,6 +159,57 @@ describe("SignPage phone QR (#94)", () => {
     await screen.findByText("1. Your fields on this document");
     fireEvent.click(screen.getByText("Continue on your phone"));
     expect(screen.getByText("https://example.com/s/tok-1")).toBeTruthy();
+  });
+});
+
+describe("SignPage phone QR default-open on desktop (#117)", () => {
+  let origInnerWidth: number;
+
+  function setViewport(width: number) {
+    Object.defineProperty(window, "innerWidth", {
+      value: width,
+      configurable: true,
+      writable: true,
+    });
+  }
+
+  beforeEach(() => {
+    origInnerWidth = window.innerWidth;
+  });
+
+  afterEach(() => {
+    cleanup();
+    setViewport(origInnerWidth);
+    vi.clearAllMocks();
+  });
+
+  it("intro step opens the QR by default on a desktop viewport", async () => {
+    setViewport(1024);
+    await renderIntro();
+    // The QR opens from the post-mount viewport check, so wait for
+    // the effect to land rather than asserting synchronously.
+    await screen.findByText("Hide QR code");
+    expect(screen.getByText("https://example.com/s/tok-1")).toBeTruthy();
+    // The signer can still close it.
+    fireEvent.click(screen.getByText("Hide QR code"));
+    expect(screen.queryByText("https://example.com/s/tok-1")).toBeNull();
+    expect(screen.getByText("Continue on your phone")).toBeTruthy();
+  });
+
+  it("sign step opens the QR by default on a desktop viewport", async () => {
+    setViewport(1024);
+    await renderIntro();
+    fireEvent.click(screen.getByText("Start signing"));
+    await screen.findByText("1. Your fields on this document");
+    expect(screen.getByText("Hide QR code")).toBeTruthy();
+    expect(screen.getByText("https://example.com/s/tok-1")).toBeTruthy();
+  });
+
+  it("intro step keeps the QR closed on a phone viewport", async () => {
+    setViewport(375);
+    await renderIntro();
+    expect(screen.queryByText("https://example.com/s/tok-1")).toBeNull();
+    expect(screen.getByText("Continue on your phone")).toBeTruthy();
   });
 });
 
