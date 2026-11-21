@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
+import AuthBrandHeader from "../../components/AuthBrandHeader";
 import {
   ApiError,
   clearDraftToken,
@@ -322,6 +323,7 @@ export default function SendPage() {
         fontFamily: "system-ui, sans-serif",
       }}
     >
+      <AuthBrandHeader />
       <h1 style={{ fontSize: "1.75rem", marginBottom: "0.25rem" }}>
         Send a document for signature
       </h1>
