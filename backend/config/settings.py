@@ -134,6 +134,9 @@ REST_FRAMEWORK = {
 
 # --- Freemium limits (scope §3.6) -------------------------------------------
 FREE_PENDING_DOC_LIMIT = 1
+# Draft caps (#89): drafts never count toward the pending limit.
+FREE_DRAFT_LIMIT = 3
+PREMIUM_DRAFT_LIMIT = 10
 FREE_STORAGE_BYTES = 100 * 1024 * 1024  # 100 MB total
 # Premium storage cap: 5 GB default, sized for the $5/mo price
 # (documents are PDFs; 5 GB is thousands of typical documents).

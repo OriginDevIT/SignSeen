@@ -1,8 +1,11 @@
 """Signing ceremony API.
 
-Sender flow:
+Sender flow (#89: 3-step wizard):
   POST /api/documents/                       upload PDF + sender email
-  GET  /api/documents/<id>/                  document status (+ signed file)
+                                             -> draft (no sessions, no emails)
+  GET / PATCH / DELETE /api/documents/<id>/  draft detail / edits / discard
+  POST /api/documents/<id>/send/             review + send: sessions +
+                                             signer invites, draft -> pending
   POST /api/documents/<id>/sessions/         create signing session (QR target)
 
 Signer flow (token-addressed, no account):
@@ -15,6 +18,7 @@ import base64
 from datetime import datetime, timezone as dt_timezone
 import binascii
 import hashlib
+import json
 import logging
 import os
 
@@ -46,8 +50,10 @@ from .limits import (
     LimitExceeded,
     check_can_create_document,
     check_can_create_session,
+    check_draft_limit,
     check_pending_limit,
     check_storage_limit,
+    clean_signer_list,
     storage_limit_bytes,
     storage_used_bytes,
     wants_watermark,
@@ -91,6 +97,66 @@ def _signing_mode(data) -> str | None:
     creation. Returns None for an invalid value."""
     mode = (data.get("signing_mode") or Document.SigningMode.SEQUENTIAL).strip()
     return mode if mode in Document.SigningMode.values else None
+
+
+def _force_mode_for_tier(mode: str, account) -> str:
+    """Sequential signing is premium (#89): a non-premium document is
+    forced to parallel, whatever the client asked for."""
+    is_premium = (
+        account is not None
+        and getattr(account, "is_authenticated", False)
+        and account.is_premium
+    )
+    if not is_premium:
+        return Document.SigningMode.PARALLEL
+    return mode
+
+
+def _parse_signer_list(data, sender_email, account):
+    """Step-1 signer list (#89) from a create/PATCH payload. Accepts a
+    JSON array or a JSON string (multipart uploads carry strings).
+    Returns (cleaned_list, None) or (None, error_response)."""
+    raw = data.get("signers")
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except (ValueError, TypeError):
+            return None, _error("signers must be a JSON list")
+    is_premium = (
+        account is not None
+        and getattr(account, "is_authenticated", False)
+        and account.is_premium
+    )
+    try:
+        return clean_signer_list(raw, sender_email, is_premium), None
+    except ValueError as exc:
+        return None, _error(str(exc))
+
+
+def _draft_token(request) -> str:
+    """The anonymous sender's draft credential (#89): an
+    X-Draft-Token header, or a draft_token query parameter."""
+    return (
+        request.headers.get("X-Draft-Token", "")
+        or request.query_params.get("draft_token", "")
+    ).strip()
+
+
+def _is_draft_editor(request, doc) -> bool:
+    """True when the caller may edit this draft: the authenticated
+    owner, or anyone holding the draft token (drafts only)."""
+    if request.user.is_authenticated and doc.owner_id == request.user.pk:
+        return True
+    token = _draft_token(request)
+    return bool(
+        token
+        and doc.status == Document.Status.DRAFT
+        and token == doc.draft_token
+    )
+
+
+def _is_owner(request, doc) -> bool:
+    return request.user.is_authenticated and doc.owner_id == request.user.pk
 
 
 def _photo_required(data, account) -> bool:
@@ -216,6 +282,10 @@ def create_document(request):
         return _error(str(exc))
 
     account = request.user if request.user.is_authenticated else None
+    signers, err = _parse_signer_list(request.data, sender_email, account)
+    if err is not None:
+        return err
+    signing_mode = _force_mode_for_tier(signing_mode, account)
     try:
         check_can_create_document(account, sender_email, len(pdf_bytes))
     except LimitExceeded as exc:
@@ -229,9 +299,16 @@ def create_document(request):
         source=Document.Source.UPLOAD,
         signing_mode=signing_mode,
         photo_required=_photo_required(request.data, account),
+        # Step 1 creates a draft (#89): no sessions, no emails until
+        # the sender reviews and presses Send.
+        status=Document.Status.DRAFT,
+        signer_list=signers,
     )
     doc.original_file.save(f"document-{doc.id}.pdf", ContentFile(pdf_bytes))
-    return Response(DocumentSerializer(doc).data, status=status.HTTP_201_CREATED)
+    return Response(
+        DocumentSerializer(doc, context={"show_draft_token": True}).data,
+        status=status.HTTP_201_CREATED,
+    )
 
 
 @api_view(["POST"])
@@ -251,8 +328,12 @@ def create_document_from_url(request):
         return _error("url is required")
 
     account = request.user if request.user.is_authenticated else None
+    signers, err = _parse_signer_list(request.data, sender_email, account)
+    if err is not None:
+        return err
+    signing_mode = _force_mode_for_tier(signing_mode, account)
     try:
-        check_pending_limit(account, sender_email)
+        check_draft_limit(account, sender_email)
     except LimitExceeded as exc:
         return _error(str(exc), 409)
 
@@ -275,9 +356,14 @@ def create_document_from_url(request):
         source_url=url,
         signing_mode=signing_mode,
         photo_required=_photo_required(request.data, account),
+        status=Document.Status.DRAFT,
+        signer_list=signers,
     )
     doc.original_file.save(f"document-{doc.id}.pdf", ContentFile(pdf_bytes))
-    return Response(DocumentSerializer(doc).data, status=status.HTTP_201_CREATED)
+    return Response(
+        DocumentSerializer(doc, context={"show_draft_token": True}).data,
+        status=status.HTTP_201_CREATED,
+    )
 
 
 @api_view(["GET"])
@@ -324,32 +410,192 @@ def my_documents(request):
     )
 
 
-@api_view(["GET"])
+@api_view(["GET", "PATCH", "DELETE"])
+@parser_classes([JSONParser, FormParser, MultiPartParser])
 @authentication_classes([OptionalTokenAuthentication])
-def get_document(request, doc_id):
-    """Public tracking view of a document.
+def document_detail(request, doc_id):
+    """Document detail: public tracking view (GET), draft edits
+    (PATCH), draft discard (DELETE).
 
-    Anonymous and stale-token requesters get the public fields only.
-    An authenticated owner additionally gets the document's
-    signing_url (the active session's link, or None) so the tracking
-    page can offer the same copy-link/QR actions as the dashboard;
-    for everyone else the field is omitted entirely.
+    GET is the public tracking view: anonymous and stale-token
+    requesters get the public fields only. An authenticated owner
+    additionally gets the document's signing_url (the active session's
+    link, or None) so the tracking page can offer the same
+    copy-link/QR actions as the dashboard; for everyone else the
+    field is omitted entirely. The draft token is exposed only to
+    the owner or a caller presenting it.
+
+    PATCH/DELETE are draft-only (#89) and restricted to the sender:
+    the authenticated owner, or anyone holding the draft token.
     """
     doc = get_object_or_404(Document, pk=doc_id)
-    data = DocumentSerializer(doc, context={"request": request}).data
-    is_owner = (
-        request.user.is_authenticated and doc.owner_id == request.user.pk
+    show_token = _is_owner(request, doc) or (
+        bool(_draft_token(request))
+        and doc.status == Document.Status.DRAFT
+        and _draft_token(request) == doc.draft_token
     )
-    if not is_owner:
-        data.pop("signing_url", None)
-    return Response(data)
+    if request.method == "GET":
+        data = DocumentSerializer(
+            doc,
+            context={"request": request, "show_draft_token": show_token},
+        ).data
+        if not _is_owner(request, doc):
+            data.pop("signing_url", None)
+        return Response(data)
+
+    if not _is_draft_editor(request, doc):
+        return _error("only the sender can change this draft", 403)
+    if doc.status != Document.Status.DRAFT:
+        return _error("only a draft can be changed", 409)
+
+    if request.method == "DELETE":
+        # Discard draft (#89): remove the files with the row, so an
+        # abandoned draft leaves nothing behind.
+        if doc.original_file:
+            doc.original_file.delete(save=False)
+        if doc.signed_file:
+            doc.signed_file.delete(save=False)
+        doc.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    # PATCH: title, signing mode, photo flag, signer list.
+    account = request.user if request.user.is_authenticated else None
+    if "title" in request.data:
+        title = (request.data.get("title") or "").strip()
+        if not title:
+            return _error("title is required")
+        doc.title = title
+    if "signing_mode" in request.data:
+        mode = _signing_mode(request.data)
+        if mode is None:
+            return _error("signing_mode must be 'sequential' or 'parallel'")
+        doc.signing_mode = _force_mode_for_tier(mode, account)
+    if "photo_required" in request.data:
+        doc.photo_required = _photo_required(request.data, account)
+    if "signers" in request.data:
+        signers, err = _parse_signer_list(
+            request.data, doc.sender_email, account
+        )
+        if err is not None:
+            return err
+        # A signer with placed fields cannot be removed out from
+        # under them: the sender deletes those fields first.
+        max_ref = max(
+            (f.signer_index for f in doc.fields.all()), default=-1
+        )
+        if max_ref >= len(signers):
+            return _error(
+                "fields are assigned to a signer that would be removed — "
+                "delete those fields first"
+            )
+        doc.signer_list = signers
+    doc.save()
+    return Response(
+        DocumentSerializer(
+            doc, context={"request": request, "show_draft_token": True}
+        ).data
+    )
+
+
+@api_view(["POST"])
+@parser_classes([JSONParser, FormParser, MultiPartParser])
+@authentication_classes([OptionalTokenAuthentication])
+def send_document(request, doc_id):
+    """Step 3 Send (#89): turn a draft into a pending document.
+
+    Creates one session per signer in list order, links the placed
+    fields to their sessions, flips the draft to PENDING, and emails
+    each signer their link + the document. Nothing is emailed before
+    this call — that is the point of the draft flow. The free tier's
+    1-pending-document limit is enforced here, at send time.
+    """
+    doc = get_object_or_404(Document, pk=doc_id)
+    if not _is_draft_editor(request, doc):
+        return _error("only the sender can send this draft", 403)
+    if doc.status != Document.Status.DRAFT:
+        return _error("only a draft can be sent", 409)
+    account = request.user if request.user.is_authenticated else None
+    is_premium = (
+        account is not None
+        and getattr(account, "is_authenticated", False)
+        and account.is_premium
+    )
+    try:
+        signers = clean_signer_list(doc.signer_list, doc.sender_email, is_premium)
+    except ValueError as exc:
+        return _error(str(exc))
+    # Sequential mode: the sender countersigns last.
+    if doc.signing_mode == Document.SigningMode.SEQUENTIAL:
+        sender = doc.sender_email.strip().lower()
+        signers = sorted(
+            signers, key=lambda s: s["email"].lower() == sender
+        )
+    max_ref = max((f.signer_index for f in doc.fields.all()), default=-1)
+    if max_ref >= len(signers):
+        return _error(
+            "some fields are assigned to a signer that was removed — "
+            "delete those fields or add the signer back"
+        )
+    try:
+        check_pending_limit(account, doc.sender_email)
+    except LimitExceeded as exc:
+        return _error(str(exc), 409)
+
+    with transaction.atomic():
+        sessions = []
+        for order, signer in enumerate(signers):
+            session = SigningSession.objects.create(
+                document=doc,
+                signer_name=signer["name"],
+                signer_email=signer["email"],
+                order=order,
+            )
+            record_event(
+                session,
+                "session.created",
+                {
+                    "document_id": str(doc.id),
+                    "signer_name": session.signer_name,
+                    "signer_email": session.signer_email,
+                    "order": session.order,
+                },
+            )
+            sessions.append(session)
+        # Link placed fields to the session for their signer slot.
+        for field in doc.fields.all():
+            field.session = sessions[field.signer_index]
+            field.save(update_fields=["session"])
+        doc.signer_list = signers
+        doc.status = Document.Status.PENDING
+        doc.save(update_fields=["signer_list", "status", "updated_at"])
+
+    # Email delivery (#13): a pre-defined signer whose session is
+    # already active (first in sequence, or any signer in parallel
+    # mode) gets their signing link by email. Later sequential
+    # signers are invited when their predecessor signs.
+    for session in sessions:
+        if session.is_usable():
+            try:
+                send_signer_invite(doc, session)
+            except Exception:
+                log.exception("signer-invite email failed")
+    return Response(
+        {
+            "document": DocumentSerializer(
+                doc,
+                context={"request": request, "show_draft_token": True},
+            ).data,
+            "sessions": SigningSessionSerializer(sessions, many=True).data,
+        },
+        status=status.HTTP_201_CREATED,
+    )
 
 
 # ---------------------------------------------------------------------------
 # Complex documents (#13): field placement + page rendering.
 #
-# Placement is owner-only: fields are the sender's instructions on
-# their own document. Signers interact with their assigned fields
+# Placement is owner-only for sent documents; drafts accept the draft
+# token instead (#89). Signers interact with their assigned fields
 # through the token-addressed ceremony endpoints instead.
 # ---------------------------------------------------------------------------
 
@@ -369,12 +615,27 @@ def _render_page_png(doc, page_number: int) -> bytes | None:
         return pixmap.tobytes("png")
 
 
-def _owner_document(request, doc_id):
-    """(document, None) for the owner, else (None, error response)."""
+def _field_document(request, doc_id):
+    """(document, None) for a caller allowed to manage this document's
+    fields, else (None, error response).
+
+    Placement is owner-only for sent documents — and draft-token-only
+    for drafts (#89): the anonymous sender who holds the draft token
+    places fields on their own draft; the owner uses their account.
+    """
     doc = get_object_or_404(Document, pk=doc_id)
-    if doc.owner_id != request.user.id:
-        return None, _error("only the document owner can manage fields", 403)
-    return doc, None
+    if request.user.is_authenticated and doc.owner_id == request.user.pk:
+        return doc, None
+    token = _draft_token(request)
+    if (
+        token
+        and doc.status == Document.Status.DRAFT
+        and token == doc.draft_token
+    ):
+        return doc, None
+    if not request.user.is_authenticated and not token:
+        return None, _error("authentication required", 401)
+    return None, _error("only the document owner can manage fields", 403)
 
 
 # Drawn-box size limits (normalized fractions of the page size, #78).
@@ -385,9 +646,9 @@ MIN_FIELD_HEIGHT = 0.01
 
 
 @api_view(["GET", "POST"])
-@permission_classes([IsAuthenticated])
+@authentication_classes([OptionalTokenAuthentication])
 def document_fields(request, doc_id):
-    doc, err = _owner_document(request, doc_id)
+    doc, err = _field_document(request, doc_id)
     if err is not None:
         return err
     if request.method == "GET":
@@ -400,14 +661,29 @@ def document_fields(request, doc_id):
             }
         )
 
-    if doc.status != Document.Status.PENDING:
-        return _error("fields can only be placed on a pending document", 409)
-    session_id = str(request.data.get("session_id") or "")
-    session = next(
-        (s for s in doc.sessions.all() if str(s.id) == session_id), None
-    )
-    if session is None:
-        return _error("session_id must be one of the document's sessions")
+    if doc.status not in (Document.Status.DRAFT, Document.Status.PENDING):
+        return _error("fields can only be placed on a draft or pending document", 409)
+    # Drafts have no sessions yet (#89): fields are assigned to a
+    # signer slot (position in the draft's signer list) and linked to
+    # the session for that slot at send time. Sent documents keep
+    # the session assignment from before.
+    session = None
+    signer_index = 0
+    if doc.status == Document.Status.DRAFT:
+        raw_index = request.data.get("signer_index")
+        if isinstance(raw_index, bool) or not isinstance(raw_index, int):
+            return _error("signer_index must be an integer")
+        if raw_index < 0 or raw_index >= len(doc.signer_list):
+            return _error("signer_index is out of range for this draft")
+        signer_index = raw_index
+    else:
+        session_id = str(request.data.get("session_id") or "")
+        session = next(
+            (s for s in doc.sessions.all() if str(s.id) == session_id), None
+        )
+        if session is None:
+            return _error("session_id must be one of the document's sessions")
+        signer_index = session.order
     field_type = (request.data.get("type") or "").strip()
     if field_type not in DocumentField.Type.values:
         return _error(
@@ -450,6 +726,7 @@ def document_fields(request, doc_id):
     field = DocumentField.objects.create(
         document=doc,
         session=session,
+        signer_index=signer_index,
         field_type=field_type,
         page=page,
         x=x,
@@ -462,14 +739,14 @@ def document_fields(request, doc_id):
 
 
 @api_view(["PATCH", "DELETE"])
-@permission_classes([IsAuthenticated])
+@authentication_classes([OptionalTokenAuthentication])
 def document_field_detail(request, doc_id, field_id):
-    doc, err = _owner_document(request, doc_id)
+    doc, err = _field_document(request, doc_id)
     if err is not None:
         return err
     field = get_object_or_404(DocumentField, pk=field_id, document=doc)
-    if doc.status != Document.Status.PENDING:
-        return _error("fields can only change on a pending document", 409)
+    if doc.status not in (Document.Status.DRAFT, Document.Status.PENDING):
+        return _error("fields can only change on a draft or pending document", 409)
     if request.method == "DELETE":
         if field.is_completed:
             return _error("a completed field cannot be deleted", 409)
@@ -497,10 +774,10 @@ def document_field_detail(request, doc_id, field_id):
 
 
 @api_view(["GET"])
-@permission_classes([IsAuthenticated])
+@authentication_classes([OptionalTokenAuthentication])
 def document_page_png(request, doc_id, page):
-    """One rendered page for the placement UI (owner only)."""
-    doc, err = _owner_document(request, doc_id)
+    """One rendered page for the placement UI (owner or draft-token holder)."""
+    doc, err = _field_document(request, doc_id)
     if err is not None:
         return err
     png = _render_page_png(doc, page)
@@ -531,11 +808,6 @@ def create_session(request, doc_id):
     doc = get_object_or_404(Document, pk=doc_id)
     if doc.status != Document.Status.PENDING:
         return _error("document is no longer pending signature", 409)
-    try:
-        check_can_create_session(doc)
-    except LimitExceeded as exc:
-        return _error(str(exc), 409)
-
     # Email-first delivery: the signer is always emailed their
     # signing link and the document, so a session cannot exist
     # without an address to send it to.
@@ -545,6 +817,11 @@ def create_session(request, doc_id):
             "signer_email is required — the signer is emailed their "
             "signing link and the document to sign"
         )
+    try:
+        check_can_create_session(doc, signer_email)
+    except LimitExceeded as exc:
+        return _error(str(exc), 409)
+
     session = SigningSession.objects.create(
         document=doc,
         signer_name=(request.data.get("signer_name") or "").strip(),

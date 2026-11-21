@@ -1,4 +1,5 @@
-"""Expire stale signing sessions (free-tier 30-day rule, scope §3.6).
+"""Expire stale signing sessions (free-tier 30-day rule, scope §3.6)
+and delete abandoned drafts (#89).
 
 Sessions already refuse signatures past expiry (410 at request time), but
 without this their rows sit in PENDING forever. Run nightly, e.g.:
@@ -7,8 +8,10 @@ without this their rows sit in PENDING forever. Run nightly, e.g.:
 
 Documents older than 30 days whose sessions are all settled are flagged
 EXPIRED too. Files are NOT deleted — storage enforcement is a Phase 4
-concern. Expiry is operational, not ceremonial, so no audit events are
-recorded (the hash chain covers the signing ceremony itself).
+concern. Drafts are the exception: a draft older than 30 days is
+removed entirely, files included — a draft was never sent, so there
+is nothing to keep. Expiry is operational, not ceremonial, so no audit
+events are recorded (the hash chain covers the signing ceremony itself).
 """
 
 from datetime import timedelta
@@ -20,7 +23,10 @@ from apps.signing.models import Document, SigningSession
 
 
 class Command(BaseCommand):
-    help = "Mark expired signing sessions (and stale pending documents) as expired."
+    help = (
+        "Mark expired signing sessions (and stale pending documents) "
+        "as expired; delete drafts older than 30 days."
+    )
 
     def handle(self, *args, **options):
         now = timezone.now()
@@ -40,4 +46,19 @@ class Command(BaseCommand):
         )
         n_docs = stale_docs.update(status=Document.Status.EXPIRED)
 
-        self.stdout.write(f"expired {n_sessions} session(s), {n_docs} document(s)")
+        stale_drafts = Document.objects.filter(
+            status=Document.Status.DRAFT, created_at__lt=cutoff
+        )
+        n_drafts = 0
+        for draft in stale_drafts:
+            if draft.original_file:
+                draft.original_file.delete(save=False)
+            if draft.signed_file:
+                draft.signed_file.delete(save=False)
+            draft.delete()
+            n_drafts += 1
+
+        self.stdout.write(
+            f"expired {n_sessions} session(s), {n_docs} document(s), "
+            f"deleted {n_drafts} draft(s)"
+        )

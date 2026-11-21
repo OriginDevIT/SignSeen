@@ -23,6 +23,7 @@ def default_session_expiry():
 
 class Document(models.Model):
     class Status(models.TextChoices):
+        DRAFT = "draft", "Draft"
         PENDING = "pending", "Pending"
         SIGNED = "signed", "Signed"
         EXPIRED = "expired", "Expired"
@@ -66,8 +67,21 @@ class Document(models.Model):
     # Set at send time, premium senders only; default off, and
     # documents sent before this shipped keep the optional behaviour.
     photo_required = models.BooleanField(default=False)
+    # Draft flow (#89): step 1 creates the document as a draft — no
+    # sessions, no emails — and the sender refines it (signers, fields)
+    # before review + send. The draft token is the anonymous sender's
+    # credential: possession authorizes draft edits (fields, PATCH,
+    # send, discard) without an account. It is returned once, at
+    # creation, and never appears in list payloads.
+    draft_token = models.CharField(
+        max_length=64, unique=True, default=generate_token
+    )
+    # The step-1 signer list, in signing order: [{"name": str,
+    # "email": str}]. Sessions are created from it at send time, so
+    # the draft carries the signers before any session exists.
+    signer_list = models.JSONField(default=list, blank=True)
     status = models.CharField(
-        max_length=16, choices=Status.choices, default=Status.PENDING
+        max_length=16, choices=Status.choices, default=Status.DRAFT
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -172,9 +186,21 @@ class DocumentField(models.Model):
     document = models.ForeignKey(
         Document, related_name="fields", on_delete=models.CASCADE
     )
+    # The session this field belongs to once the document is sent.
+    # Null while the document is a draft: fields are assigned to a
+    # signer slot (signer_index) first, and linked to the session
+    # created for that slot at send time.
     session = models.ForeignKey(
-        SigningSession, related_name="fields", on_delete=models.CASCADE
+        SigningSession,
+        related_name="fields",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
     )
+    # Position in the draft's signer list (0-based). The assignment
+    # the sender chose at placement time; send links the field to the
+    # session created for this slot.
+    signer_index = models.PositiveIntegerField(default=0)
     field_type = models.CharField(max_length=16, choices=Type.choices)
     page = models.PositiveIntegerField()  # 1-based
     x = models.FloatField()

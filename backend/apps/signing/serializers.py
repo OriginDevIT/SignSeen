@@ -30,6 +30,7 @@ class DocumentFieldSerializer(serializers.ModelSerializer):
             "id",
             "document",
             "session",
+            "signer_index",
             "type",
             "page",
             "x",
@@ -51,6 +52,12 @@ def build_signing_url(token: str) -> str:
 class DocumentSerializer(serializers.ModelSerializer):
     sessions = SessionSummarySerializer(many=True, read_only=True)
     signing_url = serializers.SerializerMethodField()
+    # The draft token (#89) is a credential: it is exposed only when
+    # the view sets show_draft_token in the serializer context (draft
+    # creation, or a detail read by the owner / token holder). List
+    # payloads never carry it, and the key is dropped entirely when
+    # the value is None.
+    draft_token = serializers.SerializerMethodField()
 
     class Meta:
         model = Document
@@ -65,12 +72,25 @@ class DocumentSerializer(serializers.ModelSerializer):
             "signed_file",
             "signing_mode",
             "photo_required",
+            "signer_list",
+            "draft_token",
             "sessions",
             "signing_url",
             "created_at",
             "updated_at",
         ]
         read_only_fields = fields
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if data.get("draft_token") is None:
+            data.pop("draft_token", None)
+        return data
+
+    def get_draft_token(self, obj) -> str | None:
+        if self.context.get("show_draft_token"):
+            return obj.draft_token
+        return None
 
     def get_signing_url(self, obj) -> str | None:
         """The active session's signing URL — for the document's owner only.
