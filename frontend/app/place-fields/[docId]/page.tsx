@@ -90,12 +90,18 @@ export default function PlaceFieldsPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   // True when this visit is step 2 of the send wizard
   // (/place-fields/<id>?draft=1): exits lead back to the wizard,
-  // never to a blank form.
-  const [inWizard] = useState(
-    () =>
-      typeof window !== "undefined" &&
+  // never to a blank form. Read after mount only: the query string
+  // does not exist on the server, so reading it during render makes
+  // the server render the non-wizard exits while the client renders
+  // the wizard exits, which fails hydration (#91) — the same
+  // read-during-render fault as HomeHeader.
+  const [inWizard, setInWizard] = useState(false);
+
+  useEffect(() => {
+    setInWizard(
       new URLSearchParams(window.location.search).get("draft") === "1"
-  );
+    );
+  }, []);
   // The anonymous sender's draft credential (#89), keyed by draft id.
   const draftToken = getDraftToken(docId);
 

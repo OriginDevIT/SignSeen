@@ -1,16 +1,20 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { getAuthToken } from "../lib/api";
 
 /** Landing-page header (#89): Log in / Create account for visitors,
- * Dashboard for a signed-in sender. The stored token decides the
- * first render (no flash of the wrong links); a stale token just
- * lands on the login redirect from the dashboard. */
+ * Dashboard for a signed-in sender. The token is read after mount
+ * only: reading it during render makes the server render the logged-out
+ * links while the client renders Dashboard, which fails hydration
+ * (#91). The first render always shows the logged-out links; a
+ * signed-in sender sees Dashboard appear after mount. */
 export default function HomeHeader() {
-  const [signedIn] = useState(
-    () => typeof window !== "undefined" && getAuthToken() !== null
-  );
+  const [signedIn, setSignedIn] = useState(false);
+
+  useEffect(() => {
+    setSignedIn(getAuthToken() !== null);
+  }, []);
 
   return (
     <header
