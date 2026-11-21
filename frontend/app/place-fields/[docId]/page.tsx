@@ -88,6 +88,9 @@ export default function PlaceFieldsPage() {
   const [error, setError] = useState("");
   const [loadError, setLoadError] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  // Placed-fields list (#97): collapsed by default so a long list
+  // does not push the page down; the count stays visible on the toggle.
+  const [fieldsExpanded, setFieldsExpanded] = useState(false);
   // True when this visit is step 2 of the send wizard
   // (/place-fields/<id>?draft=1): exits lead back to the wizard,
   // never to a blank form. Read after mount only: the query string
@@ -757,15 +760,29 @@ export default function PlaceFieldsPage() {
       </div>
 
       <h2 style={{ fontSize: "1.15rem", marginTop: "1.5rem" }}>
-        Placed fields ({fields.length})
+        <button
+          type="button"
+          aria-expanded={fieldsExpanded}
+          onClick={() => setFieldsExpanded((v) => !v)}
+          style={{
+            all: "unset",
+            cursor: "pointer",
+            display: "inline-flex",
+            gap: "0.5rem",
+            alignItems: "center",
+          }}
+        >
+          {fieldsExpanded ? "▾" : "▸"} Placed fields ({fields.length})
+        </button>
       </h2>
-      {fields.length === 0 ? (
-        <p style={{ opacity: 0.65 }}>
-          No fields yet — drag on the page to draw a box, or click to place
-          a default-size one.
-        </p>
-      ) : (
-        <div style={{ display: "grid", gap: "0.5rem" }}>
+      {fieldsExpanded &&
+        (fields.length === 0 ? (
+          <p style={{ opacity: 0.65 }}>
+            No fields yet — drag on the page to draw a box, or click to place
+            a default-size one.
+          </p>
+        ) : (
+          <div style={{ display: "grid", gap: "0.5rem" }}>
           {fields.map((f) => (
             <div
               key={f.id}
@@ -810,7 +827,7 @@ export default function PlaceFieldsPage() {
             </div>
           ))}
         </div>
-      )}
+        ))}
       {isDraft || inWizard ? (
         <p style={{ marginTop: "1.5rem", display: "flex", gap: "1rem", flexWrap: "wrap" }}>
           <a href={`/send?draft=${docId}&step=1`}>← Back to details</a>

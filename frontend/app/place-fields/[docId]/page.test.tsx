@@ -469,7 +469,9 @@ describe("PlaceFieldsPage draft mode (#89)", () => {
     const box = await screen.findByTestId("field-box");
     expect(box.textContent).toContain("S2");
     expect(box.title).toContain("Bob");
-    // The placed-fields list names the same signer.
+    // The placed-fields list names the same signer (expand it first:
+    // it is collapsed by default, #97).
+    fireEvent.click(screen.getByRole("button", { name: /Placed fields/ }));
     expect(screen.getAllByText(/Signer 2 — Bob/).length).toBeGreaterThan(0);
   });
 
@@ -480,5 +482,74 @@ describe("PlaceFieldsPage draft mode (#89)", () => {
     const next = screen.getByRole("link", { name: "Continue to review →" });
     expect(next.getAttribute("href")).toBe("/send?draft=doc-1&step=3");
     expect(screen.queryByText("← Back to send")).toBeNull();
+  });
+});
+
+describe("PlaceFieldsPage placed-fields list (#97)", () => {
+  beforeEach(() => {
+    vi.stubGlobal("URL", { ...URL, revokeObjectURL: vi.fn() });
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    vi.clearAllMocks();
+  });
+
+  it("is collapsed by default: the toggle shows the count and the rows are hidden", async () => {
+    await renderLoaded([DRAWN_FIELD]);
+
+    const toggle = screen.getByRole("button", {
+      name: /Placed fields \(1\)/,
+    });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.queryByText("Delete")).toBeNull();
+    // The row's coordinates are the list-only text (the signer label
+    // also appears in the toolbar select).
+    expect(screen.queryByText(/page 1 · \(0\.10, 0\.20\)/)).toBeNull();
+  });
+
+  it("expanding reveals the rows with working per-row Delete buttons", async () => {
+    await renderLoaded([DRAWN_FIELD]);
+
+    const toggle = screen.getByRole("button", {
+      name: /Placed fields \(1\)/,
+    });
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+
+    const del = await screen.findByText("Delete");
+    fireEvent.click(del);
+    await waitFor(() =>
+      expect(vi.mocked(deleteDocumentField)).toHaveBeenCalledWith(
+        "doc-1",
+        "f1",
+        null
+      )
+    );
+  });
+
+  it("collapsing again hides the rows", async () => {
+    await renderLoaded([DRAWN_FIELD]);
+
+    const toggle = screen.getByRole("button", {
+      name: /Placed fields \(1\)/,
+    });
+    fireEvent.click(toggle);
+    await screen.findByText("Delete");
+    fireEvent.click(toggle);
+    await waitFor(() => expect(screen.queryByText("Delete")).toBeNull());
+  });
+
+  it("an empty list still shows the count and expands to the hint", async () => {
+    await renderLoaded();
+
+    const toggle = screen.getByRole("button", {
+      name: /Placed fields \(0\)/,
+    });
+    expect(screen.queryByText(/No fields yet/)).toBeNull();
+    fireEvent.click(toggle);
+    await screen.findByText(/No fields yet/);
   });
 });
