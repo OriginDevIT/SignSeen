@@ -101,6 +101,47 @@ describe("PhotoStep", () => {
     expect(submit.disabled).toBe(true);
   });
 
+  it("blocks submit when a photo is attached and consent is unchecked", () => {
+    renderStep({
+      photoUrl: "data:image/jpeg;base64,fakephoto",
+      photoConsent: false,
+    });
+    const submit = screen.getByRole("button", {
+      name: "Seal it — submit",
+    }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+    expect(
+      screen.getByText(/Check the consent box above to submit with your photo/)
+    ).toBeTruthy();
+  });
+
+  it("re-enables submit when consent is checked again after a photo is attached", () => {
+    const { rerender } = renderStep({
+      photoUrl: "data:image/jpeg;base64,fakephoto",
+      photoConsent: false,
+    });
+    const submit = screen.getByRole("button", {
+      name: "Seal it — submit",
+    }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(true);
+    rerender(
+      <PhotoStep
+        photoUrl="data:image/jpeg;base64,fakephoto"
+        photoConsent={true}
+        onConsentChange={vi.fn()}
+        cameraOpen={false}
+        onTakePhoto={vi.fn()}
+        onCapturePhoto={vi.fn()}
+        onCloseCamera={vi.fn()}
+        signingUrl={SIGNING_URL}
+        fieldsComplete={true}
+        onSubmit={vi.fn()}
+        submitStyle={{}}
+      />
+    );
+    expect(submit.disabled).toBe(false);
+  });
+
   it("disables Take photo until consent", () => {
     renderStep({ photoConsent: false });
     const take = screen.getByRole("button", {
