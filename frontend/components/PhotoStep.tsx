@@ -15,6 +15,8 @@ interface PhotoStepProps {
   onTakePhoto: () => void;
   /** A photo was captured or picked; feeds the existing photo flow. */
   onCapturePhoto: (dataUrl: string) => void;
+  /** Remove the attached photo; returns the step to its no-photo state. */
+  onRemovePhoto: () => void;
   /** Close the in-app camera without capturing. */
   onCloseCamera: () => void;
   /** The signing link, for the camera's continue-on-your-phone QR. */
@@ -51,7 +53,8 @@ const ghostBtn: React.CSSProperties = {
  * only, and no camera means no photo — a failed camera shows a QR
  * code for the same signing link so the signer can continue on their
  * phone. Skipping is available only while the photo is optional
- * (`photoRequired` false).
+ * (`photoRequired` false). An attached photo can be removed, which
+ * returns the step to its no-photo state.
  */
 export default function PhotoStep({
   photoUrl,
@@ -60,6 +63,7 @@ export default function PhotoStep({
   cameraOpen,
   onTakePhoto,
   onCapturePhoto,
+  onRemovePhoto,
   onCloseCamera,
   signingUrl,
   photoRequired = false,
@@ -173,6 +177,11 @@ export default function PhotoStep({
         >
           {photoUrl ? "Retake" : "Take photo"}
         </button>
+        {photoUrl && (
+          <button onClick={onRemovePhoto} style={{ ...ghostBtn }}>
+            Remove photo
+          </button>
+        )}
         <button
           onClick={onSubmit}
           disabled={submitBlocked}

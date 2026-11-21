@@ -16,6 +16,7 @@ function renderStep(props: Partial<PhotoStepProps> = {}) {
       cameraOpen={false}
       onTakePhoto={vi.fn()}
       onCapturePhoto={vi.fn()}
+      onRemovePhoto={vi.fn()}
       onCloseCamera={vi.fn()}
       signingUrl={SIGNING_URL}
       fieldsComplete={true}
@@ -113,6 +114,35 @@ describe("PhotoStep", () => {
     renderStep({ photoConsent: true, onTakePhoto });
     fireEvent.click(screen.getByRole("button", { name: "Take photo" }));
     expect(onTakePhoto).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows a Remove photo button only once a photo is attached", () => {
+    const { rerender } = renderStep();
+    expect(
+      screen.queryByRole("button", { name: "Remove photo" })
+    ).toBeNull();
+
+    const onRemovePhoto = vi.fn();
+    rerender(
+      <PhotoStep
+        photoUrl="data:image/jpeg;base64,fakephoto"
+        photoConsent={true}
+        onConsentChange={vi.fn()}
+        cameraOpen={false}
+        onTakePhoto={vi.fn()}
+        onCapturePhoto={vi.fn()}
+        onRemovePhoto={onRemovePhoto}
+        onCloseCamera={vi.fn()}
+        signingUrl={SIGNING_URL}
+        fieldsComplete={true}
+        onSubmit={vi.fn()}
+        submitStyle={{}}
+      />
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Remove photo" }));
+    expect(onRemovePhoto).toHaveBeenCalledTimes(1);
+    // Retake stays available alongside Remove.
+    expect(screen.getByRole("button", { name: "Retake" })).toBeTruthy();
   });
 
   it("opens the in-app camera when Take photo is tapped", async () => {
