@@ -577,6 +577,7 @@ export function mediaUrl(path: string | null): string | null {
 export interface AccountInfo {
   id: string;
   email: string;
+  name: string;
   tier: "free" | "premium";
   is_premium: boolean;
   alerts_enabled: boolean;
@@ -590,14 +591,18 @@ interface AuthResult {
 
 export async function signup(
   email: string,
-  password: string
+  password: string,
+  name?: string
 ): Promise<AuthResult> {
+  const body: Record<string, string> = { email, password };
+  // Name is optional: omitted when blank so older flows are untouched.
+  if (name && name.trim()) body.name = name.trim();
   const result = await req<AuthResult>(
     "/api/auth/signup/",
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify(body),
     },
     { auth: false }
   );
@@ -699,6 +704,15 @@ export function setAlertsEnabled(enabled: boolean): Promise<AccountInfo> {
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ alerts_enabled: enabled }),
+  });
+}
+
+/** Update the account's personal name. An empty name clears it. */
+export function updateAccountName(name: string): Promise<AccountInfo> {
+  return req<AccountInfo>("/api/auth/me/", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
   });
 }
 

@@ -37,6 +37,7 @@ const button: React.CSSProperties = {
 export default function SignupPage() {
   const router = useRouter();
   const [email, setEmail] = useState("");
+  const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -54,7 +55,7 @@ export default function SignupPage() {
     setError("");
     setBusy(true);
     try {
-      await signup(email.trim(), password);
+      await signup(email.trim(), password, name);
       router.push("/dashboard");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Signup failed");
@@ -78,6 +79,15 @@ export default function SignupPage() {
           placeholder="Email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
+          style={input}
+        />
+        <input
+          type="text"
+          placeholder="Name (optional)"
+          autoComplete="name"
+          maxLength={120}
+          value={name}
+          onChange={(e) => setName(e.target.value)}
           style={input}
         />
         <input

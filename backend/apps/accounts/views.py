@@ -49,11 +49,23 @@ def _account_payload(account: Account) -> dict:
     return {
         "id": str(account.id),
         "email": account.email,
+        "name": account.name,
         "tier": account.tier,
         "is_premium": account.is_premium,
         "alerts_enabled": account.alerts_enabled,
         "billing_status": account.billing_status,
     }
+
+
+def _clean_name(value) -> str | None:
+    """A submitted account name, stripped, or None when it is not a
+    usable string. Rejects overlong values rather than truncating."""
+    if not isinstance(value, str):
+        return None
+    name = value.strip()
+    if len(name) > 120:
+        return None
+    return name
 
 
 @api_view(["POST"])
@@ -66,9 +78,15 @@ def signup(request):
         return _error("a valid email is required")
     if len(password) < 10:
         return _error("password must be at least 10 characters")
+    name = ""
+    if "name" in request.data:
+        cleaned = _clean_name(request.data.get("name"))
+        if cleaned is None:
+            return _error("name must be at most 120 characters")
+        name = cleaned
     if Account.objects.filter(email=email).exists():
         return _error("an account with this email already exists", 409)
-    account = Account.objects.create_user(email=email, password=password)
+    account = Account.objects.create_user(email=email, password=password, name=name)
     _claim_documents(account)
     token, _ = Token.objects.get_or_create(user=account)
     return Response(
@@ -179,7 +197,12 @@ def google_login(request):
         return _error("invalid google credential", 401)
     account = Account.objects.filter(email=identity["email"]).first()
     if account is None:
-        account = Account.objects.create_user(email=identity["email"])
+        # A verified Google name seeds the account; an overlong one is
+        # dropped rather than stored truncated.
+        google_name = _clean_name(identity.get("name"))
+        account = Account.objects.create_user(
+            email=identity["email"], name=google_name or ""
+        )
     _claim_documents(account)
     token, _ = Token.objects.get_or_create(user=account)
     return Response({"token": token.key, "account": _account_payload(account)})
@@ -196,12 +219,23 @@ def logout(request):
 @permission_classes([IsAuthenticated])
 def me(request):
     if request.method == "PATCH":
-        # The one self-service setting: signing alerts opt-out/in.
+        # Self-service settings: signing alerts opt-out/in, and the
+        # account name. Only the fields present are changed; an empty
+        # name clears the stored name.
+        update_fields = []
         if "alerts_enabled" in request.data:
             if not isinstance(request.data["alerts_enabled"], bool):
                 return _error("alerts_enabled must be a boolean")
             request.user.alerts_enabled = request.data["alerts_enabled"]
-            request.user.save(update_fields=["alerts_enabled"])
+            update_fields.append("alerts_enabled")
+        if "name" in request.data:
+            cleaned = _clean_name(request.data.get("name"))
+            if cleaned is None:
+                return _error("name must be at most 120 characters")
+            request.user.name = cleaned
+            update_fields.append("name")
+        if update_fields:
+            request.user.save(update_fields=update_fields)
     return Response(_account_payload(request.user))
 
 

@@ -210,6 +210,62 @@ def test_branding_patch_rejects_invalid_color():
     assert account.brand_color == ""
 
 @pytest.mark.django_db
+def test_signup_accepts_optional_name_and_returns_it():
+    client = APIClient()
+    response = client.post(
+        "/api/auth/signup/",
+        {"email": "a@example.com", "password": "longpassword1", "name": " Ada "},
+        format="json",
+    )
+    assert response.status_code == 201
+    assert response.json()["account"]["name"] == "Ada"
+    assert Account.objects.get(email="a@example.com").name == "Ada"
+
+
+@pytest.mark.django_db
+def test_signup_without_name_defaults_to_blank_and_rejects_overlong_name():
+    client = APIClient()
+    assert signup(client).json()["account"]["name"] == ""
+    assert Account.objects.get(email="a@example.com").name == ""
+    long_name = client.post(
+        "/api/auth/signup/",
+        {
+            "email": "b@example.com",
+            "password": "longpassword1",
+            "name": "x" * 121,
+        },
+        format="json",
+    )
+    assert long_name.status_code == 400
+    assert not Account.objects.filter(email="b@example.com").exists()
+
+
+@pytest.mark.django_db
+def test_me_patch_updates_and_clears_name():
+    client = APIClient()
+    token = signup(client).json()["token"]
+    client.credentials(HTTP_AUTHORIZATION=f"Token {token}")
+
+    assert client.get("/api/auth/me/").json()["name"] == ""
+
+    patched = client.patch("/api/auth/me/", {"name": " Ada "}, format="json")
+    assert patched.status_code == 200
+    assert patched.json()["name"] == "Ada"
+    assert client.get("/api/auth/me/").json()["name"] == "Ada"
+
+    cleared = client.patch("/api/auth/me/", {"name": ""}, format="json")
+    assert cleared.status_code == 200
+    assert cleared.json()["name"] == ""
+
+    assert client.patch("/api/auth/me/", {"name": 42}, format="json").status_code == 400
+    overlong = client.patch(
+        "/api/auth/me/", {"name": "x" * 121}, format="json"
+    )
+    assert overlong.status_code == 400
+    assert client.get("/api/auth/me/").json()["name"] == ""
+
+
+@pytest.mark.django_db
 def test_me_includes_alerts_enabled_and_patch_toggles_it():
     client = APIClient()
     token = signup(client).json()["token"]
@@ -264,6 +320,19 @@ def test_google_login_creates_account_with_working_token(settings, monkeypatch):
 
 
 @pytest.mark.django_db
+def test_google_login_seeds_name_for_new_account(settings, monkeypatch):
+    settings.GOOGLE_OAUTH_CLIENT_ID = "client-123"
+    _stub_google(monkeypatch)
+    client = APIClient()
+    response = client.post(
+        "/api/auth/google/", {"id_token": "fake-token"}, format="json"
+    )
+    assert response.status_code == 200
+    assert response.json()["account"]["name"] == "G User"
+    assert Account.objects.get(email="g@example.com").name == "G User"
+
+
+@pytest.mark.django_db
 def test_google_login_links_existing_password_account(settings, monkeypatch):
     settings.GOOGLE_OAUTH_CLIENT_ID = "client-123"
     client = APIClient()
@@ -281,6 +350,23 @@ def test_google_login_links_existing_password_account(settings, monkeypatch):
         {"email": "a@example.com", "password": "longpassword1"},
         format="json",
     ).status_code == 200
+
+
+@pytest.mark.django_db
+def test_google_login_keeps_existing_account_name(settings, monkeypatch):
+    settings.GOOGLE_OAUTH_CLIENT_ID = "client-123"
+    client = APIClient()
+    client.post(
+        "/api/auth/signup/",
+        {"email": "a@example.com", "password": "longpassword1", "name": "Ada"},
+        format="json",
+    )
+    _stub_google(monkeypatch, email="a@example.com", name="G User")
+    response = client.post(
+        "/api/auth/google/", {"id_token": "fake-token"}, format="json"
+    )
+    assert response.status_code == 200
+    assert response.json()["account"]["name"] == "Ada"
 
 
 @pytest.mark.django_db
