@@ -114,6 +114,30 @@ export default function TrackDocumentPage({
           </div>
         </div>
       )}
+      <p
+        style={{
+          display: "flex",
+          gap: "1rem",
+          alignItems: "center",
+          flexWrap: "wrap",
+          margin: 0,
+        }}
+      >
+        <a href="/dashboard">View in dashboard</a>
+        <a
+          href="/send"
+          style={{
+            padding: "0.6rem 0.9rem",
+            borderRadius: 8,
+            border: "1px solid #d1d5db",
+            background: "#fff",
+            color: "inherit",
+            textDecoration: "none",
+          }}
+        >
+          Send another document
+        </a>
+      </p>
     </main>
   );
 }
