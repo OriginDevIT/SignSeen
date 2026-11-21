@@ -93,7 +93,7 @@ npm test
   before Send and the invite (link + document) after it; a refresh
   mid-flow resumes the draft. Also: a draft shows in the dashboard
   marked as a draft, continues back into the wizard, and can be
-  discarded there.
+  deleted there (with confirmation).
 - `tests/helpers.ts` — shared send/seal flows, Mailpit polling, and
   `recordGalleryDoc`, which appends a sealed document to the review
   manifest.

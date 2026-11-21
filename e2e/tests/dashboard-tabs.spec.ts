@@ -75,7 +75,7 @@ test("dashboard tabs: sent document shows in In Progress with download and delet
   expect(await download.getAttribute("href")).toContain("/media/originals/");
   expect(await download.getAttribute("download")).toBeTruthy();
   // The signing link stays available on the pending row.
-  await expect(row.getByText(/Copy signing link|Show QR code/)).toBeVisible();
+  await expect(row.getByRole("button", { name: "Copy signing link" })).toBeVisible();
 
   await row.getByRole("button", { name: "Delete" }).click();
   await expect(row.getByText(/Delete this document\?/)).toBeVisible();
