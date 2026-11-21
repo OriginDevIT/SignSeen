@@ -1,5 +1,41 @@
+import importlib
+
 import pytest
 from rest_framework.test import APIClient
+
+
+def _reload_settings():
+    import config.settings as app_settings
+
+    importlib.reload(app_settings)
+    return app_settings
+
+
+def test_empty_from_email_env_falls_back_to_default(monkeypatch):
+    # The compose files pass DEFAULT_FROM_EMAIL through with an empty
+    # default, and os.environ.get only falls back when the variable is
+    # absent — so a present-but-empty value wiped the default and every
+    # invite was rejected with an invalid from-address (#98).
+    monkeypatch.setenv("DEFAULT_FROM_EMAIL", "")
+    app_settings = _reload_settings()
+    try:
+        assert (
+            app_settings.DEFAULT_FROM_EMAIL
+            == "SignSeen <hello@getsignseen.com>"
+        )
+    finally:
+        monkeypatch.delenv("DEFAULT_FROM_EMAIL", raising=False)
+        _reload_settings()
+
+
+def test_explicit_from_email_env_is_honored(monkeypatch):
+    monkeypatch.setenv("DEFAULT_FROM_EMAIL", "Example <hello@example.com>")
+    app_settings = _reload_settings()
+    try:
+        assert app_settings.DEFAULT_FROM_EMAIL == "Example <hello@example.com>"
+    finally:
+        monkeypatch.delenv("DEFAULT_FROM_EMAIL", raising=False)
+        _reload_settings()
 
 
 @pytest.mark.django_db
