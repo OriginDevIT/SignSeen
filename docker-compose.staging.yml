@@ -27,18 +27,31 @@ services:
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
       PREMIUM_STORAGE_BYTES: ${PREMIUM_STORAGE_BYTES:-}
       # Transactional email (same gap: the .env.staging.example values
-      # were documented but not wired through).
-      EMAIL_BACKEND: ${EMAIL_BACKEND:-django.core.mail.backends.console.EmailBackend}
-      EMAIL_HOST: ${EMAIL_HOST:-}
-      EMAIL_PORT: ${EMAIL_PORT:-587}
+      # were documented but not wired through). Staging defaults to
+      # Mailpit (the mailpit service below): all mail is captured on
+      # the box and viewable at http://<server-ip>:8025, nothing
+      # leaves the box. Set EMAIL_BACKEND/EMAIL_HOST in .env.staging
+      # to use a real SMTP account instead.
+      EMAIL_BACKEND: ${EMAIL_BACKEND:-django.core.mail.backends.smtp.EmailBackend}
+      EMAIL_HOST: ${EMAIL_HOST:-mailpit}
+      EMAIL_PORT: ${EMAIL_PORT:-1025}
       EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}
       EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
-      EMAIL_USE_TLS: ${EMAIL_USE_TLS:-1}
+      EMAIL_USE_TLS: ${EMAIL_USE_TLS:-0}
       DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-}
       GOOGLE_OAUTH_CLIENT_ID: ${GOOGLE_OAUTH_CLIENT_ID:-}
     volumes:
       - ./backend:/app
       - media:/app/media
+    restart: unless-stopped
+
+  # Mail capture for staging: SMTP on 1025, web UI on 8025. Same
+  # image and wiring as the e2e test stack (docker-compose.test.yml).
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "8025:8025"
+      - "1025:1025"
     restart: unless-stopped
 
   web:

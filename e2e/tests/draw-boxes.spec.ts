@@ -1,6 +1,5 @@
 import { test, expect, request } from "@playwright/test";
 import { samplePdf, runId, drawSignature } from "./fixtures";
-import { documentIdForToken } from "./helpers";
 
 const API_URL = process.env.E2E_API_URL ?? "http://localhost:8000";
 
@@ -25,22 +24,26 @@ test("draw a box, seal it, and verify the sealed document", async ({
   await page.getByRole("button", { name: "Log in" }).click();
   await expect(page.getByText("Your documents")).toBeVisible();
 
-  // --- Create the document ---------------------------------------------
+  // --- Create the draft ------------------------------------------------
+  // Fields are placed on the draft (#89) before sending: step 1
+  // creates the draft, step 2 is the place-fields page in draft mode.
   await page.goto("/send");
   await page
     .getByPlaceholder("e.g. Contractor Agreement")
     .fill(title);
   await page.getByPlaceholder("jane@example.com").fill(signerEmail);
   await page.locator('input[type="file"]').setInputFiles(samplePdf());
-  await page.getByRole("button", { name: "Create signing link" }).click();
-  await expect(page.getByText("Ready to sign")).toBeVisible();
-  const signingUrl = (await page.locator("code").first().innerText()).trim();
-  expect(signingUrl).toContain("/s/");
-  const token = signingUrl.split("/s/")[1].split(/[?#]/)[0];
-  const docId = await documentIdForToken(token);
+  await page.getByRole("button", { name: "Create draft" }).click();
+  await expect(page.getByText(/Step 2 of 3/)).toBeVisible();
+  const draftId = new URL(page.url()).searchParams.get("draft");
+  expect(draftId).toBeTruthy();
+  const docId = draftId!;
 
-  // --- Drag a box on the place-fields page ------------------------------
-  await page.goto(`/place-fields/${docId}`);
+  // --- Drag a box on the place-fields page (draft mode) -----------------
+  await page.getByRole("link", { name: "Place fields" }).click();
+  await expect(
+    page.getByRole("heading", { name: /Place fields/ }),
+  ).toBeVisible();
   const img = page.getByAltText("Document page 1");
   await expect(img).toBeVisible();
   // The rendered page is taller than the viewport; scroll it into view
@@ -71,6 +74,16 @@ test("draw a box, seal it, and verify the sealed document", async ({
   expect(fb!.width / imgBox.width).toBeLessThan(0.33);
   expect(fb!.height / imgBox.height).toBeGreaterThan(0.13);
   expect(fb!.height / imgBox.height).toBeLessThan(0.18);
+
+  // --- Back through the wizard: review, then send ----------------------
+  await page.getByRole("link", { name: "Continue to review →" }).click();
+  await expect(page.getByText(/Step 3 of 3/)).toBeVisible();
+  await expect(page.getByText(/1 field/)).toBeVisible();
+  await page.getByRole("button", { name: "Send document" }).click();
+  await expect(page.getByText("Ready to sign")).toBeVisible();
+  const signingUrl = (await page.locator("code").first().innerText()).trim();
+  expect(signingUrl).toContain("/s/");
+  const token = signingUrl.split("/s/")[1].split(/[?#]/)[0];
 
   // --- Sign the drawn field, then seal ----------------------------------
   const signerCtx = await browser.newContext();

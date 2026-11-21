@@ -83,6 +83,13 @@ npm test
   signed-in sender sees "Loading…" while the session check settles,
   never the anonymous copy, and the photo checkbox is disabled until
   the check resolves; an anonymous sender settles on the anonymous copy.
+- `tests/send-flow.spec.ts` — the send-flow rework (#89): an anonymous
+  sender uploads (draft created, no sessions), places a field on the
+  draft, reviews, and sends; Mailpit holds nothing for the signer
+  before Send and the invite (link + document) after it; a refresh
+  mid-flow resumes the draft. Also: a draft shows in the dashboard
+  marked as a draft, continues back into the wizard, and can be
+  discarded there.
 - `tests/helpers.ts` — shared send/seal flows, Mailpit polling, and
   `recordGalleryDoc`, which appends a sealed document to the review
   manifest.

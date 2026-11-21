@@ -22,7 +22,13 @@ test("camera path: sign with a live-captured witness photo", async ({
   await page.getByPlaceholder("you@example.com").first().fill(senderEmail);
   await page.getByPlaceholder("jane@example.com").fill(`e2e-camera-signer-${id}@example.com`);
   await page.locator('input[type="file"]').setInputFiles(samplePdf());
-  await page.getByRole("button", { name: "Create signing link" }).click();
+  await page.getByRole("button", { name: "Create draft" }).click();
+  await expect(page.getByText(/Step 2 of 3/)).toBeVisible();
+  await page
+    .getByRole("button", { name: "Skip — no fields needed, continue to review" })
+    .click();
+  await expect(page.getByText(/Step 3 of 3/)).toBeVisible();
+  await page.getByRole("button", { name: "Send document" }).click();
   await expect(page.getByText("Ready to sign")).toBeVisible();
   const signingUrl = (await page.locator("code").first().innerText()).trim();
   expect(signingUrl).toContain("/s/");

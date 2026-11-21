@@ -5,6 +5,7 @@ import base64
 import hashlib
 import http.server
 import io
+import json
 import threading
 from datetime import timedelta
 
@@ -33,26 +34,62 @@ def make_pdf_bytes(text="Test document") -> bytes:
     return doc.tobytes()
 
 
-def upload_document(client, title="Contract", email="sender@example.com"):
+def upload_draft(client, title="Contract", email="sender@example.com", signers=None, photo_required=False):
+    """Step 1 (#89): create a draft. Returns the draft response."""
+    if signers is None:
+        signers = [{"name": "", "email": "jane@example.com"}]
     pdf = SimpleUploadedFile(
         "contract.pdf", make_pdf_bytes(), content_type="application/pdf"
     )
     return client.post(
         "/api/documents/",
-        {"title": title, "sender_email": email, "file": pdf},
+        {
+            "title": title,
+            "sender_email": email,
+            "file": pdf,
+            "signers": json.dumps(signers),
+            "photo_required": "true" if photo_required else "false",
+        },
         format="multipart",
     )
 
 
+def upload_document(client, title="Contract", email="sender@example.com", signers=None, photo_required=False):
+    """Upload a draft and send it (steps 1+3). Returns the SEND
+    response: {"document": {...}, "sessions": [...]}. If the draft
+    upload itself fails (e.g. storage cap), that response is returned
+    unchanged so the failure stays assertable."""
+    draft = upload_draft(client, title, email, signers, photo_required)
+    if draft.status_code != 201:
+        return draft
+    doc_id = draft.json()["id"]
+    # The send proves draft ownership with the draft token (anonymous
+    # senders have no account to match against).
+    return client.post(
+        f"/api/documents/{doc_id}/send/",
+        {},
+        format="json",
+        HTTP_X_DRAFT_TOKEN=draft.json()["draft_token"],
+    )
+
+
 @pytest.mark.django_db
-def test_upload_document_creates_pending_document():
+def test_upload_document_creates_draft():
+    # Step 1 (#89): the upload creates a draft — no sessions, no
+    # emails — and returns the draft token for anonymous senders.
+    from django.core import mail
+
     client = APIClient()
-    response = upload_document(client)
+    response = upload_draft(client)
     assert response.status_code == 201
     body = response.json()
-    assert body["status"] == "pending"
+    assert body["status"] == "draft"
     assert body["title"] == "Contract"
+    assert body["draft_token"]
+    assert body["signer_list"] == [{"name": "", "email": "jane@example.com"}]
     assert Document.objects.count() == 1
+    assert SigningSession.objects.count() == 0
+    assert mail.outbox == []
 
 
 @pytest.mark.django_db
@@ -61,7 +98,12 @@ def test_upload_rejects_non_pdf():
     fake = SimpleUploadedFile("evil.txt", b"not a pdf", content_type="text/plain")
     response = client.post(
         "/api/documents/",
-        {"title": "X", "sender_email": "s@example.com", "file": fake},
+        {
+            "title": "X",
+            "sender_email": "s@example.com",
+            "file": fake,
+            "signers": json.dumps([{"name": "", "email": "jane@example.com"}]),
+        },
         format="multipart",
     )
     assert response.status_code == 400
@@ -78,11 +120,15 @@ def test_upload_requires_title_and_email():
 
 @pytest.mark.django_db
 def test_create_session_returns_token_and_signing_url():
+    # create_session now adds a further signer to an already-sent
+    # document (#89); on a free document the second signer must be
+    # the sender.
     client = APIClient()
-    doc_id = upload_document(client).json()["id"]
+    sent = upload_document(client).json()
+    doc_id = sent["document"]["id"]
     response = client.post(
         f"/api/documents/{doc_id}/sessions/",
-        {"signer_name": "Jane", "signer_email": "jane@example.com"},
+        {"signer_name": "Sender", "signer_email": "sender@example.com"},
         format="json",
     )
     assert response.status_code == 201
@@ -102,7 +148,7 @@ def test_create_session_requires_signer_email():
     from django.core import mail
 
     client = APIClient()
-    doc_id = upload_document(client).json()["id"]
+    doc_id = upload_document(client).json()["document"]["id"]
     assert (
         client.post(
             f"/api/documents/{doc_id}/sessions/",
@@ -119,7 +165,9 @@ def test_create_session_requires_signer_email():
         ).status_code
         == 400
     )
-    assert SigningSession.objects.count() == 0
+    # The document already has its one send-created session; the
+    # rejected attempts added no further sessions.
+    assert SigningSession.objects.count() == 1
 
 
 @pytest.mark.django_db
@@ -130,15 +178,9 @@ def test_signer_invite_attaches_unsigned_pdf():
     from django.core import mail
 
     client = APIClient()
-    doc_id = upload_document(client).json()["id"]
-    assert (
-        client.post(
-            f"/api/documents/{doc_id}/sessions/",
-            {"signer_name": "Jane", "signer_email": "jane@example.com"},
-            format="json",
-        ).status_code
-        == 201
-    )
+    # The send step (step 3) is what creates the session and the
+    # invite; the draft upload alone sends nothing.
+    doc_id = upload_document(client).json()["document"]["id"]
     invites = [m for m in mail.outbox if m.subject.startswith("Please sign:")]
     assert len(invites) == 1
     invite = invites[0]
@@ -153,10 +195,9 @@ def test_signer_invite_attaches_unsigned_pdf():
 @pytest.mark.django_db
 def test_full_ceremony_signs_seals_and_verifies():
     client = APIClient()
-    doc_id = upload_document(client).json()["id"]
-    token = client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Jane", "signer_email": "jane@example.com"}, format="json"
-    ).json()["token"]
+    sent = upload_document(client).json()
+    doc_id = sent["document"]["id"]
+    token = sent["sessions"][0]["token"]
 
     response = client.post(
         f"/api/sessions/{token}/sign/",
@@ -193,14 +234,12 @@ def test_full_ceremony_signs_seals_and_verifies():
 
 
 def _seal_document(client, signer_name=None, signer_email="jane@example.com"):
-    """Upload, create a session, and sign it; return (doc_id, token, response)."""
-    doc_id = upload_document(client).json()["id"]
-    payload = {"signer_email": signer_email}
-    if signer_name is not None:
-        payload["signer_name"] = signer_name
-    token = client.post(
-        f"/api/documents/{doc_id}/sessions/", payload, format="json"
-    ).json()["token"]
+    """Upload, send, and sign; return (doc_id, token, response)."""
+    sent = upload_document(
+        client, signers=[{"name": signer_name or "", "email": signer_email}]
+    ).json()
+    doc_id = sent["document"]["id"]
+    token = sent["sessions"][0]["token"]
     response = client.post(
         f"/api/sessions/{token}/sign/",
         {"signature": SIG_DATA_URL, "device_info": {}},
@@ -297,10 +336,9 @@ def test_signer_lines_fallback_is_plain_dash():
 @pytest.mark.django_db
 def test_double_sign_is_rejected():
     client = APIClient()
-    doc_id = upload_document(client).json()["id"]
-    token = client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_email": "jane@example.com"}, format="json"
-    ).json()["token"]
+    sent = upload_document(client).json()
+    doc_id = sent["document"]["id"]
+    token = sent["sessions"][0]["token"]
     payload = {"signature": SIG_DATA_URL}
     assert client.post(f"/api/sessions/{token}/sign/", payload, format="json").status_code == 200
     second = client.post(f"/api/sessions/{token}/sign/", payload, format="json")
@@ -310,10 +348,9 @@ def test_double_sign_is_rejected():
 @pytest.mark.django_db
 def test_expired_session_cannot_sign():
     client = APIClient()
-    doc_id = upload_document(client).json()["id"]
-    token = client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_email": "jane@example.com"}, format="json"
-    ).json()["token"]
+    sent = upload_document(client).json()
+    doc_id = sent["document"]["id"]
+    token = sent["sessions"][0]["token"]
     session = SigningSession.objects.get(token=token)
     session.expires_at = timezone.now() - timedelta(seconds=1)
     session.save()
@@ -327,10 +364,9 @@ def test_expired_session_cannot_sign():
 @pytest.mark.django_db
 def test_tampered_chain_is_detected():
     client = APIClient()
-    doc_id = upload_document(client).json()["id"]
-    token = client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_email": "jane@example.com"}, format="json"
-    ).json()["token"]
+    sent = upload_document(client).json()
+    doc_id = sent["document"]["id"]
+    token = sent["sessions"][0]["token"]
     client.post(
         f"/api/sessions/{token}/sign/", {"signature": SIG_DATA_URL}, format="json"
     )
@@ -351,10 +387,9 @@ def test_tampered_chain_is_detected():
 @pytest.mark.django_db
 def test_sign_requires_a_signature_image():
     client = APIClient()
-    doc_id = upload_document(client).json()["id"]
-    token = client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_email": "jane@example.com"}, format="json"
-    ).json()["token"]
+    sent = upload_document(client).json()
+    doc_id = sent["document"]["id"]
+    token = sent["sessions"][0]["token"]
     response = client.post(f"/api/sessions/{token}/sign/", {}, format="json")
     assert response.status_code == 400
 
@@ -365,10 +400,9 @@ def test_sign_captures_signer_email():
     # payload can still correct it (e.g. the invite went to a stale
     # address) and the corrected address is what the session keeps.
     client = APIClient()
-    doc_id = upload_document(client).json()["id"]
-    token = client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_email": "old@example.com"}, format="json"
-    ).json()["token"]
+    sent = upload_document(client, signers=[{"name": "", "email": "old@example.com"}]).json()
+    doc_id = sent["document"]["id"]
+    token = sent["sessions"][0]["token"]
     response = client.post(
         f"/api/sessions/{token}/sign/",
         {"signature": SIG_DATA_URL, "signer_email": "jane@example.com"},
@@ -382,10 +416,9 @@ def test_sign_captures_signer_email():
 @pytest.mark.django_db
 def test_session_document_serves_pdf_to_token_holder():
     client = APIClient()
-    doc_id = upload_document(client).json()["id"]
-    token = client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_email": "jane@example.com"}, format="json"
-    ).json()["token"]
+    sent = upload_document(client).json()
+    doc_id = sent["document"]["id"]
+    token = sent["sessions"][0]["token"]
     response = client.get(f"/api/sessions/{token}/document/")
     assert response.status_code == 200
     assert response["Content-Type"] == "application/pdf"
@@ -412,7 +445,12 @@ def test_docx_upload_converts_to_pdf():
     )
     response = client.post(
         "/api/documents/",
-        {"title": "Agreement", "sender_email": "s@example.com", "file": upload},
+        {
+            "title": "Agreement",
+            "sender_email": "s@example.com",
+            "file": upload,
+            "signers": json.dumps([{"name": "", "email": "jane@example.com"}]),
+        },
         format="multipart",
     )
     assert response.status_code == 201
@@ -431,7 +469,12 @@ def test_upload_rejects_unsupported_extension():
     upload = SimpleUploadedFile("notes.txt", b"hello", content_type="text/plain")
     response = client.post(
         "/api/documents/",
-        {"title": "X", "sender_email": "s@example.com", "file": upload},
+        {
+            "title": "X",
+            "sender_email": "s@example.com",
+            "file": upload,
+            "signers": json.dumps([{"name": "", "email": "jane@example.com"}]),
+        },
         format="multipart",
     )
     assert response.status_code == 400
@@ -470,6 +513,7 @@ def test_from_url_renders_page_to_pdf():
                 "title": "ToS",
                 "sender_email": "s@example.com",
                 "url": f"http://127.0.0.1:{port}/terms",
+                "signers": [{"name": "", "email": "jane@example.com"}],
             },
             format="json",
         )
@@ -491,7 +535,12 @@ def test_from_url_rejects_bad_scheme():
     client = APIClient()
     response = client.post(
         "/api/documents/from-url/",
-        {"title": "X", "sender_email": "s@example.com", "url": "ftp://example.com/x"},
+        {
+            "title": "X",
+            "sender_email": "s@example.com",
+            "url": "ftp://example.com/x",
+            "signers": [{"name": "", "email": "jane@example.com"}],
+        },
         format="json",
     )
     assert response.status_code == 400
@@ -585,10 +634,9 @@ def test_normalize_photo_applies_exif_orientation():
 
 
 def _sign_with_photo(client, photo_bytes, consent=True, device_info=None):
-    doc_id = upload_document(client).json()["id"]
-    token = client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Jane", "signer_email": "jane@example.com"}, format="json"
-    ).json()["token"]
+    sent = upload_document(client).json()
+    doc_id = sent["document"]["id"]
+    token = sent["sessions"][0]["token"]
     payload = {
         "signature": SIG_DATA_URL,
         "photo": "data:image/jpeg;base64,"
@@ -663,6 +711,7 @@ def _upload_with_flag(client, photo_required, email="sender@example.com"):
             "sender_email": email,
             "file": pdf,
             "photo_required": "true" if photo_required else "false",
+            "signers": json.dumps([{"name": "", "email": "jane@example.com"}]),
         },
         format="multipart",
     )
@@ -671,12 +720,9 @@ def _upload_with_flag(client, photo_required, email="sender@example.com"):
 def _photo_required_doc(client, email="sender@example.com"):
     """Premium document with the flag on + its first session."""
     doc_id = _upload_with_photo_flag(client, email)
-    token = client.post(
-        f"/api/documents/{doc_id}/sessions/",
-        {"signer_name": "Jane", "signer_email": "jane@example.com"},
-        format="json",
-    ).json()["token"]
-    return doc_id, token
+    sent = client.post(f"/api/documents/{doc_id}/send/", {}, format="json")
+    assert sent.status_code == 201, sent.json()
+    return doc_id, sent.json()["sessions"][0]["token"]
 
 
 def _upload_with_photo_flag(client, email):
@@ -751,6 +797,7 @@ def test_photo_required_set_on_url_intake():
                 "sender_email": "premium@example.com",
                 "url": f"http://127.0.0.1:{port}/terms",
                 "photo_required": True,
+                "signers": [{"name": "", "email": "jane@example.com"}],
             },
             format="json",
         )
@@ -765,14 +812,10 @@ def test_photo_required_defaults_off_and_session_exposes_it():
     client = APIClient()
     response = upload_document(client)
     assert response.status_code == 201
-    assert response.json()["photo_required"] is False
+    assert response.json()["document"]["photo_required"] is False
 
-    doc_id = response.json()["id"]
-    token = client.post(
-        f"/api/documents/{doc_id}/sessions/",
-        {"signer_name": "Jane", "signer_email": "jane@example.com"},
-        format="json",
-    ).json()["token"]
+    doc_id = response.json()["document"]["id"]
+    token = response.json()["sessions"][0]["token"]
     session = client.get(f"/api/sessions/{token}/").json()
     assert session["photo_required"] is False
     assert session["sender_email"] == "sender@example.com"
@@ -800,12 +843,9 @@ def test_submit_without_photo_rejected_when_required():
 @pytest.mark.django_db
 def test_submit_without_photo_ok_when_optional():
     client = APIClient()
-    doc_id = upload_document(client).json()["id"]
-    token = client.post(
-        f"/api/documents/{doc_id}/sessions/",
-        {"signer_name": "Jane", "signer_email": "jane@example.com"},
-        format="json",
-    ).json()["token"]
+    sent = upload_document(client).json()
+    doc_id = sent["document"]["id"]
+    token = sent["sessions"][0]["token"]
     assert _submit(token, client, with_photo=False).status_code == 200
     assert Document.objects.get(pk=doc_id).status == "signed"
 
@@ -815,19 +855,18 @@ def test_photo_required_applies_to_every_signer():
     premium = _auth_client(
         _make_account(email="premium@example.com", tier=Account.Tier.PREMIUM)
     )
-    doc_id = _upload_with_photo_flag(premium, "premium@example.com")
-    tokens = []
-    for name, email in (
-        ("Signer One", "signer.one@example.com"),
-        ("Signer Two", "signer.two@example.com"),
-    ):
-        tokens.append(
-            premium.post(
-                f"/api/documents/{doc_id}/sessions/",
-                {"signer_name": name, "signer_email": email},
-                format="json",
-            ).json()["token"]
-        )
+    # A premium draft with two signers; the send creates both sessions.
+    sent = upload_document(
+        premium,
+        email="premium@example.com",
+        signers=[
+            {"name": "Signer One", "email": "signer.one@example.com"},
+            {"name": "Signer Two", "email": "signer.two@example.com"},
+        ],
+        photo_required=True,
+    ).json()
+    doc_id = sent["document"]["id"]
+    tokens = [s["token"] for s in sent["sessions"]]
 
     for token in tokens:
         assert _submit(token, premium, with_photo=False).status_code == 400
@@ -838,10 +877,9 @@ def test_photo_required_applies_to_every_signer():
 @pytest.mark.django_db
 def test_sealed_pdf_carries_free_tier_watermark():
     client = APIClient()
-    doc_id = upload_document(client).json()["id"]
-    token = client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "J", "signer_email": "jane@example.com"}, format="json"
-    ).json()["token"]
+    sent = upload_document(client).json()
+    doc_id = sent["document"]["id"]
+    token = sent["sessions"][0]["token"]
     response = client.post(
         f"/api/sessions/{token}/sign/",
         {"signature": SIG_DATA_URL, "device_info": {}},
@@ -861,14 +899,10 @@ def test_e2e_sealed_page_renders_only_with_fixtures_enabled():
     test-stack flag is on; 404 when it is off, when the doc is
     unsealed, and when the page is out of range."""
     client = APIClient()
-    doc_id = upload_document(client).json()["id"]
-    # Session creation requires a signer email since the email-first
-    # send change (#58); this test predates it (landed in #59).
-    token = client.post(
-        f"/api/documents/{doc_id}/sessions/",
-        {"signer_name": "J", "signer_email": "jane@example.com"},
-        format="json",
-    ).json()["token"]
+    sent = upload_document(client).json()
+    doc_id = sent["document"]["id"]
+    # The send creates the session; no separate session call needed.
+    token = sent["sessions"][0]["token"]
     url = f"/api/e2e/sealed/{doc_id}/page/1.png"
     # Unsealed: 404 even with the flag on.
     with override_settings(ENABLE_E2E_FIXTURES=True):
@@ -895,14 +929,21 @@ def test_cleanup_expired_marks_stale_sessions():
     from django.core.management import call_command
 
     client = APIClient()
-    stale_doc_id = upload_document(client, email="old@example.com").json()["id"]
-    stale_token = client.post(
-        f"/api/documents/{stale_doc_id}/sessions/", {"signer_name": "Old", "signer_email": "old@example.com"}, format="json"
-    ).json()["token"]
-    fresh_doc_id = upload_document(client, title="Fresh", email="new@example.com").json()["id"]
-    fresh_token = client.post(
-        f"/api/documents/{fresh_doc_id}/sessions/", {"signer_name": "New", "signer_email": "new@example.com"}, format="json"
-    ).json()["token"]
+    stale_sent = upload_document(
+        client,
+        email="old@example.com",
+        signers=[{"name": "Old", "email": "old@example.com"}],
+    ).json()
+    stale_doc_id = stale_sent["document"]["id"]
+    stale_token = stale_sent["sessions"][0]["token"]
+    fresh_sent = upload_document(
+        client,
+        title="Fresh",
+        email="new@example.com",
+        signers=[{"name": "New", "email": "new@example.com"}],
+    ).json()
+    fresh_doc_id = fresh_sent["document"]["id"]
+    fresh_token = fresh_sent["sessions"][0]["token"]
     stale = SigningSession.objects.get(token=stale_token)
     stale.expires_at = timezone.now() - timedelta(seconds=1)
     stale.save(update_fields=["expires_at"])
@@ -949,20 +990,39 @@ def _auth_client(account):
 
 @pytest.mark.django_db
 def test_free_tier_allows_only_one_pending_document():
+    # Drafts never count toward the limit (#89): two drafts upload
+    # fine. The limit is enforced at send time — the second send is
+    # rejected while the first document is still pending.
     client = APIClient()
-    assert upload_document(client).status_code == 201
-    second = upload_document(client, title="Second")
-    assert second.status_code == 409
-    assert "1 document pending" in second.json()["error"]
+    first = upload_draft(client)
+    assert first.status_code == 201
+    second = upload_draft(client, title="Second")
+    assert second.status_code == 201
+    assert (
+        client.post(
+            f"/api/documents/{first.json()['id']}/send/",
+            {},
+            format="json",
+            HTTP_X_DRAFT_TOKEN=first.json()["draft_token"],
+        ).status_code
+        == 201
+    )
+    send2 = client.post(
+        f"/api/documents/{second.json()['id']}/send/",
+        {},
+        format="json",
+        HTTP_X_DRAFT_TOKEN=second.json()["draft_token"],
+    )
+    assert send2.status_code == 409
+    assert "1 document pending" in send2.json()["error"]
 
 
 @pytest.mark.django_db
 def test_signed_document_frees_the_pending_slot():
     client = APIClient()
-    doc_id = upload_document(client).json()["id"]
-    token = client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "J", "signer_email": "jane@example.com"}, format="json"
-    ).json()["token"]
+    sent = upload_document(client).json()
+    doc_id = sent["document"]["id"]
+    token = sent["sessions"][0]["token"]
     assert client.post(
         f"/api/sessions/{token}/sign/",
         {"signature": SIG_DATA_URL, "device_info": {}},
@@ -975,12 +1035,22 @@ def test_signed_document_frees_the_pending_slot():
 def test_account_documents_get_owner_and_share_the_limit():
     account = _make_account()
     client = _auth_client(account)
-    doc_id = upload_document(client, email=account.email).json()["id"]
+    doc_id = upload_document(client, email=account.email).json()["document"]["id"]
     assert Document.objects.get(pk=doc_id).owner == account
-    # The account's pending doc blocks a second one, even anonymously
-    # addressed to the same email (identity = account when logged in;
-    # anonymous path counts by email and sees the same pending doc).
-    assert upload_document(client, email=account.email).status_code == 409
+    # The account's pending doc blocks a second send, even for a
+    # draft uploaded anonymously and addressed to the same email
+    # (identity = account when logged in; the anonymous path counts
+    # by email and sees the same pending doc).
+    anon = APIClient()
+    second = upload_draft(anon, email=account.email)
+    assert second.status_code == 201
+    send2 = anon.post(
+        f"/api/documents/{second.json()['id']}/send/",
+        {},
+        format="json",
+        HTTP_X_DRAFT_TOKEN=second.json()["draft_token"],
+    )
+    assert send2.status_code == 409
 
 
 @pytest.mark.django_db
@@ -1002,15 +1072,23 @@ def test_free_storage_cap_is_enforced():
 
 @pytest.mark.django_db
 def test_second_signing_session_is_rejected():
+    # A free document's second session is the sender only (#89):
+    # anyone else is rejected, and a third session is too.
     client = APIClient()
-    doc_id = upload_document(client).json()["id"]
-    assert client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "One", "signer_email": "one@example.com"}, format="json"
-    ).status_code == 201
-    second = client.post(
+    sent = upload_document(client).json()
+    doc_id = sent["document"]["id"]
+    other = client.post(
         f"/api/documents/{doc_id}/sessions/", {"signer_name": "Two", "signer_email": "two@example.com"}, format="json"
     )
-    assert second.status_code == 409
+    assert other.status_code == 409
+    sender = client.post(
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Sender", "signer_email": "sender@example.com"}, format="json"
+    )
+    assert sender.status_code == 201
+    third = client.post(
+        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Three", "signer_email": "three@example.com"}, format="json"
+    )
+    assert third.status_code == 409
 
 
 @pytest.mark.django_db
@@ -1018,7 +1096,7 @@ def test_my_documents_requires_auth_and_reports_usage():
     account = _make_account()
     client = _auth_client(account)
     assert APIClient().get("/api/documents/mine/").status_code == 401
-    doc_id = upload_document(client, email=account.email).json()["id"]
+    doc_id = upload_document(client, email=account.email).json()["document"]["id"]
     body = client.get("/api/documents/mine/").json()
     assert body["tier"] == "free"
     assert [d["id"] for d in body["documents"]] == [doc_id]
@@ -1027,9 +1105,7 @@ def test_my_documents_requires_auth_and_reports_usage():
 
 
 def _sign_and_get_pdf_text(client, doc_id):
-    token = client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "J", "signer_email": "jane@example.com"}, format="json"
-    ).json()["token"]
+    token = SigningSession.objects.get(document_id=doc_id).token
     assert client.post(
         f"/api/sessions/{token}/sign/",
         {"signature": SIG_DATA_URL, "device_info": {}},
@@ -1043,16 +1119,15 @@ def _sign_and_get_pdf_text(client, doc_id):
 def test_free_document_is_watermarked_premium_is_not():
     # Free (anonymous): watermark present.
     anon = APIClient()
-    free_doc_id = upload_document(anon).json()["id"]
+    free_doc_id = upload_document(anon).json()["document"]["id"]
     _, _ = _sign_and_get_pdf_text(anon, free_doc_id)
 
     # Premium (account): no watermark anywhere in the sealed PDF.
     account = _make_account(email="pro2@example.com", tier=Account.Tier.PREMIUM)
     client = _auth_client(account)
-    pro_doc_id = upload_document(client, email=account.email).json()["id"]
-    token = client.post(
-        f"/api/documents/{pro_doc_id}/sessions/", {"signer_name": "J", "signer_email": "jane@example.com"}, format="json"
-    ).json()["token"]
+    sent = upload_document(client, email=account.email).json()
+    pro_doc_id = sent["document"]["id"]
+    token = sent["sessions"][0]["token"]
     assert client.post(
         f"/api/sessions/{token}/sign/",
         {"signature": SIG_DATA_URL, "device_info": {}},
@@ -1070,10 +1145,9 @@ def test_sealed_email_goes_to_sender_and_signer():
     from django.core import mail
 
     client = APIClient()
-    doc_id = upload_document(client, email="sender@example.com").json()["id"]
-    token = client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "J", "signer_email": "jane@example.com"}, format="json"
-    ).json()["token"]
+    sent = upload_document(client, email="sender@example.com").json()
+    doc_id = sent["document"]["id"]
+    token = sent["sessions"][0]["token"]
     assert client.post(
         f"/api/sessions/{token}/sign/",
         {
@@ -1098,22 +1172,34 @@ def test_pending_limit_is_keyed_on_email_across_account_and_anonymous():
     # Anonymous send holds the email's single pending slot...
     anon = APIClient()
     assert upload_document(anon, email="same@example.com").status_code == 201
-    # ...so the same email, now logged in, is still blocked.
+    # ...so the same email, now logged in, is still blocked at send
+    # time (a draft still uploads fine).
     account = _make_account(email="same@example.com")
     authed = _auth_client(account)
-    assert upload_document(authed, email="same@example.com").status_code == 409
+    second = upload_draft(authed, email="same@example.com")
+    assert second.status_code == 201
+    send2 = authed.post(f"/api/documents/{second.json()['id']}/send/", {}, format="json")
+    assert send2.status_code == 409
     # And the reverse: an account's pending doc blocks anonymous use of it.
     account2 = _make_account(email="other@example.com")
     authed2 = _auth_client(account2)
     assert upload_document(authed2, email="other@example.com").status_code == 201
-    assert upload_document(anon, email="other@example.com").status_code == 409
+    anon_second = upload_draft(anon, email="other@example.com")
+    assert anon_second.status_code == 201
+    send3 = anon.post(
+        f"/api/documents/{anon_second.json()['id']}/send/",
+        {},
+        format="json",
+        HTTP_X_DRAFT_TOKEN=anon_second.json()["draft_token"],
+    )
+    assert send3.status_code == 409
 
 
 @pytest.mark.django_db
 def test_login_claims_previously_anonymous_documents():
     # Sent anonymously (ownerless, keyed by email only)...
     anon = APIClient()
-    doc_id = upload_document(anon, email="claim@example.com").json()["id"]
+    doc_id = upload_document(anon, email="claim@example.com").json()["document"]["id"]
     assert Document.objects.get(pk=doc_id).owner is None
     # ...then the sender creates an account with the same email: the
     # document is claimed and appears on their dashboard.
@@ -1133,10 +1219,9 @@ def test_login_claims_previously_anonymous_documents():
 def test_signer_archive_shows_documents_they_signed():
     # Someone else sends; our signer signs and leaves their email.
     sender = APIClient()
-    doc_id = upload_document(sender, email="sender2@example.com").json()["id"]
-    token = sender.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Sig", "signer_email": "sig@example.com"}, format="json"
-    ).json()["token"]
+    sent = upload_document(sender, email="sender2@example.com", signers=[{"name": "Sig", "email": "sig@example.com"}]).json()
+    doc_id = sent["document"]["id"]
+    token = sent["sessions"][0]["token"]
     assert sender.post(
         f"/api/sessions/{token}/sign/",
         {
@@ -1182,10 +1267,9 @@ def _stale_client():
 @pytest.mark.django_db
 def test_signer_endpoints_ignore_stale_sender_token():
     anon = APIClient()
-    doc_id = upload_document(anon).json()["id"]
-    token = anon.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Jane", "signer_email": "jane@example.com"}, format="json"
-    ).json()["token"]
+    sent = upload_document(anon).json()
+    doc_id = sent["document"]["id"]
+    token = sent["sessions"][0]["token"]
 
     stale = _stale_client()
     session = stale.get(f"/api/sessions/{token}/")
@@ -1211,7 +1295,7 @@ def test_signer_endpoints_ignore_stale_sender_token():
 @pytest.mark.django_db
 def test_public_document_view_ignores_stale_sender_token():
     anon = APIClient()
-    doc_id = upload_document(anon).json()["id"]
+    doc_id = upload_document(anon).json()["document"]["id"]
     response = _stale_client().get(f"/api/documents/{doc_id}/")
     assert response.status_code == 200
     assert response.json()["id"] == doc_id
@@ -1222,14 +1306,10 @@ def test_anonymous_upload_with_stale_token_degrades_to_anonymous():
     stale = _stale_client()
     response = upload_document(stale)
     assert response.status_code == 201
-    assert Document.objects.get(pk=response.json()["id"]).owner is None
-    # Session creation on that document works the same way.
-    session = stale.post(
-        f"/api/documents/{response.json()['id']}/sessions/",
-        {"signer_name": "Jane", "signer_email": "jane@example.com"},
-        format="json",
-    )
-    assert session.status_code == 201
+    assert Document.objects.get(pk=response.json()["document"]["id"]).owner is None
+    # The send created the session on that document the same way.
+    assert len(response.json()["sessions"]) == 1
+    assert response.json()["sessions"][0]["signer_email"] == "jane@example.com"
 
 
 # ---------------------------------------------------------------------------
@@ -1240,10 +1320,9 @@ def test_anonymous_upload_with_stale_token_degrades_to_anonymous():
 
 
 def _sign_document(client, email="sender@example.com"):
-    doc_id = upload_document(client, email=email).json()["id"]
-    token = client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Jane", "signer_email": "jane@example.com"}, format="json"
-    ).json()["token"]
+    sent = upload_document(client, email=email).json()
+    doc_id = sent["document"]["id"]
+    token = sent["sessions"][0]["token"]
     assert client.post(
         f"/api/sessions/{token}/sign/",
         {"signature": SIG_DATA_URL, "device_info": {}},
@@ -1299,10 +1378,9 @@ def test_signer_email_at_completion_sends_copy_and_links_archive():
 @pytest.mark.django_db
 def test_signer_email_rejected_before_signing_and_when_invalid():
     client = APIClient()
-    doc_id = upload_document(client).json()["id"]
-    token = client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Jane", "signer_email": "jane@example.com"}, format="json"
-    ).json()["token"]
+    sent = upload_document(client).json()
+    doc_id = sent["document"]["id"]
+    token = sent["sessions"][0]["token"]
     pending = client.post(
         f"/api/sessions/{token}/signer-email/",
         {"email": "jane@example.com"},
@@ -1342,10 +1420,9 @@ def _branded_account(email="branded@example.com"):
 def test_session_payload_exposes_owner_branding():
     account = _branded_account()
     client = _auth_client(account)
-    doc_id = upload_document(client, email=account.email).json()["id"]
-    token = client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Jane", "signer_email": "jane@example.com"}, format="json"
-    ).json()["token"]
+    sent = upload_document(client, email=account.email).json()
+    doc_id = sent["document"]["id"]
+    token = sent["sessions"][0]["token"]
     body = APIClient().get(f"/api/sessions/{token}/").json()
     assert body["branding"] == {"name": "Acme Legal", "color": "#123abc", "logo": None}
 
@@ -1353,20 +1430,18 @@ def test_session_payload_exposes_owner_branding():
 @pytest.mark.django_db
 def test_session_payload_branding_empty_for_anonymous_and_unbranded():
     anon = APIClient()
-    doc_id = upload_document(anon).json()["id"]
-    token = anon.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Jane", "signer_email": "jane@example.com"}, format="json"
-    ).json()["token"]
+    sent = upload_document(anon).json()
+    doc_id = sent["document"]["id"]
+    token = sent["sessions"][0]["token"]
     body = APIClient().get(f"/api/sessions/{token}/").json()
     assert body["branding"] == {"name": "", "color": "", "logo": None}
 
     # An owned document whose account set no branding gets the same empties.
     account = _make_account(email="plain@example.com", tier=Account.Tier.PREMIUM)
     client = _auth_client(account)
-    doc_id = upload_document(client, email=account.email).json()["id"]
-    token = client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Jane", "signer_email": "jane@example.com"}, format="json"
-    ).json()["token"]
+    sent = upload_document(client, email=account.email).json()
+    doc_id = sent["document"]["id"]
+    token = sent["sessions"][0]["token"]
     body = APIClient().get(f"/api/sessions/{token}/").json()
     assert body["branding"] == {"name": "", "color": "", "logo": None}
 
@@ -1375,7 +1450,7 @@ def test_session_payload_branding_empty_for_anonymous_and_unbranded():
 def test_sealed_pdf_certificate_shows_brand_name():
     account = _branded_account(email="pdf-brand@example.com")
     client = _auth_client(account)
-    doc_id = upload_document(client, email=account.email).json()["id"]
+    doc_id = upload_document(client, email=account.email).json()["document"]["id"]
     text, _doc = _sign_and_get_pdf_text(client, doc_id)
     assert "via Acme Legal" in text
 
@@ -1387,10 +1462,9 @@ def test_sealed_email_opens_with_brand_name():
 
     account = _branded_account(email="mail-brand@example.com")
     client = _auth_client(account)
-    doc_id = upload_document(client, email=account.email).json()["id"]
-    token = client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "J", "signer_email": "jane@example.com"}, format="json"
-    ).json()["token"]
+    sent = upload_document(client, email=account.email).json()
+    doc_id = sent["document"]["id"]
+    token = sent["sessions"][0]["token"]
     assert client.post(
         f"/api/sessions/{token}/sign/",
         {"signature": SIG_DATA_URL, "device_info": {}},
@@ -1409,10 +1483,9 @@ def test_sealed_email_opens_with_brand_name():
 
 
 def _owned_session(account_client, email):
-    doc_id = upload_document(account_client, email=email).json()["id"]
-    token = account_client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Jane", "signer_email": "jane@example.com"}, format="json"
-    ).json()["token"]
+    sent = upload_document(account_client, email=email).json()
+    doc_id = sent["document"]["id"]
+    token = sent["sessions"][0]["token"]
     return doc_id, token
 
 
@@ -1508,11 +1581,8 @@ def test_expiry_alert_command_sends_stamps_and_does_not_resend():
 
 def _owned_doc_with_session(account):
     client = _auth_client(account)
-    doc_id = upload_document(client, email=account.email).json()["id"]
-    session = client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Jane", "signer_email": "jane@example.com"}, format="json"
-    ).json()
-    return client, doc_id, session
+    sent = upload_document(client, email=account.email).json()
+    return client, sent["document"]["id"], sent["sessions"][0]
 
 
 @pytest.mark.django_db
@@ -1528,10 +1598,10 @@ def test_dashboard_includes_signing_url_for_pending_owned_document():
 
 @pytest.mark.django_db
 def test_dashboard_signing_url_is_null_without_usable_session():
-    # No session yet.
+    # Draft: no session yet.
     account = _make_account(email="nosession@example.com")
     client = _auth_client(account)
-    upload_document(client, email=account.email)
+    upload_draft(client, email=account.email)
     (doc,) = client.get("/api/documents/mine/").json()["documents"]
     assert doc["signing_url"] is None
 
@@ -1594,19 +1664,13 @@ def _premium_multi_doc(names=("Signer One", "Signer Two", "Signer Three")):
         email="multi@example.com", tier=Account.Tier.PREMIUM
     )
     client = _auth_client(account)
-    doc_id = upload_document(client, email=account.email).json()["id"]
-    tokens = []
-    for name in names:
-        resp = client.post(
-            f"/api/documents/{doc_id}/sessions/",
-            {
-                "signer_name": name,
-                "signer_email": f"{name.lower().replace(' ', '.')}@example.com",
-            },
-            format="json",
-        )
-        assert resp.status_code == 201, resp.content
-        tokens.append(resp.json()["token"])
+    signers = [
+        {"name": name, "email": f"{name.lower().replace(' ', '.')}@example.com"}
+        for name in names
+    ]
+    sent = upload_document(client, email=account.email, signers=signers).json()
+    doc_id = sent["document"]["id"]
+    tokens = [s["token"] for s in sent["sessions"]]
     return client, doc_id, tokens
 
 
@@ -1634,16 +1698,14 @@ def test_premium_sessions_get_sequential_orders():
 
 @pytest.mark.django_db
 def test_free_account_document_still_rejects_second_session():
+    # A free account's document already has its send-created session;
+    # a second session for anyone but the sender is rejected.
     account = _make_account(email="free-acct@example.com")
     client = _auth_client(account)
-    doc_id = upload_document(client, email=account.email).json()["id"]
+    doc_id = upload_document(client, email=account.email).json()["document"]["id"]
     assert client.post(
         f"/api/documents/{doc_id}/sessions/", {"signer_name": "One", "signer_email": "one@example.com"}, format="json"
-    ).status_code == 201
-    second = client.post(
-        f"/api/documents/{doc_id}/sessions/", {"signer_name": "Two", "signer_email": "two@example.com"}, format="json"
-    )
-    assert second.status_code == 409
+    ).status_code == 409
 
 
 @pytest.mark.django_db
@@ -1757,14 +1819,33 @@ def make_multipage_pdf_bytes(pages=2) -> bytes:
     return doc.tobytes()
 
 
-def upload_mode_document(client, email, mode=None, pages=2):
+def upload_mode_document(client, email, mode=None, pages=2, signers=None):
+    """Upload a draft and send it (steps 1+3, #89). Returns the SEND
+    response; if the draft upload itself fails, that response is
+    returned unchanged so the failure stays assertable."""
     pdf = SimpleUploadedFile(
         "complex.pdf", make_multipage_pdf_bytes(pages), content_type="application/pdf"
     )
-    data = {"title": "Complex", "sender_email": email, "file": pdf}
+    if signers is None:
+        signers = [{"name": "", "email": "jane@example.com"}]
+    data = {
+        "title": "Complex",
+        "sender_email": email,
+        "file": pdf,
+        "signers": json.dumps(signers),
+    }
     if mode is not None:
         data["signing_mode"] = mode
-    return client.post("/api/documents/", data, format="multipart")
+    draft = client.post("/api/documents/", data, format="multipart")
+    if draft.status_code != 201:
+        return draft
+    doc_id = draft.json()["id"]
+    return client.post(
+        f"/api/documents/{doc_id}/send/",
+        {},
+        format="json",
+        HTTP_X_DRAFT_TOKEN=draft.json()["draft_token"],
+    )
 
 
 def _make_session(client, doc_id, name, email):
@@ -1827,22 +1908,33 @@ def _premium_fields_setup(mode="sequential"):
         email=f"fields-{mode}@example.com", tier=Account.Tier.PREMIUM
     )
     client = _auth_client(account)
-    resp = upload_mode_document(client, account.email, mode=mode)
+    signers = [
+        {"name": "Alice", "email": "alice@example.com"},
+        {"name": "Bob", "email": "bob@example.com"},
+    ]
+    resp = upload_mode_document(client, account.email, mode=mode, signers=signers)
     assert resp.status_code == 201, resp.content
-    doc_id = resp.json()["id"]
-    alice = _make_session(client, doc_id, "Alice", "alice@example.com")
-    bob = _make_session(client, doc_id, "Bob", "bob@example.com")
+    body = resp.json()
+    doc_id = body["document"]["id"]
+    alice, bob = body["sessions"]
     return client, doc_id, alice, bob
 
 
 @pytest.mark.django_db
 def test_signing_mode_defaults_sequential_and_validates():
-    client = APIClient()
-    ok = upload_mode_document(client, "mode-default@example.com")
+    # Premium: the default mode is sequential.
+    account = _make_account(email="mode-premium@example.com", tier=Account.Tier.PREMIUM)
+    premium = _auth_client(account)
+    ok = upload_mode_document(premium, account.email)
     assert ok.status_code == 201
-    assert ok.json()["signing_mode"] == "sequential"
-    bad = upload_mode_document(client, "mode-bad@example.com", mode="sideways")
+    assert ok.json()["document"]["signing_mode"] == "sequential"
+    bad = upload_mode_document(premium, account.email, mode="sideways")
     assert bad.status_code == 400
+    # Free senders are forced to parallel (#89).
+    anon = APIClient()
+    forced = upload_mode_document(anon, "mode-default@example.com")
+    assert forced.status_code == 201
+    assert forced.json()["document"]["signing_mode"] == "parallel"
 
 
 @pytest.mark.django_db

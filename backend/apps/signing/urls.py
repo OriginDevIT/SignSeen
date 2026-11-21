@@ -6,7 +6,16 @@ urlpatterns = [
     path("documents/", views.create_document, name="document-create"),
     path("documents/from-url/", views.create_document_from_url, name="document-from-url"),
     path("documents/mine/", views.my_documents, name="document-mine"),
-    path("documents/<uuid:doc_id>/", views.get_document, name="document-detail"),
+    path(
+        "documents/<uuid:doc_id>/",
+        views.document_detail,
+        name="document-detail",
+    ),
+    path(
+        "documents/<uuid:doc_id>/send/",
+        views.send_document,
+        name="document-send",
+    ),
     path(
         "documents/<uuid:doc_id>/sessions/",
         views.create_session,

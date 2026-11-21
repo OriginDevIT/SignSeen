@@ -42,7 +42,9 @@ test("bad file: a .txt upload is rejected with a clear error", async ({
     mimeType: "text/plain",
     buffer: Buffer.from("not a pdf"),
   });
-  await page.getByRole("button", { name: "Create signing link" }).click();
+  // Step 1 is where the upload is validated: a bad file is rejected
+  // at draft creation, before any field or send step.
+  await page.getByRole("button", { name: "Create draft" }).click();
   await expect(
     page.getByText("file must be a PDF, DOC, or DOCX"),
   ).toBeVisible();
@@ -117,7 +119,7 @@ test("second pending doc, anonymous: same sender email hits the free 409", async
     signerEmail: `e2e-signer-${id}@example.com`,
   }).catch(async () => {
     // createSigningLink expects "Ready to sign"; the 409 lands on the
-    // form instead, which is the assertion below.
+    // review page at Send instead, which is the assertion below.
   });
   await expect(
     page.getByText(/Free tier allows 1 document pending signature at a time/),
@@ -150,11 +152,20 @@ test("second pending doc, account: the limit is keyed on email, not account", as
   await page.getByPlaceholder("Password").fill(password);
   await page.getByRole("button", { name: "Log in" }).click();
   await expect(page.getByRole("heading", { name: "Your documents" })).toBeVisible();
+  // The limit is enforced at Send (#89), not at draft creation: the
+  // draft is created fine, and the 409 lands on the review page when
+  // Send is pressed.
   await page.goto("/send");
   await page.getByPlaceholder("e.g. Contractor Agreement").fill(`E2E Limit Acct ${id}`);
   await page.getByPlaceholder("jane@example.com").fill(`e2e-limit-acct-signer-${id}@example.com`);
   await page.locator('input[type="file"]').setInputFiles(samplePdf());
-  await page.getByRole("button", { name: "Create signing link" }).click();
+  await page.getByRole("button", { name: "Create draft" }).click();
+  await expect(page.getByText(/Step 2 of 3/)).toBeVisible();
+  await page
+    .getByRole("button", { name: "Skip — no fields needed, continue to review" })
+    .click();
+  await expect(page.getByText(/Step 3 of 3/)).toBeVisible();
+  await page.getByRole("button", { name: "Send document" }).click();
   await expect(
     page.getByText(/Free tier allows 1 document pending signature at a time/),
   ).toBeVisible();
@@ -175,7 +186,8 @@ test("second signing session on one document: API 409", async ({
     data: { signer_email: `e2e-second-2-${id}@example.com` },
   });
   expect(res.status()).toBe(409);
-  expect(await res.text()).toContain("This document already has a signing session.");
+  // A free document's second session is the sender only (#89).
+  expect(await res.text()).toContain("the second signer must be you");
 });
 
 test("regression: a stale sender token in localStorage must not break a signing link", async ({

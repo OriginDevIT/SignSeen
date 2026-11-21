@@ -75,6 +75,23 @@ Follow `docs/manual-test-script.md`, replacing `localhost` URLs with the
 staging hostname. Phone testing works with no LAN tricks — you're on a
 real domain.
 
+## Mail on staging (Mailpit)
+
+Staging never sends real email. The compose stack runs Mailpit: every
+message the app sends (signer invites, sealed copies, password resets)
+is captured on the box and viewable at
+`http://<staging-server-ip>:8025`. Mailpit keeps the 500 most recent
+messages by default.
+
+If the UI doesn't load, the GCP firewall is likely blocking port 8025:
+allow TCP 8025 to the staging VM in the GCP console (VPC network →
+Firewall), then retry. Port 1025 (SMTP) is internal to the compose
+network and needs no firewall rule.
+
+To use a real SMTP account on staging instead, set `EMAIL_BACKEND`,
+`EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`,
+and `EMAIL_USE_TLS` in `.env.staging` and redeploy.
+
 ## Caveats (staging, not prod)
 
 - **Ephemeral data**: uploads, signed PDFs, and the database live on the
