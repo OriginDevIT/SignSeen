@@ -162,8 +162,13 @@ EMAIL_PORT = _env_int("EMAIL_PORT", 587)
 EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
 EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
 EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "1") == "1"
-DEFAULT_FROM_EMAIL = os.environ.get(
-    "DEFAULT_FROM_EMAIL", "SignSeen <hello@getsignseen.com>"
+# A blank value must not wipe the default: the compose files pass this
+# variable through with an empty default, and os.environ.get only falls
+# back when the variable is absent — the same empty-string trap as
+# _env_int above. Without the fallback every invite is rejected with
+# an invalid from-address (#98).
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL") or (
+    "SignSeen <hello@getsignseen.com>"
 )
 
 # --- E2E fixtures -----------------------------------------------------------
