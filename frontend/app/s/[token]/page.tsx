@@ -9,7 +9,9 @@ import PhotoStep from "../../../components/PhotoStep";
 import {
   ApiError,
   collectDeviceInfo,
+  getDocument,
   getSession,
+  getSessionEvents,
   mediaUrl,
   setSignerEmail,
   sessionDocumentUrl,
@@ -209,6 +211,61 @@ export default function SignPage() {
         setStep("unavailable");
       });
   }, [token]);
+
+  // Cross-device completion: while the ceremony is open on this
+  // device, re-check the session — a signer who continued on their
+  // phone submits there, and this page should move to the done view
+  // instead of sitting on the signing form. Polls only while the
+  // ceremony is in an active step; the page's own submit flow is
+  // untouched. When the session turns signed, the done view is built
+  // from the same public endpoints the submit response draws on: the
+  // document (for the signed file) and the audit trail (for the seal
+  // — the sealed event's hash when the document is final, else the
+  // submitted event's hash, mirroring the submit response). A failed
+  // poll changes nothing; the next interval retries.
+  const POLL_INTERVAL_MS = 5000;
+  useEffect(() => {
+    if (step !== "intro" && step !== "sign" && step !== "photo") return;
+    let cancelled = false;
+    let inFlight = false;
+    const check = async () => {
+      if (cancelled || inFlight) return;
+      inFlight = true;
+      try {
+        const s = await getSession(token);
+        if (cancelled || s.status !== "signed") return;
+        const [doc, trail] = await Promise.all([
+          getDocument(s.document),
+          getSessionEvents(token),
+        ]);
+        if (cancelled) return;
+        const sealed = trail.events.find(
+          (e) => e.event_type === "document.sealed"
+        );
+        const submitted = trail.events.find(
+          (e) => e.event_type === "signature.submitted"
+        );
+        setSession(s);
+        setResult({
+          status: "signed",
+          document_final: s.document_status === "signed",
+          document: doc,
+          audit_seal: sealed?.hash ?? submitted?.hash ?? "",
+          chain_valid: trail.chain_valid,
+        });
+        setStep("done");
+      } catch {
+        // A failed poll changes nothing; the next interval retries.
+      } finally {
+        inFlight = false;
+      }
+    };
+    const id = setInterval(check, POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, [step, token]);
 
   const startSigning = () => setStep("sign");
 

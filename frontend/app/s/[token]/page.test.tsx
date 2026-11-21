@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 vi.mock("next/navigation", () => ({
   useParams: () => ({ token: "tok-1" }),
@@ -11,13 +11,15 @@ vi.mock("../../../lib/api", async (importOriginal) => {
   return {
     ...actual,
     getSession: vi.fn(),
+    getDocument: vi.fn(),
+    getSessionEvents: vi.fn(),
     sessionPageUrl: vi.fn((_token: string, page: number) => `/page-${page}.png`),
     sessionDocumentUrl: vi.fn(() => "/document.pdf"),
     mediaUrl: vi.fn((u: string | null) => u),
   };
 });
 
-import { getSession } from "../../../lib/api";
+import { getDocument, getSession, getSessionEvents } from "../../../lib/api";
 
 // The draw pads are canvas-based; jsdom has no 2d context, so the
 // stub stands in with a handle that reports ink and hands back a
@@ -320,5 +322,120 @@ describe("SignPage field modals (#84)", () => {
       expect(screen.queryByRole("dialog")).toBeNull()
     );
     await waitFor(() => expect(continueBtn.disabled).toBe(false));
+  });
+});
+
+describe("SignPage cross-device completion (#109)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+    vi.useRealTimers();
+  });
+
+  const DOC = {
+    id: "doc-1",
+    title: "Contract",
+    status: "signed",
+    sender_email: "owner@example.com",
+    signed_file: "signed/doc-1.pdf",
+    signing_mode: "sequential",
+    photo_required: false,
+    created_at: "2026-11-11T00:00:00Z",
+    updated_at: "2026-11-21T00:00:00Z",
+  };
+
+  const auditEvent = (event_type: string, hash: string) => ({
+    id: `ev-${event_type}`,
+    event_type,
+    payload: {},
+    prev_hash: "0",
+    hash,
+    created_at: "2026-11-21T00:00:00Z",
+  });
+
+  const signedSession = (document_status: string) => ({
+    ...SESSION,
+    status: "signed",
+    document_status,
+  });
+
+  // Fake timers + React: advancing time alone does not flush the
+  // re-render a poll's state update schedules, so each advance runs
+  // inside act().
+  async function advance(ms: number) {
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(ms);
+    });
+  }
+
+  async function renderAndWaitForIntro() {
+    render(<SignPage />);
+    await advance(100);
+    expect(screen.getByText("Contract")).toBeTruthy();
+  }
+
+  it("moves to the done view when the session is signed from another device", async () => {
+    vi.mocked(getSession)
+      .mockResolvedValueOnce(SESSION as never)
+      .mockResolvedValue(signedSession("signed") as never);
+    vi.mocked(getDocument).mockResolvedValue(DOC as never);
+    vi.mocked(getSessionEvents).mockResolvedValue({
+      chain_valid: true,
+      events: [
+        auditEvent("signature.submitted", "submitted-hash"),
+        auditEvent("document.sealed", "sealed-hash"),
+      ],
+    } as never);
+
+    await renderAndWaitForIntro();
+    await advance(5000);
+
+    expect(screen.getByText("Signed. Seen. Sealed.")).toBeTruthy();
+    // The seal comes from the sealed event, mirroring the submit response.
+    // The seal shares its line with the label, so match by substring.
+    expect(screen.getByText(/sealed-hash/)).toBeTruthy();
+    expect(screen.getByText("Download signed PDF")).toBeTruthy();
+
+    // Polling stops once done: no further session checks.
+    const calls = vi.mocked(getSession).mock.calls.length;
+    await advance(15000);
+    expect(vi.mocked(getSession).mock.calls.length).toBe(calls);
+  });
+
+  it("stays on the signing form while the session is still pending", async () => {
+    vi.mocked(getSession).mockResolvedValue(SESSION as never);
+    await renderAndWaitForIntro();
+    await advance(15000);
+    expect(screen.getByText("Contract")).toBeTruthy();
+    expect(screen.queryByText("Signed. Seen. Sealed.")).toBeNull();
+    // Initial load plus one poll per interval.
+    expect(vi.mocked(getSession).mock.calls.length).toBe(4);
+  });
+
+  it("shows the recorded (not sealed) view when the document still awaits other signers", async () => {
+    vi.mocked(getSession)
+      .mockResolvedValueOnce(SESSION as never)
+      .mockResolvedValue(signedSession("pending") as never);
+    vi.mocked(getDocument).mockResolvedValue({
+      ...DOC,
+      status: "pending",
+      signed_file: null,
+    } as never);
+    vi.mocked(getSessionEvents).mockResolvedValue({
+      chain_valid: true,
+      events: [auditEvent("signature.submitted", "submitted-hash")],
+    } as never);
+
+    await renderAndWaitForIntro();
+    await advance(5000);
+
+    expect(screen.getByText("Signature recorded")).toBeTruthy();
+    // No sealed event, so the seal falls back to the submitted event.
+    expect(screen.getByText(/submitted-hash/)).toBeTruthy();
+    expect(screen.queryByText("Download signed PDF")).toBeNull();
   });
 });
