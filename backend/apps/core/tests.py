@@ -39,3 +39,26 @@ def test_cors_preflight_for_a_json_post():
         response.headers.get("Access-Control-Allow-Origin")
         == "http://localhost:3000"
     )
+
+
+@pytest.mark.django_db
+def test_cors_preflight_allows_the_draft_token_header():
+    # The draft token (#89) travels as X-Draft-Token. A browser only
+    # sends it after a preflight that lists it — the default allowed
+    # headers do not include it, so without an explicit allow the
+    # browser blocks every draft-token call (field placement, send)
+    # and the send step fails with a network error.
+    client = APIClient()
+    response = client.options(
+        "/api/documents/",
+        HTTP_ORIGIN="http://localhost:3000",
+        HTTP_ACCESS_CONTROL_REQUEST_METHOD="POST",
+        HTTP_ACCESS_CONTROL_REQUEST_HEADERS="authorization, x-draft-token",
+    )
+    assert response.status_code == 200
+    assert (
+        response.headers.get("Access-Control-Allow-Origin")
+        == "http://localhost:3000"
+    )
+    allowed = response.headers.get("Access-Control-Allow-Headers", "")
+    assert "x-draft-token" in allowed.lower()

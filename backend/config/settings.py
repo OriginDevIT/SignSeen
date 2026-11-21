@@ -97,6 +97,14 @@ CORS_ALLOWED_ORIGINS = [
     ).split(",")
     if origin.strip()
 ]
+# The draft token (#89) travels as an X-Draft-Token header. A browser
+# only sends it after a preflight that lists it, and the default
+# allowed-headers set does not include it — without this, every
+# draft-token call (field placement, send) fails the preflight and
+# the browser blocks the request outright.
+from corsheaders.defaults import default_headers
+
+CORS_ALLOW_HEADERS = list(default_headers) + ["x-draft-token"]
 
 ROOT_URLCONF = "config.urls"
 
