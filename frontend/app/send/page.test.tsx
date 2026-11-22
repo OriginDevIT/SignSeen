@@ -58,6 +58,7 @@ function deferred<T>() {
 const FREE_ACCOUNT = {
   id: "acc-1",
   email: "owner@example.com",
+  name: "",
   tier: "free" as const,
   is_premium: false,
   alerts_enabled: false,
@@ -247,6 +248,45 @@ describe("SendPage wizard (#89)", () => {
     // No session was created and no email sent at step 1: the page
     // holds no signing link yet.
     expect(screen.queryByText("Ready to sign")).toBeNull();
+  });
+
+  it("uses the account name for the 'Send to me' signer entry", async () => {
+    vi.mocked(getAuthToken).mockReturnValue("token-1");
+    vi.mocked(myAccount).mockResolvedValue({
+      ...PREMIUM_ACCOUNT,
+      name: "Owner Person",
+    });
+    vi.mocked(uploadDocument).mockResolvedValue(DRAFT_DOC as never);
+    vi.mocked(getDocumentFields).mockResolvedValue({
+      page_count: 1,
+      fields: [],
+    });
+    render(<SendPage />);
+    await waitFor(() =>
+      expect(screen.getByText(/Signed in as owner@example.com/)).toBeTruthy(),
+    );
+    fillStep1();
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /Send to me for signature also/ }),
+    );
+    fireEvent.submit(document.querySelector("form") as HTMLFormElement);
+
+    await waitFor(() =>
+      expect(
+        screen.getByText("Step 2 of 3 — Place fields (optional)"),
+      ).toBeTruthy(),
+    );
+    expect(vi.mocked(uploadDocument)).toHaveBeenCalledWith(
+      expect.any(File),
+      "Contract",
+      "sender@example.com",
+      "parallel",
+      false,
+      [
+        { name: "", email: "jane@example.com" },
+        { name: "Owner Person", email: "sender@example.com" },
+      ],
+    );
   });
 
   it("step 2 skip -> review -> send shows the confirmation with links", async () => {

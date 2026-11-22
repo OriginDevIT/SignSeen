@@ -283,7 +283,10 @@ export default function DashboardPage() {
       <div style={card}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.75rem" }}>
           <div>
-            <div style={{ fontWeight: 600 }}>{account.email}</div>
+            <div style={{ fontWeight: 600 }}>
+              {account.name ? `${account.name} — ` : ""}
+              {account.email}
+            </div>
             <div style={{ opacity: 0.6, fontSize: "0.9rem" }}>
               {account.tier === "premium"
                 ? dash.is_premium
@@ -292,6 +295,9 @@ export default function DashboardPage() {
                     ? "Premium plan (paused)"
                     : "Premium plan (suspended)"
                 : "Free plan"}
+            </div>
+            <div style={{ fontSize: "0.9rem", marginTop: "0.25rem" }}>
+              <a href="/profile">Profile</a>
             </div>
           </div>
           {account.billing_status === "suspended" ? (

@@ -63,6 +63,7 @@ export default function SendPage() {
   const [error, setError] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [accountEmail, setAccountEmail] = useState<string | null>(null);
+  const [accountName, setAccountName] = useState("");
   const [isPremium, setIsPremium] = useState(false);
   // Whether the session check has settled. Until it does, the page
   // must not render the logged-out view: a signed-in sender would
@@ -96,6 +97,7 @@ export default function SendPage() {
     myAccount()
       .then((account) => {
         setAccountEmail(account.email);
+        setAccountName(account.name ?? "");
         setSenderEmail(account.email);
         setIsPremium(account.is_premium);
       })
@@ -153,11 +155,12 @@ export default function SendPage() {
 
   const maxSigners = isPremium ? PREMIUM_MAX_SIGNERS : FREE_MAX_SIGNERS;
   // The "Send to me" checkbox adds the sender as a signer, so it
-  // counts toward the same cap as a signer row.
+  // counts toward the same cap as a signer row. The sender's account
+  // name (blank for older accounts) is the entry's name.
   const effectiveSigners: SignerInput[] = [
     ...signers,
     ...(includeMe && senderEmail.trim()
-      ? [{ name: "", email: senderEmail.trim() }]
+      ? [{ name: accountName, email: senderEmail.trim() }]
       : []),
   ];
   const canAddSigner = effectiveSigners.length < maxSigners;

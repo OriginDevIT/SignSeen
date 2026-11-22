@@ -47,6 +47,11 @@ class Account(AbstractBaseUser, PermissionsMixin):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     email = models.EmailField(unique=True)
+    # Personal name, collected at signup (optional) and editable on the
+    # profile page. Blank for older accounts and anonymous sends; used
+    # as the sender's name where the sender appears as a signer.
+    # Distinct from brand_name below, which is premium display branding.
+    name = models.CharField(max_length=120, blank=True, default="")
     tier = models.CharField(
         max_length=16, choices=Tier.choices, default=Tier.FREE
     )

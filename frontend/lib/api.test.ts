@@ -413,6 +413,61 @@ describe("setAlertsEnabled", () => {
     expect(init?.headers.get("Authorization")).toBe("Token tok-abc");
     setAuthToken(null);
   });
+
+  it("PATCHes /api/auth/me/ with the exact name body", async () => {
+    const { updateAccountName, setAuthToken } = await import("./api");
+    setAuthToken("tok-abc");
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({
+        id: "1",
+        email: "a@example.com",
+        name: "Ada",
+        tier: "free",
+        is_premium: false,
+        alerts_enabled: true,
+      })
+    );
+    const account = await updateAccountName("Ada");
+    expect(account.name).toBe("Ada");
+    const [url, init] = vi.mocked(fetch).mock.calls[0];
+    expect(url).toContain("/api/auth/me/");
+    expect(init?.method).toBe("PATCH");
+    expect(JSON.parse(init?.body as string)).toEqual({ name: "Ada" });
+    setAuthToken(null);
+  });
+
+  it("signup sends the name when given and omits it when blank", async () => {
+    const { signup, setAuthToken } = await import("./api");
+    const payload = {
+      token: "tok-new",
+      account: {
+        id: "1",
+        email: "a@example.com",
+        name: "Ada",
+        tier: "free",
+        is_premium: false,
+        alerts_enabled: true,
+      },
+    };
+    vi.mocked(fetch).mockResolvedValue(jsonResponse(payload, 201));
+    await signup("a@example.com", "longpassword1", " Ada ");
+    let [, init] = vi.mocked(fetch).mock.calls[0];
+    expect(JSON.parse(init?.body as string)).toEqual({
+      email: "a@example.com",
+      password: "longpassword1",
+      name: "Ada",
+    });
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({ ...payload, account: { ...payload.account, name: "" } }, 201)
+    );
+    await signup("b@example.com", "longpassword1", "   ");
+    [, init] = vi.mocked(fetch).mock.calls[1];
+    expect(JSON.parse(init?.body as string)).toEqual({
+      email: "b@example.com",
+      password: "longpassword1",
+    });
+    setAuthToken(null);
+  });
 });
 describe("signing_url (owner-only, issue #15)", () => {
   const store: Record<string, string> = {};
