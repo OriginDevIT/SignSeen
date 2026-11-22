@@ -274,6 +274,10 @@ export default function SignPage() {
   const [copyError, setCopyError] = useState("");
 
   const [fieldValues, setFieldValues] = useState<Record<string, string | boolean>>({});
+  // Fields the signer has confirmed by saving them from their modal.
+  // A date field's today default is only an offered value: it must
+  // not count as complete until the signer saves it.
+  const [confirmedFields, setConfirmedFields] = useState<Record<string, boolean>>({});
   // Rendered page aspect (width/height) per page, from the preview
   // image's natural size — used to size field pads to drawn boxes.
   // Letter (612/792) until the image reports its own size.
@@ -404,11 +408,16 @@ export default function SignPage() {
 
   const fieldComplete = (
     f: DocumentFieldInfo,
-    values: Record<string, string | boolean> = fieldValues
+    values: Record<string, string | boolean> = fieldValues,
+    confirmed: Record<string, boolean> = confirmedFields
   ): boolean => {
     // A signed-date field fills itself at submit time, so it never
     // blocks the signer: it counts as complete from the start.
     if (f.type === "signed_date") return true;
+    // A value alone is not completion: the signer must have confirmed
+    // it by saving the field from its modal. Without this, a date
+    // field's pre-filled today default would count as complete.
+    if (!confirmed[f.id]) return false;
     const v = values[f.id];
     if (f.type === "checkbox") return v === true;
     if (f.type === "text") return typeof v === "string" && v.trim().length > 0;
@@ -467,7 +476,9 @@ export default function SignPage() {
    * for later modals and the document pad. */
   const saveFieldValue = (f: DocumentFieldInfo, value: string | boolean) => {
     const nextValues = { ...fieldValues, [f.id]: value };
+    const nextConfirmed = { ...confirmedFields, [f.id]: true };
     setFieldValues(nextValues);
+    setConfirmedFields(nextConfirmed);
     if (f.type === "signature" && typeof value === "string" && value) {
       setSavedSignature(value);
     }
@@ -477,7 +488,7 @@ export default function SignPage() {
     setModalField(null);
     const idx = sessionFields.findIndex((x) => x.id === f.id);
     const after = [...sessionFields.slice(idx + 1), ...sessionFields.slice(0, idx + 1)];
-    const next = after.find((x) => !fieldComplete(x, nextValues));
+    const next = after.find((x) => !fieldComplete(x, nextValues, nextConfirmed));
     setTimeout(() => {
       if (next) {
         scrollToField(next);
@@ -500,7 +511,12 @@ export default function SignPage() {
         photoConsent: photoUrl ? photoConsent : undefined,
         deviceInfo: collectDeviceInfo(),
         fieldValues: sessionFields
-          .filter((f) => fieldValues[f.id] !== undefined && fieldValues[f.id] !== "")
+          .filter(
+            (f) =>
+              confirmedFields[f.id] &&
+              fieldValues[f.id] !== undefined &&
+              fieldValues[f.id] !== ""
+          )
           .map((f) => ({ field_id: f.id, value: fieldValues[f.id] })),
       });
       setResult(res);

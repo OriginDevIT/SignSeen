@@ -13,13 +13,14 @@ vi.mock("../../../lib/api", async (importOriginal) => {
     getSession: vi.fn(),
     getDocument: vi.fn(),
     getSessionEvents: vi.fn(),
+    submitSignature: vi.fn(),
     sessionPageUrl: vi.fn((_token: string, page: number) => `/page-${page}.png`),
     sessionDocumentUrl: vi.fn(() => "/document.pdf"),
     mediaUrl: vi.fn((u: string | null) => u),
   };
 });
 
-import { getDocument, getSession, getSessionEvents } from "../../../lib/api";
+import { getDocument, getSession, getSessionEvents, submitSignature } from "../../../lib/api";
 
 // The draw pads are canvas-based; jsdom has no 2d context, so the
 // stub stands in with a handle that reports ink and hands back a
@@ -322,6 +323,124 @@ describe("SignPage field modals (#84)", () => {
       expect(screen.queryByRole("dialog")).toBeNull()
     );
     await waitFor(() => expect(continueBtn.disabled).toBe(false));
+  });
+
+  it("a date field is not complete from its today default until the signer saves it", async () => {
+    await renderSigning();
+    // The today default is pre-filled but unconfirmed: the box stays
+    // dark and the label says not completed yet.
+    const dateBox = screen.getByLabelText(
+      "date field on page 2, not completed yet"
+    );
+    expect(getComputedStyle(dateBox).borderColor).toBe("rgb(17, 24, 39)");
+
+    // Saving the modal — even accepting the today default — completes it.
+    fireEvent.click(dateBox);
+    await screen.findByRole("dialog");
+    expect(
+      screen.getByDisplayValue(new Date().toISOString().slice(0, 10))
+    ).toBeTruthy();
+    fireEvent.click(screen.getByText("Done"));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).toBeNull()
+    );
+    expect(
+      getComputedStyle(
+        screen.getByLabelText("date field on page 2, completed")
+      ).borderColor
+    ).toBe("rgb(21, 128, 61)");
+  });
+
+  it("a required date field blocks the continue button until the signer confirms it", async () => {
+    const sessionWithRequiredDate = {
+      ...SESSION,
+      fields: SESSION.fields.map((f) =>
+        f.id === "f-date" ? { ...f, required: true } : f
+      ),
+    };
+    vi.mocked(getSession).mockResolvedValue(sessionWithRequiredDate as never);
+    render(<SignPage />);
+    await screen.findByText("Contract");
+    fireEvent.click(screen.getByText("Start signing"));
+    await screen.findByText("1. Your fields on this document");
+
+    const continueBtn = screen.getByText(
+      "Looks good — continue"
+    ) as HTMLButtonElement;
+    expect(continueBtn.disabled).toBe(true);
+
+    // Complete the other required fields; the untouched date default
+    // must not unlock the button.
+    fireEvent.click(screen.getByLabelText(/signature field on page 1/));
+    await screen.findByRole("dialog");
+    fireEvent.click(screen.getByText("Use this signature"));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).toBeNull()
+    );
+
+    fireEvent.click(screen.getByLabelText(/text field on page 1/));
+    await screen.findByRole("dialog");
+    fireEvent.change(screen.getByPlaceholderText("Type here"), {
+      target: { value: "Agreed" },
+    });
+    fireEvent.click(screen.getByText("Done"));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).toBeNull()
+    );
+    expect(continueBtn.disabled).toBe(true);
+
+    // Confirm the date from its modal; the button unlocks.
+    fireEvent.click(screen.getByLabelText(/date field on page 2/));
+    await screen.findByRole("dialog");
+    fireEvent.click(screen.getByText("Done"));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).toBeNull()
+    );
+    await waitFor(() => expect(continueBtn.disabled).toBe(false));
+  });
+
+  it("submit sends only confirmed fields, not the untouched date default", async () => {
+    vi.mocked(submitSignature).mockResolvedValue({
+      status: "signed",
+      document_final: false,
+      document: {},
+      audit_seal: "abc123",
+      chain_valid: true,
+    } as never);
+    await renderSigning();
+
+    // Complete the required fields; leave the date default untouched.
+    fireEvent.click(screen.getByLabelText(/signature field on page 1/));
+    await screen.findByRole("dialog");
+    fireEvent.click(screen.getByText("Use this signature"));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).toBeNull()
+    );
+
+    fireEvent.click(screen.getByLabelText(/text field on page 1/));
+    await screen.findByRole("dialog");
+    fireEvent.change(screen.getByPlaceholderText("Type here"), {
+      target: { value: "Agreed" },
+    });
+    fireEvent.click(screen.getByText("Done"));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).toBeNull()
+    );
+
+    // Continue to the photo step (the stub pad reports ink) and
+    // submit without a photo.
+    fireEvent.click(screen.getByText("Looks good — continue"));
+    await screen.findByText("2. Seen — snap a witness photo");
+    fireEvent.click(screen.getByText("Skip photo & submit"));
+    await screen.findByText("Signature recorded");
+
+    const payload = vi.mocked(submitSignature).mock.calls[0][1] as {
+      fieldValues: { field_id: string }[];
+    };
+    const sentIds = payload.fieldValues.map((f) => f.field_id);
+    expect(sentIds).toContain("f-sig");
+    expect(sentIds).toContain("f-text");
+    expect(sentIds).not.toContain("f-date");
   });
 });
 
