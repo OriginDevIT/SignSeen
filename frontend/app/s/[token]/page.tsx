@@ -437,9 +437,10 @@ export default function SignPage() {
   // document — the signer's own fields, or earlier signers' completed
   // ones (a signer with no fields of their own still sees those).
   const showFieldsSection = hasFields || completedFields.length > 0;
-  const allRequiredComplete = sessionFields
-    .filter((f) => f.required)
-    .every((f) => fieldComplete(f));
+  // The continue button stays greyed out until every field is
+  // complete — required and optional alike (#118). Completion is
+  // judged by the shared fieldComplete helper.
+  const allFieldsComplete = sessionFields.every((f) => fieldComplete(f));
 
   const scrollToField = (f: DocumentFieldInfo) => {
     fieldBoxRefs.current
@@ -886,9 +887,9 @@ export default function SignPage() {
                       ))}
                   </div>
                 ))}
-              {hasFields && !allRequiredComplete && (
+              {!allFieldsComplete && (
                 <p style={{ opacity: 0.65, margin: 0, fontSize: "0.9rem" }}>
-                  Complete every required field (marked *) to continue.
+                  Complete every field to continue.
                 </p>
               )}
             </div>
@@ -943,13 +944,13 @@ export default function SignPage() {
             <button
               ref={continueRef}
               onClick={confirmSignature}
-              disabled={hasFields && !allRequiredComplete}
+              disabled={hasFields && !allFieldsComplete}
               style={{
                 ...brandBtn,
                 width: "auto",
                 flex: 2,
-                opacity: hasFields && !allRequiredComplete ? 0.45 : 1,
-                cursor: hasFields && !allRequiredComplete ? "not-allowed" : "pointer",
+                opacity: hasFields && !allFieldsComplete ? 0.45 : 1,
+                cursor: hasFields && !allFieldsComplete ? "not-allowed" : "pointer",
               }}
             >
               Looks good — continue
@@ -981,7 +982,7 @@ export default function SignPage() {
           signingUrl={signingLink}
           photoRequired={photoRequired}
           requiredBy={session?.sender_email}
-          fieldsComplete={!hasFields || allRequiredComplete}
+          fieldsComplete={!hasFields || allFieldsComplete}
           onSubmit={submit}
           submitStyle={brandBtn}
         />
