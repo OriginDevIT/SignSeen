@@ -2682,3 +2682,102 @@ def test_verify_broken_chain_is_invalid():
     sealed.save(update_fields=["payload"])
     body = _verify(client, _sealed_pdf_bytes(doc_id), ip="10.1.0.15").json()
     assert body == {"valid": False, "reason": "chain_broken"}
+
+
+@pytest.mark.django_db
+def test_backfill_signed_at_from_submitted_event():
+    """Migration 0013: a pre-field signed session gets the submitted
+    event's timestamp as its signed_at (#141)."""
+    import importlib
+
+    from django.apps import apps as django_apps
+
+    migration = importlib.import_module(
+        "apps.signing.migrations.0013_backfill_signed_at"
+    )
+    signed_time = timezone.now() - timedelta(days=3)
+
+    client = APIClient()
+    sent = upload_document(client).json()
+    token = sent["sessions"][0]["token"]
+    session = SigningSession.objects.get(token=token)
+    # Simulate a session signed before the field existed: signed, but
+    # no signed_at, with only the audit trail recording the moment.
+    session.status = SigningSession.Status.SIGNED
+    session.signed_at = None
+    session.save(update_fields=["status", "signed_at"])
+    AuditEvent.objects.create(
+        session=session,
+        event_type="signature.submitted",
+        payload={},
+        prev_hash=GENESIS_HASH,
+        hash="backfill-test",
+        created_at=signed_time,
+    )
+
+    migration.backfill_signed_at(django_apps, schema_editor=None)
+
+    session.refresh_from_db()
+    assert session.signed_at == signed_time
+
+
+@pytest.mark.django_db
+def test_backfill_signed_at_leaves_sessions_without_a_submitted_event():
+    """Migration 0013: no signature.submitted event means no timestamp
+    to backfill from — the session stays null (#141)."""
+    import importlib
+
+    from django.apps import apps as django_apps
+
+    migration = importlib.import_module(
+        "apps.signing.migrations.0013_backfill_signed_at"
+    )
+
+    client = APIClient()
+    sent = upload_document(client).json()
+    token = sent["sessions"][0]["token"]
+    session = SigningSession.objects.get(token=token)
+    session.status = SigningSession.Status.SIGNED
+    session.signed_at = None
+    session.save(update_fields=["status", "signed_at"])
+
+    migration.backfill_signed_at(django_apps, schema_editor=None)
+
+    session.refresh_from_db()
+    assert session.signed_at is None
+
+
+@pytest.mark.django_db
+def test_backfill_signed_at_does_not_overwrite_an_existing_value():
+    """Migration 0013: a session that already has signed_at is left
+    alone (#141)."""
+    import importlib
+
+    from django.apps import apps as django_apps
+
+    migration = importlib.import_module(
+        "apps.signing.migrations.0013_backfill_signed_at"
+    )
+    existing = timezone.now() - timedelta(days=5)
+    event_time = timezone.now() - timedelta(days=3)
+
+    client = APIClient()
+    sent = upload_document(client).json()
+    token = sent["sessions"][0]["token"]
+    session = SigningSession.objects.get(token=token)
+    session.status = SigningSession.Status.SIGNED
+    session.signed_at = existing
+    session.save(update_fields=["status", "signed_at"])
+    AuditEvent.objects.create(
+        session=session,
+        event_type="signature.submitted",
+        payload={},
+        prev_hash=GENESIS_HASH,
+        hash="backfill-test",
+        created_at=event_time,
+    )
+
+    migration.backfill_signed_at(django_apps, schema_editor=None)
+
+    session.refresh_from_db()
+    assert session.signed_at == existing
