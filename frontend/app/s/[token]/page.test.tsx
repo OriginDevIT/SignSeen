@@ -439,3 +439,128 @@ describe("SignPage cross-device completion (#109)", () => {
     expect(screen.queryByText("Download signed PDF")).toBeNull();
   });
 });
+
+describe("SignPage earlier signers' completed fields (#105)", () => {
+  let scrollIntoViewMock: ReturnType<typeof vi.fn>;
+  let origScrollIntoView: typeof Element.prototype.scrollIntoView;
+
+  beforeEach(() => {
+    scrollIntoViewMock = vi.fn();
+    origScrollIntoView = Element.prototype.scrollIntoView;
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      value: scrollIntoViewMock,
+      configurable: true,
+      writable: true,
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      value: origScrollIntoView,
+      configurable: true,
+      writable: true,
+    });
+    vi.clearAllMocks();
+  });
+
+  // A field completed by the earlier signer: stored value, completed
+  // flag, and another session id. Size null renders the marker pill.
+  const completed = (
+    id: string,
+    type: "signature" | "initials" | "checkbox" | "text" | "date",
+    page: number,
+    value: string,
+    size: { width: number | null; height: number | null } = { width: 0.3, height: 0.15 }
+  ) => ({
+    id,
+    document: "doc-1",
+    session: "sess-0",
+    signer_index: 0,
+    type,
+    page,
+    x: 0.1,
+    y: 0.2,
+    ...size,
+    required: true,
+    value,
+    completed: true,
+    completed_at: "2026-11-11T01:00:00Z",
+    created_at: "2026-11-11T00:00:00Z",
+  });
+
+  const BOB_SESSION = {
+    ...SESSION,
+    id: "sess-2",
+    signer_name: "Bob",
+    signer_email: "bob@example.com",
+    order: 1,
+    fields: [field("f-bob-text", "text", 1, 0.1, 0.45)],
+    completed_fields: [
+      completed("f-done-text", "text", 1, "Alice agreed"),
+      completed("f-done-sig", "signature", 1, ""),
+      completed("f-done-date", "date", 2, "2026-10-20"),
+      completed("f-done-pill", "text", 2, "Pill note", { width: null, height: null }),
+    ],
+  };
+
+  async function renderSigningAsBob() {
+    vi.mocked(getSession).mockResolvedValue(BOB_SESSION as never);
+    render(<SignPage />);
+    await screen.findByText("Contract");
+    fireEvent.click(screen.getByText("Start signing"));
+    await screen.findByText("1. Your fields on this document");
+  }
+
+  it("completed text field renders its value read-only and never opens a modal", async () => {
+    await renderSigningAsBob();
+    expect(
+      screen.getByText(/dashed border and cannot be changed/)
+    ).toBeTruthy();
+    const done = screen.getByLabelText(
+      /text field on page 1, completed by an earlier signer/
+    );
+    expect(done.textContent).toContain("Alice agreed");
+    // Dashed border, not the solid dark box of the signer's own fields.
+    expect(getComputedStyle(done).borderStyle).toBe("dashed");
+    // Not a button: no role, no click behavior.
+    expect(done.getAttribute("role")).toBeNull();
+    fireEvent.click(done);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("completed signature field renders the stored image", async () => {
+    await renderSigningAsBob();
+    const done = screen.getByLabelText(
+      /signature field on page 1, completed by an earlier signer/
+    );
+    const img = done.querySelector("img");
+    expect(img).toBeTruthy();
+    expect(img!.getAttribute("src")).toContain(
+      "/api/sessions/tok-1/fields/f-done-sig/image/"
+    );
+    fireEvent.click(done);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("a page with only completed fields still renders, including the marker pill", async () => {
+    await renderSigningAsBob();
+    expect(screen.getByAltText("Document page 2")).toBeTruthy();
+    const date = screen.getByLabelText(
+      /date field on page 2, completed by an earlier signer/
+    );
+    expect(date.textContent).toContain("2026-10-20");
+    const pill = screen.getByTestId("completed-field-pill");
+    expect(pill.textContent).toContain("text: Pill note");
+    expect(pill.getAttribute("role")).toBeNull();
+  });
+
+  it("completed fields do not unlock the continue button", async () => {
+    await renderSigningAsBob();
+    const continueBtn = screen.getByText(
+      "Looks good — continue"
+    ) as HTMLButtonElement;
+    // The signer's own required text field is still incomplete.
+    expect(continueBtn.disabled).toBe(true);
+  });
+});

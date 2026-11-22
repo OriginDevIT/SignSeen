@@ -2062,6 +2062,84 @@ def test_complex_document_fields_end_to_end_sequential():
 
 @pytest.mark.django_db
 @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+def test_ceremony_shows_earlier_signers_completed_fields():
+    # Sequential (#105): once Alice signs, Bob's ceremony payload
+    # carries her completed fields — and nothing else.
+    client, doc_id, alice, bob = _premium_fields_setup("sequential")
+    a_sig = _place(
+        client, doc_id, alice["id"], "signature",
+        page=1, x=0.1, y=0.2, width=0.3, height=0.1,
+    )
+    a_text = _place(client, doc_id, alice["id"], "text", page=1, x=0.1, y=0.45)
+    a_date = _place(client, doc_id, alice["id"], "date", page=2, x=0.1, y=0.2)
+    b_init = _place(client, doc_id, bob["id"], "initials", page=1, x=0.55, y=0.2)
+    b_check = _place(client, doc_id, bob["id"], "checkbox", page=2, x=0.1, y=0.5)
+
+    anon = APIClient()
+    # Nothing completed yet: both payloads carry an empty list.
+    assert anon.get(f"/api/sessions/{alice['token']}/").json()["completed_fields"] == []
+    assert anon.get(f"/api/sessions/{bob['token']}/").json()["completed_fields"] == []
+
+    done = _sign_with_fields(
+        alice["token"],
+        [
+            {"field_id": a_sig["id"], "value": SIG_DATA_URL},
+            {"field_id": a_text["id"], "value": "Alice agreed"},
+            {"field_id": a_date["id"], "value": "2026-10-20"},
+        ],
+    )
+    assert done.status_code == 200, done.content
+
+    # Bob sees Alice's three completed fields, with their values;
+    # his own fields are not among them, and the list is ordered
+    # by page.
+    completed = anon.get(f"/api/sessions/{bob['token']}/").json()["completed_fields"]
+    assert [f["id"] for f in completed] == [a_sig["id"], a_text["id"], a_date["id"]]
+    by_id = {f["id"]: f for f in completed}
+    assert by_id[a_text["id"]]["value"] == "Alice agreed"
+    assert by_id[a_date["id"]]["value"] == "2026-10-20"
+    assert by_id[a_sig["id"]]["completed"] is True
+    assert all(f["completed"] for f in completed)
+    # Alice's own payload carries no completed fields (her fields
+    # are in `fields`, not duplicated here).
+    assert anon.get(f"/api/sessions/{alice['token']}/").json()["completed_fields"] == []
+
+    # The stored signature image is served token-addressed to a
+    # signer on the document; text/date fields have no image.
+    img = anon.get(f"/api/sessions/{bob['token']}/fields/{a_sig['id']}/image/")
+    assert img.status_code == 200, img.content
+    assert img["Content-Type"] == "image/png"
+    assert img.content[:8] == b"\x89PNG\r\n\x1a\n"
+    assert anon.get(f"/api/sessions/{bob['token']}/fields/{a_text['id']}/image/").status_code == 404
+    # Incomplete fields have no image, even the requester's own.
+    assert anon.get(f"/api/sessions/{bob['token']}/fields/{b_init['id']}/image/").status_code == 404
+    # Unknown token, and a field from another document, both 404.
+    assert anon.get(f"/api/sessions/nope/fields/{a_sig['id']}/image/").status_code == 404
+    other_account = _make_account(
+        email="fields-other@example.com", tier=Account.Tier.PREMIUM
+    )
+    other_client = _auth_client(other_account)
+    other_resp = upload_mode_document(
+        other_client,
+        other_account.email,
+        mode="sequential",
+        signers=[{"name": "Carol", "email": "carol@example.com"}],
+    )
+    assert other_resp.status_code == 201, other_resp.content
+    other_doc_id = other_resp.json()["document"]["id"]
+    other_session_id = other_resp.json()["sessions"][0]["id"]
+    other_sig = _place(
+        other_client, other_doc_id, other_session_id, "signature",
+        page=1, x=0.1, y=0.2,
+    )
+    assert (
+        anon.get(f"/api/sessions/{bob['token']}/fields/{other_sig['id']}/image/").status_code
+        == 404
+    )
+
+
+@pytest.mark.django_db
+@override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
 def test_parallel_mode_lets_signer_two_go_first():
     from django.core import mail
 

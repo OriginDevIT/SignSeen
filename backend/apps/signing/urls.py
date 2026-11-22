@@ -43,6 +43,11 @@ urlpatterns = [
         name="session-page-png",
     ),
     path(
+        "sessions/<str:token>/fields/<uuid:field_id>/image/",
+        views.session_field_image,
+        name="session-field-image",
+    ),
+    path(
         "sessions/<str:token>/document/",
         views.session_document,
         name="session-document",
