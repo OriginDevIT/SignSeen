@@ -2730,3 +2730,51 @@ def test_session_document_serves_original_when_nothing_completed():
     resp = APIClient().get(f"/api/sessions/{alice['token']}/document/")
     assert resp.status_code == 200
     assert b"".join(resp.streaming_content) == original
+
+
+
+
+@pytest.mark.django_db
+def test_certificate_fits_four_signers_on_one_landscape_page():
+    """Four signers share a single landscape certificate page, two
+    per row (#147)."""
+    names = ("Signer One", "Signer Two", "Signer Three", "Signer Four")
+    _, doc_id, tokens = _premium_multi_doc(names=names)
+    for token in tokens:
+        assert _sign(token).status_code == 200
+
+    doc = Document.objects.get(pk=doc_id)
+    assert doc.status == Document.Status.SIGNED
+    pdf = pymupdf.open(stream=doc.signed_file.read())
+    # One original page plus one certificate page.
+    assert pdf.page_count == 2
+    cert = pdf[1]
+    assert cert.rect.width > cert.rect.height  # landscape
+    text = cert.get_text()
+    for name in names:
+        assert name in text
+    # Four signature images, one per signer.
+    assert len(cert.get_images()) == 4
+
+
+@pytest.mark.django_db
+def test_certificate_fifth_signer_flows_to_a_second_page():
+    """A fifth signer starts a second landscape certificate page
+    (#147)."""
+    names = (
+        "Signer One",
+        "Signer Two",
+        "Signer Three",
+        "Signer Four",
+        "Signer Five",
+    )
+    _, doc_id, tokens = _premium_multi_doc(names=names)
+    for token in tokens:
+        assert _sign(token).status_code == 200
+
+    doc = Document.objects.get(pk=doc_id)
+    pdf = pymupdf.open(stream=doc.signed_file.read())
+    assert pdf.page_count == 3
+    assert pdf[1].rect.width > pdf[1].rect.height
+    assert pdf[2].rect.width > pdf[2].rect.height
+    assert "Signer Five" in pdf[2].get_text()
