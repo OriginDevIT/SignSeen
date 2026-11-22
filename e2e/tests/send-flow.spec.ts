@@ -105,7 +105,7 @@ test("send flow: anonymous upload -> place a field -> review -> send, no email b
   expect(body).toContain("/s/");
 });
 
-test("send flow: draft shows in the dashboard and can be discarded", async ({
+test("send flow: draft shows in the dashboard and can be deleted", async ({
   page,
 }) => {
   const id = runId();
@@ -127,6 +127,7 @@ test("send flow: draft shows in the dashboard and can be discarded", async ({
   await expect(page.getByText(/Step 2 of 3/)).toBeVisible();
 
   await page.goto("/dashboard");
+  await page.getByRole("tab", { name: /Draft/ }).click();
   await expect(page.getByText(title)).toBeVisible();
   await expect(page.getByText("draft").first()).toBeVisible();
   // Continuing the draft returns to the wizard, not a blank form.
@@ -134,6 +135,8 @@ test("send flow: draft shows in the dashboard and can be discarded", async ({
   await expect(page.getByText(/Step 1 of 3/)).toBeVisible();
 
   await page.goto("/dashboard");
-  await page.getByRole("button", { name: "Discard" }).click();
+  await page.getByRole("tab", { name: /Draft/ }).click();
+  await page.getByRole("button", { name: "Delete" }).click();
+  await page.getByRole("button", { name: "Confirm delete" }).click();
   await expect(page.getByText(title)).toHaveCount(0);
 });

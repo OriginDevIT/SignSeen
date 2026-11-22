@@ -69,6 +69,7 @@ class DocumentSerializer(serializers.ModelSerializer):
             "source_url",
             "original_filename",
             "sender_email",
+            "original_file",
             "signed_file",
             "signing_mode",
             "photo_required",

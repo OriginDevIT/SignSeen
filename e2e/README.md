@@ -68,6 +68,10 @@ npm test
   `/dashboard?upgraded=1`, then posts a locally signed
   `checkout.session.completed` event — Stripe cannot deliver webhooks
   to localhost — and asserts the dashboard flips to Premium.
+- `tests/dashboard-tabs.spec.ts` — dashboard tabs (#104): a draft shows
+  in the Draft tab and a sent document in In Progress, each row with a
+  Download link and a Delete that asks for confirmation first and then
+  removes the row.
 - `tests/draw-boxes.spec.ts` — drag a box on the place-fields page to
   place a signature field at its true size, sign inside it in the
   ceremony, and verify the sealed document as valid on /verify (#78).
@@ -89,7 +93,7 @@ npm test
   before Send and the invite (link + document) after it; a refresh
   mid-flow resumes the draft. Also: a draft shows in the dashboard
   marked as a draft, continues back into the wizard, and can be
-  discarded there.
+  deleted there (with confirmation).
 - `tests/helpers.ts` — shared send/seal flows, Mailpit polling, and
   `recordGalleryDoc`, which appends a sealed document to the review
   manifest.

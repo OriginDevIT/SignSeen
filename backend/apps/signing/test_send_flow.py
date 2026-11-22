@@ -19,6 +19,7 @@ from rest_framework.test import APIClient
 from apps.accounts.models import Account
 from apps.signing.models import Document, DocumentField, SigningSession
 from apps.signing.tests import (
+    SIG_DATA_URL,
     _auth_client,
     _make_account,
     make_pdf_bytes,
@@ -323,3 +324,80 @@ def test_dashboard_shows_drafts_marked_as_drafts():
     body = client.get("/api/documents/mine/").json()
     assert len(body["documents"]) == 1
     assert body["documents"][0]["status"] == "draft"
+
+
+@pytest.mark.django_db
+def test_owner_can_delete_pending_document():
+    import os
+
+    account = _make_account(email="dash-delete-pending@example.com")
+    client = _auth_client(account)
+    sent = upload_document(client, email=account.email, title="Pending")
+    assert sent.status_code == 201, sent.content
+    doc_id = sent.json()["document"]["id"]
+    # The dashboard payload carries the original file for the
+    # download action.
+    body = client.get("/api/documents/mine/").json()
+    assert body["documents"][0]["original_file"]
+
+    doc = Document.objects.get(pk=doc_id)
+    original_path = doc.original_file.path
+    assert client.delete(f"/api/documents/{doc_id}/").status_code == 204
+    assert not Document.objects.filter(pk=doc_id).exists()
+    assert not os.path.exists(original_path)
+    assert not SigningSession.objects.filter(document_id=doc_id).exists()
+
+
+@pytest.mark.django_db
+def test_owner_can_delete_signed_and_expired_documents():
+    import os
+
+    account = _make_account(email="dash-delete-done@example.com")
+    client = _auth_client(account)
+    # Signed: upload, send, sign (single signer seals it).
+    sent = upload_document(client, email=account.email, title="Signed")
+    assert sent.status_code == 201, sent.content
+    signed_id = sent.json()["document"]["id"]
+    token = sent.json()["sessions"][0]["token"]
+    assert client.post(
+        f"/api/sessions/{token}/sign/",
+        {"signature": SIG_DATA_URL},
+        format="json",
+    ).status_code == 200
+    signed = Document.objects.get(pk=signed_id)
+    assert signed.status == Document.Status.SIGNED
+    signed_path = signed.signed_file.path
+    assert client.delete(f"/api/documents/{signed_id}/").status_code == 204
+    assert not Document.objects.filter(pk=signed_id).exists()
+    assert not os.path.exists(signed_path)
+    # Expired: upload, send, then mark expired.
+    sent = upload_document(client, email=account.email, title="Expired")
+    assert sent.status_code == 201, sent.content
+    expired_id = sent.json()["document"]["id"]
+    expired = Document.objects.get(pk=expired_id)
+    expired.status = Document.Status.EXPIRED
+    expired.save(update_fields=["status"])
+    assert client.delete(f"/api/documents/{expired_id}/").status_code == 204
+    assert not Document.objects.filter(pk=expired_id).exists()
+
+
+@pytest.mark.django_db
+def test_delete_rejects_non_owner_and_anonymous():
+    owner = _make_account(email="dash-delete-owner@example.com")
+    client = _auth_client(owner)
+    sent = upload_document(client, email=owner.email, title="Pending")
+    assert sent.status_code == 201, sent.content
+    doc_id = sent.json()["document"]["id"]
+    draft_token = Document.objects.get(pk=doc_id).draft_token
+    other = _auth_client(_make_account(email="dash-delete-other@example.com"))
+    assert other.delete(f"/api/documents/{doc_id}/").status_code == 403
+    assert Document.objects.filter(pk=doc_id).exists()
+    assert APIClient().delete(f"/api/documents/{doc_id}/").status_code == 403
+    assert Document.objects.filter(pk=doc_id).exists()
+    # The draft token authorizes draft edits only, not deleting a
+    # sent document.
+    assert APIClient().delete(
+        f"/api/documents/{doc_id}/",
+        HTTP_X_DRAFT_TOKEN=draft_token,
+    ).status_code == 403
+    assert Document.objects.filter(pk=doc_id).exists()

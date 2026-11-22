@@ -1,0 +1,201 @@
+// @vitest-environment jsdom
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+
+import DashboardPage from "./page";
+import {
+  deleteDocument,
+  getAuthToken,
+  getBranding,
+  myAccount,
+  myDashboard,
+} from "../../lib/api";
+
+vi.mock("next/navigation", () => {
+  // The page's load effect depends on the router object, so it must
+  // be referentially stable across renders (as the real router is) —
+  // a fresh object per call would re-run the effect every render.
+  const router = { replace: vi.fn(), push: vi.fn() };
+  return { useRouter: () => router };
+});
+
+vi.mock("../../lib/api", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../lib/api")>();
+  return {
+    ...actual,
+    getAuthToken: vi.fn(),
+    myAccount: vi.fn(),
+    myDashboard: vi.fn(),
+    getBranding: vi.fn(),
+    deleteDocument: vi.fn(),
+  };
+});
+
+const FREE_ACCOUNT = {
+  id: "acc-1",
+  email: "owner@example.com",
+  tier: "free" as const,
+  is_premium: false,
+  alerts_enabled: false,
+  billing_status: "active" as const,
+};
+
+function doc(overrides: Record<string, unknown>) {
+  return {
+    id: "doc-1",
+    title: "Contract",
+    status: "pending",
+    sender_email: "owner@example.com",
+    original_file: "/media/originals/contract.pdf",
+    signed_file: null,
+    signing_mode: "parallel" as const,
+    photo_required: false,
+    signing_url: null,
+    created_at: "2026-11-21T13:00:00Z",
+    updated_at: "2026-11-21T13:00:00Z",
+    ...overrides,
+  };
+}
+
+const PENDING = doc({
+  id: "doc-pending",
+  title: "Pending contract",
+  signing_url: "https://staging.getsignseen.com/s/token-1",
+});
+const DRAFT = doc({
+  id: "doc-draft",
+  title: "Draft contract",
+  status: "draft",
+});
+const SIGNED = doc({
+  id: "doc-signed",
+  title: "Signed contract",
+  status: "signed",
+  signed_file: "/media/signed/signed.pdf",
+});
+const EXPIRED = doc({
+  id: "doc-expired",
+  title: "Expired contract",
+  status: "expired",
+});
+
+function loadDashboard(documents: ReturnType<typeof doc>[]) {
+  vi.mocked(getAuthToken).mockReturnValue("token-1");
+  vi.mocked(myAccount).mockResolvedValue(FREE_ACCOUNT);
+  vi.mocked(myDashboard).mockResolvedValue({
+    tier: "free",
+    is_premium: false,
+    storage_used_bytes: 0,
+    storage_limit_bytes: 100 * 1024 * 1024,
+    documents,
+    signed_documents: [],
+  });
+  vi.mocked(getBranding).mockRejectedValue(new Error("no branding"));
+  render(<DashboardPage />);
+}
+
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
+
+describe("DashboardPage document tabs (#104)", () => {
+  it("groups documents into In Progress, Draft, and Complete tabs with counts", async () => {
+    loadDashboard([PENDING, DRAFT, SIGNED, EXPIRED]);
+
+    expect(await screen.findByRole("tab", { name: "In Progress (1)" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Draft (1)" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Complete (2)" })).toBeTruthy();
+
+    // In Progress is the default tab: only the pending document shows.
+    expect(screen.getByText("Pending contract")).toBeTruthy();
+    expect(screen.queryByText("Draft contract")).toBeNull();
+    expect(screen.queryByText("Signed contract")).toBeNull();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Draft (1)" }));
+    expect(screen.getByText("Draft contract")).toBeTruthy();
+    expect(screen.queryByText("Pending contract")).toBeNull();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Complete (2)" }));
+    expect(screen.getByText("Signed contract")).toBeTruthy();
+    expect(screen.getByText("Expired contract")).toBeTruthy();
+    expect(screen.queryByText("Pending contract")).toBeNull();
+  });
+
+  it("shows an empty message for a tab with no documents", async () => {
+    loadDashboard([PENDING]);
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Draft (0)" }));
+    expect(screen.getByText("No drafts.")).toBeTruthy();
+  });
+});
+
+describe("DashboardPage row actions (#104)", () => {
+  it("downloads the signed copy for signed documents and the original otherwise", async () => {
+    loadDashboard([PENDING, SIGNED]);
+
+    const pendingDownload = await screen.findByRole("link", { name: "Download" });
+    expect(pendingDownload.getAttribute("href")).toContain(
+      "/media/originals/contract.pdf"
+    );
+
+    fireEvent.click(screen.getByRole("tab", { name: "Complete (1)" }));
+    const signedDownload = screen.getByRole("link", { name: "Download" });
+    expect(signedDownload.getAttribute("href")).toContain("/media/signed/signed.pdf");
+    expect(signedDownload.getAttribute("download")).toContain("signed");
+  });
+
+  it("asks for confirmation before deleting, then removes the row", async () => {
+    loadDashboard([PENDING, DRAFT]);
+    vi.mocked(deleteDocument).mockResolvedValue(undefined);
+
+    await screen.findByText("Pending contract");
+    fireEvent.click(screen.getAllByRole("button", { name: "Delete" })[0]);
+
+    // Nothing deleted yet: the confirm step appears first.
+    expect(vi.mocked(deleteDocument)).not.toHaveBeenCalled();
+    expect(
+      screen.getByText(/Delete this document\? The document and its files/)
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Confirm delete" }));
+    await waitFor(() =>
+      expect(vi.mocked(deleteDocument)).toHaveBeenCalledWith("doc-pending")
+    );
+    await waitFor(() =>
+      expect(screen.queryByText("Pending contract")).toBeNull()
+    );
+    // Still on the In Progress tab, now empty.
+    expect(screen.getByText("No documents in progress.")).toBeTruthy();
+  });
+
+  it("cancelling the delete leaves the document in place", async () => {
+    loadDashboard([PENDING]);
+
+    await screen.findByText("Pending contract");
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(vi.mocked(deleteDocument)).not.toHaveBeenCalled();
+    expect(screen.getByText("Pending contract")).toBeTruthy();
+    expect(screen.queryByText(/Delete this document\?/)).toBeNull();
+  });
+
+  it("deletes drafts from the Draft tab the same way", async () => {
+    loadDashboard([DRAFT]);
+    vi.mocked(deleteDocument).mockResolvedValue(undefined);
+
+    fireEvent.click(await screen.findByRole("tab", { name: "Draft (1)" }));
+    expect(screen.getByText("Draft contract")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    fireEvent.click(screen.getByRole("button", { name: "Confirm delete" }));
+    await waitFor(() =>
+      expect(vi.mocked(deleteDocument)).toHaveBeenCalledWith("doc-draft")
+    );
+    await waitFor(() =>
+      expect(screen.queryByText("Draft contract")).toBeNull()
+    );
+    // The last document is gone, so the overall empty state returns.
+    expect(screen.getByText(/No documents yet/)).toBeTruthy();
+  });
+});
