@@ -250,6 +250,21 @@ def build_signed_pdf_multi(
     return doc.tobytes()
 
 
+def build_preview_pdf(original_path: str, fields: list[dict]) -> bytes:
+    """Stamp completed fields onto the original for an in-progress view.
+
+    Used by the session-document endpoint while the document is still
+    unsigned, so a later signer reviews the document as it stands with
+    earlier signers' work in place (#144). No certificate pages — the
+    document is not sealed yet — and no watermark; this is a review
+    copy, not a sealed file.
+    """
+    doc = pymupdf.open(original_path)
+    if fields:
+        _stamp_fields(doc, fields)
+    return doc.tobytes()
+
+
 def build_signed_pdf(
     original_path: str,
     signature_png: bytes,
