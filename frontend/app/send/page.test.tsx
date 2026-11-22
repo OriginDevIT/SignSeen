@@ -65,6 +65,18 @@ afterEach(() => {
   window.sessionStorage.clear();
 });
 
+describe("SendPage branding (#112)", () => {
+  it("shows the SignSeen brand header linking home", () => {
+    vi.mocked(getAuthToken).mockReturnValue(null);
+
+    render(<SendPage />);
+
+    expect(
+      screen.getByRole("link", { name: "SignSeen" }).getAttribute("href"),
+    ).toBe("/");
+  });
+});
+
 describe("SendPage session loading (#82)", () => {
   it("shows a loading state, not the logged-out view, while the session resolves", async () => {
     vi.mocked(getAuthToken).mockReturnValue("token-1");
