@@ -85,8 +85,13 @@ export default function PhotoStep({
     reader.readAsDataURL(f);
   };
 
+  // A photo is only submitted with consent: if the signer unchecks
+  // consent after attaching a photo, submit stays disabled instead of
+  // failing against the server-side consent check.
   const submitBlocked =
-    !fieldsComplete || (photoRequired && !photoUrl);
+    !fieldsComplete ||
+    (photoRequired && !photoUrl) ||
+    (photoUrl !== null && !photoConsent);
   const submitLabel = photoUrl
     ? "Seal it — submit"
     : photoRequired
@@ -163,6 +168,11 @@ export default function PhotoStep({
           {requiredBy
             ? `${requiredBy} requires a witness photo to complete this signing.`
             : "A witness photo is required before you can submit."}
+        </p>
+      )}
+      {photoUrl && !photoConsent && (
+        <p style={{ opacity: 0.65, margin: 0, fontSize: "0.9rem" }}>
+          Check the consent box above to submit with your photo.
         </p>
       )}
       <div style={{ display: "flex", gap: "0.75rem" }}>
