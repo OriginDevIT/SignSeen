@@ -123,6 +123,7 @@ FIELD_SIZES = {
     "checkbox": (16, 16),
     "text": (220, 18),
     "date": (140, 18),
+    "signed_date": (140, 18),
 }
 
 
@@ -177,7 +178,7 @@ def _stamp_fields(doc: pymupdf.Document, fields: list[dict]) -> None:
                     fontsize=max(8, side - 4),
                     fontname="helv",
                 )
-        elif ftype in ("text", "date"):
+        elif ftype in ("text", "date", "signed_date"):
             if field.get("value_text"):
                 text = field["value_text"]
                 font = pymupdf.Font("helv")

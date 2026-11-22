@@ -41,7 +41,7 @@ import SignPage from "./page";
 
 const field = (
   id: string,
-  type: "signature" | "initials" | "checkbox" | "text" | "date",
+  type: "signature" | "initials" | "checkbox" | "text" | "date" | "signed_date",
   page: number,
   x: number,
   y: number,
@@ -562,5 +562,58 @@ describe("SignPage earlier signers' completed fields (#105)", () => {
     ) as HTMLButtonElement;
     // The signer's own required text field is still incomplete.
     expect(continueBtn.disabled).toBe(true);
+  });
+});
+
+describe("SignPage signed-date fields (#106)", () => {
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  const today = new Date().toISOString().slice(0, 10);
+
+  async function renderSigningWithFields(
+    fields: object[]
+  ) {
+    vi.mocked(getSession).mockResolvedValue({
+      ...SESSION,
+      fields,
+    } as never);
+    render(<SignPage />);
+    await screen.findByText("Contract");
+    fireEvent.click(screen.getByText("Start signing"));
+  }
+
+  it("a signed-date box is read-only, shows today's date, and opens no modal", async () => {
+    await renderSigningWithFields([
+      field("f-sd", "signed_date", 1, 0.1, 0.2),
+      field("f-sig", "signature", 1, 0.1, 0.45),
+    ]);
+    const box = screen.getByTestId("signed-date-box");
+    expect(box.textContent).toContain("signed date");
+    expect(box.textContent).toContain(today);
+    expect(box.getAttribute("role")).toBeNull();
+    fireEvent.click(box);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("a click-placed signed-date field renders as a read-only pill", async () => {
+    await renderSigningWithFields([
+      { ...field("f-sd", "signed_date", 1, 0.5, 0.5), width: null, height: null },
+    ]);
+    const pill = screen.getByTestId("signed-date-pill");
+    expect(pill.textContent).toContain(today);
+    expect(pill.getAttribute("role")).toBeNull();
+    fireEvent.click(pill);
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+
+  it("a required signed-date field never blocks the continue button", async () => {
+    await renderSigningWithFields([field("f-sd", "signed_date", 1, 0.1, 0.2)]);
+    const continueBtn = screen.getByText(
+      "Looks good — continue"
+    ) as HTMLButtonElement;
+    expect(continueBtn.disabled).toBe(false);
   });
 });

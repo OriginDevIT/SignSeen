@@ -895,6 +895,11 @@ def _prepare_field_values(session, raw_values):
     their own fields; a submit missing any of this session's REQUIRED
     fields is an error. Everything is validated/decoded here, before
     any writes, so a bad submit changes nothing.
+
+    A signed-date field is filled by the server, not the signer: any
+    client-supplied value for one is ignored, and the field is
+    completed with the submit date (UTC, YYYY-MM-DD). A required
+    signed-date field is therefore never missing.
     """
     if raw_values is None:
         raw_values = []
@@ -910,6 +915,8 @@ def _prepare_field_values(session, raw_values):
             return None, _error(
                 "field_values contains a field that is not assigned to this signer"
             )
+        if field.field_type == DocumentField.Type.SIGNED_DATE:
+            continue  # server-filled at submit; the signer cannot edit it
         value = entry.get("value")
         item = {"field": field, "image_bytes": None, "text": "", "checked": None}
         if field.field_type in (
@@ -938,6 +945,19 @@ def _prepare_field_values(session, raw_values):
                 continue  # an empty text entry completes nothing
             item["text"] = text
         prepared[field.id] = item
+
+    # Signed-date fields complete themselves: the server records the
+    # date this signature was submitted, whatever the client sent.
+    submit_date = timezone.now().date().isoformat()
+    for field in session_fields.values():
+        if field.field_type != DocumentField.Type.SIGNED_DATE:
+            continue
+        prepared[field.id] = {
+            "field": field,
+            "image_bytes": None,
+            "text": submit_date,
+            "checked": None,
+        }
 
     missing = []
     for field in session_fields.values():

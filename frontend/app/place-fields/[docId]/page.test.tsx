@@ -553,3 +553,24 @@ describe("PlaceFieldsPage placed-fields list (#97)", () => {
     await screen.findByText(/No fields yet/);
   });
 });
+
+describe("PlaceFieldsPage field types (#106)", () => {
+  beforeEach(() => {
+    // jsdom has no URL.revokeObjectURL; the page calls it on unmount.
+    vi.stubGlobal("URL", { ...URL, revokeObjectURL: vi.fn() });
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+  });
+
+  it("the field-type select offers signed date", async () => {
+    await renderLoaded();
+    const select = screen.getByLabelText("Field type") as HTMLSelectElement;
+    const labels = Array.from(select.options).map((o) => o.textContent);
+    expect(labels).toContain("signed date");
+    expect(labels).toHaveLength(6);
+  });
+});
