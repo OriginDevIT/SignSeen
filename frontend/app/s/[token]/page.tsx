@@ -984,6 +984,12 @@ export default function SignPage() {
           cameraOpen={cameraOpen}
           onTakePhoto={openPhotoCapture}
           onCapturePhoto={setPhotoUrl}
+          // Consent attaches to the specific photo just removed, so a
+          // new photo needs a fresh consent check.
+          onRemovePhoto={() => {
+            setPhotoUrl(null);
+            setPhotoConsent(false);
+          }}
           onCloseCamera={() => setCameraOpen(false)}
           signingUrl={signingLink}
           photoRequired={photoRequired}

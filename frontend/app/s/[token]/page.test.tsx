@@ -901,3 +901,108 @@ describe("SignPage signed-date fields (#106)", () => {
     expect(continueBtn.disabled).toBe(false);
   });
 });
+
+describe("SignPage photo removal (#121)", () => {
+  let scrollIntoViewMock: ReturnType<typeof vi.fn>;
+  let origScrollIntoView: typeof Element.prototype.scrollIntoView;
+
+  beforeEach(() => {
+    scrollIntoViewMock = vi.fn();
+    origScrollIntoView = Element.prototype.scrollIntoView;
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      value: scrollIntoViewMock,
+      configurable: true,
+      writable: true,
+    });
+  });
+
+  afterEach(() => {
+    cleanup();
+    Object.defineProperty(Element.prototype, "scrollIntoView", {
+      value: origScrollIntoView,
+      configurable: true,
+      writable: true,
+    });
+    vi.clearAllMocks();
+  });
+
+  async function renderPhotoStep() {
+    await renderSigning();
+
+    // Complete every field — under the all-fields gate (#118) the
+    // continue button stays greyed out until the optional fields
+    // are done too — then continue to the photo step.
+    fireEvent.click(screen.getByLabelText(/signature field on page 1/));
+    await screen.findByRole("dialog");
+    fireEvent.click(screen.getByText("Use this signature"));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    fireEvent.click(screen.getByLabelText(/text field on page 1/));
+    await screen.findByRole("dialog");
+    fireEvent.change(screen.getByPlaceholderText("Type here"), {
+      target: { value: "Agreed" },
+    });
+    fireEvent.click(screen.getByText("Done"));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    fireEvent.click(screen.getByLabelText(/checkbox field on page 1/));
+    await screen.findByRole("dialog");
+    fireEvent.click(screen.getByLabelText("Check the box"));
+    fireEvent.click(screen.getByText("Done"));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    fireEvent.click(screen.getByLabelText(/date field on page 2/));
+    await screen.findByRole("dialog");
+    fireEvent.click(screen.getByText("Done"));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    fireEvent.click(screen.getByLabelText(/initials field on page 2/));
+    const initialsDialog = await screen.findByRole("dialog");
+    fireEvent.click(within(initialsDialog).getByText("Use this initials"));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    const sig2Boxes = screen.getAllByLabelText(/signature field on page 2/);
+    fireEvent.click(sig2Boxes[0]);
+    const sigDialog = await screen.findByRole("dialog");
+    fireEvent.click(within(sigDialog).getByText("Use your signature"));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    fireEvent.click(screen.getByText("Looks good — continue"));
+    await screen.findByText("2. Seen — snap a witness photo");
+  }
+
+  it("removing the photo returns the step to its no-photo state and resets consent", async () => {
+    await renderPhotoStep();
+
+    // Consent first, as the real flow requires, then attach a photo
+    // through the test-only file input.
+    const consent = screen.getByRole("checkbox") as HTMLInputElement;
+    fireEvent.click(consent);
+    expect(consent.checked).toBe(true);
+    fireEvent.change(screen.getByTestId("photo-file-input"), {
+      target: {
+        files: [new File(["fake"], "photo.jpg", { type: "image/jpeg" })],
+      },
+    });
+    await screen.findByAltText("Witness photo preview");
+    expect(screen.getByRole("button", { name: "Retake" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove photo" }));
+
+    expect(screen.queryByAltText("Witness photo preview")).toBeNull();
+    expect(screen.getByText("No photo yet")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Take photo" })).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: "Remove photo" })
+    ).toBeNull();
+    // Consent attaches to the removed photo, so it resets too.
+    expect(
+      (screen.getByRole("checkbox") as HTMLInputElement).checked
+    ).toBe(false);
+    // Photo is optional here, so submit is back to skip-and-submit.
+    const submit = screen.getByRole("button", {
+      name: "Skip photo & submit",
+    }) as HTMLButtonElement;
+    expect(submit.disabled).toBe(false);
+  });
+});
