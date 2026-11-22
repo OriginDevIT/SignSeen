@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { signup } from "../../lib/api";
 import AuthBrandHeader from "../../components/AuthBrandHeader";
 import GoogleSignIn from "../../components/GoogleSignIn";
+import PasswordInput from "../../components/PasswordInput";
 
 const card: React.CSSProperties = {
   maxWidth: "24rem",
@@ -90,13 +91,12 @@ export default function SignupPage() {
           onChange={(e) => setName(e.target.value)}
           style={input}
         />
-        <input
-          type="password"
+        <PasswordInput
           required
           minLength={10}
           placeholder="Password (10+ characters)"
           value={password}
-          onChange={(e) => setPassword(e.target.value)}
+          onChange={setPassword}
           style={input}
         />
         {error && <p style={{ color: "#b91c1c", margin: 0 }}>{error}</p>}
