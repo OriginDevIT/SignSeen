@@ -109,7 +109,7 @@ export default function TrackDocumentPage({
                 style={{ display: "flex", justifyContent: "space-between", gap: "1rem" }}
               >
                 <span>
-                  {s.order + 1}. {s.signer_name || "Signer"}
+                  {s.order + 1}. {s.signer_name || s.signer_email || "Signer"}
                 </span>
                 <span style={{ opacity: 0.7 }}>
                   {s.status}
