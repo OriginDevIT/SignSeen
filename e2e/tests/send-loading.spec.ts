@@ -2,10 +2,10 @@ import { test, expect } from "@playwright/test";
 
 // Issue #82/#83: the /send page must not flash the logged-out view to
 // a signed-in sender while the session check settles. Until the check
-// (GET /api/auth/me/) resolves, the page shows "Loading…" and the
-// photo checkbox stays disabled; only then does the signed-in copy
-// appear. Delaying the session check makes the loading state
-// observable instead of a race.
+// (GET /api/auth/me/) resolves, the page shows "Loading…" and no step
+// content renders at all (#153) — the photo checkbox is absent, not
+// disabled; only then does the signed-in copy appear. Delaying the
+// session check makes the loading state observable instead of a race.
 test("signed-in sender: loading state, then signed-in copy, no anonymous flash", async ({
   page,
 }) => {
@@ -28,7 +28,7 @@ test("signed-in sender: loading state, then signed-in copy, no anonymous flash",
   ).toHaveCount(0);
   await expect(
     page.getByRole("checkbox", { name: /Require a witness photo/ }),
-  ).toBeDisabled();
+  ).toHaveCount(0);
   await expect(
     page.getByText("Signed in as e2e-premium@example.com"),
   ).toBeVisible();

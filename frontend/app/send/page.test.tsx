@@ -103,15 +103,18 @@ describe("SendPage session loading (#82)", () => {
     render(<SendPage />);
 
     // The session is still unknown: neither the signed-in line nor
-    // the anonymous line may appear, and the photo checkbox must not
-    // present itself as a disabled premium feature yet.
+    // the anonymous line may appear, and no step content renders yet
+    // — the photo checkbox must not present itself as a disabled
+    // premium feature, or at all, until the page is ready.
     expect(screen.getByText("Loading…")).toBeTruthy();
     expect(
       screen.queryByText(/Sending without an account is fine/),
     ).toBeNull();
     expect(screen.queryByText(/Signed in as/)).toBeNull();
     expect(screen.queryByText(/Premium feature/)).toBeNull();
-    expect(photoCheckbox()).toHaveProperty("disabled", true);
+    expect(
+      screen.queryByRole("checkbox", { name: /Require a witness photo/ }),
+    ).toBeNull();
 
     pending.resolve(PREMIUM_ACCOUNT);
     await waitFor(() =>
@@ -387,6 +390,40 @@ describe("SendPage wizard (#89)", () => {
     expect(vi.mocked(getDocument)).toHaveBeenCalledWith("draft-1", "tok-1");
     expect(screen.getByText(/jane@example.com/)).toBeTruthy();
     expect(screen.getByText("Contract")).toBeTruthy();
+  });
+
+  it("resuming to step 3 never shows the step-1 form first (#153)", async () => {
+    window.history.replaceState(null, "", "/send?draft=draft-1&step=3");
+    window.sessionStorage.setItem("signseen_draft_token:draft-1", "tok-1");
+    const pending = deferred<typeof DRAFT_DOC>();
+    vi.mocked(getDocument).mockReturnValue(pending.promise);
+    vi.mocked(getDocumentFields).mockResolvedValue({
+      page_count: 1,
+      fields: [],
+    });
+    vi.mocked(getAuthToken).mockReturnValue(null);
+    render(<SendPage />);
+
+    // The draft is still loading: only the loading state may appear —
+    // no step-1 label and no details form fields.
+    expect(screen.getByText("Loading…")).toBeTruthy();
+    expect(
+      screen.queryByText("Step 1 of 3 — Signers & document"),
+    ).toBeNull();
+    expect(
+      screen.queryByPlaceholderText("e.g. Contractor Agreement"),
+    ).toBeNull();
+
+    pending.resolve(DRAFT_DOC);
+    await waitFor(() =>
+      expect(
+        screen.getByText("Step 3 of 3 — Review & send"),
+      ).toBeTruthy(),
+    );
+    // The details form never appeared on the way here.
+    expect(
+      screen.queryByPlaceholderText("e.g. Contractor Agreement"),
+    ).toBeNull();
   });
 
   it("free accounts are capped at 2 signers and parallel only", async () => {
