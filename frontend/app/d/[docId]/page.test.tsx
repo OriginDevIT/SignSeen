@@ -165,6 +165,37 @@ describe("TrackDocumentPage navigation", () => {
     expect(document.body.textContent).not.toContain(`pending — ${rendered}`);
   });
 
+  it("shows the signer email when no signer name is available (#143)", async () => {
+    mockedGetDocument.mockResolvedValue({
+      ...PENDING_DOC,
+      sessions: [
+        {
+          id: "sess-1",
+          signer_name: "",
+          signer_email: "noname@example.com",
+          status: "pending",
+          order: 0,
+          signed_at: null,
+        },
+        {
+          id: "sess-2",
+          signer_name: "",
+          signer_email: "",
+          status: "pending",
+          order: 1,
+          signed_at: null,
+        },
+      ],
+    });
+    renderPage();
+
+    await waitFor(() =>
+      expect(document.body.textContent).toContain("noname@example.com")
+    );
+    // With neither a name nor an email, the row still reads "Signer".
+    expect(document.body.textContent).toContain("2. Signer");
+  });
+
   it("the signed-PDF link prompts a download instead of opening a new tab (#122)", async () => {
     mockedGetDocument.mockResolvedValue({
       ...PENDING_DOC,
