@@ -642,3 +642,66 @@ describe("PlaceFieldsPage field types (#106)", () => {
     expect(labels).toHaveLength(6);
   });
 });
+
+describe("PlaceFieldsPage navigation (#152)", () => {
+  beforeEach(() => {
+    vi.stubGlobal("URL", { ...URL, revokeObjectURL: vi.fn() });
+    window.sessionStorage.setItem("signseen_draft_token:doc-1", "tok-1");
+  });
+
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    vi.clearAllMocks();
+    window.sessionStorage.clear();
+    window.history.replaceState(null, "", "/");
+  });
+
+  it("shows Back and Continue as buttons below the preview and above Placed fields, with the wizard destinations", async () => {
+    const draftDoc = {
+      ...DOC,
+      status: "draft",
+      signer_list: [
+        { name: "Alice", email: "alice@example.com" },
+        { name: "Bob", email: "bob@example.com" },
+      ],
+      sessions: [],
+    };
+    vi.mocked(getDocument).mockResolvedValue(draftDoc as never);
+    vi.mocked(getDocumentFields).mockResolvedValue({
+      page_count: 1,
+      fields: [],
+    });
+    vi.mocked(fetchDocumentPageImageUrl).mockResolvedValue("blob:page-1.png");
+    render(<PlaceFieldsPage />);
+    await screen.findByAltText("Document page 1");
+
+    const back = screen.getByRole("link", { name: "← Back to details" });
+    const next = screen.getByRole("link", { name: "Continue to review →" });
+    expect(back.getAttribute("href")).toBe("/send?draft=doc-1&step=1");
+    expect(next.getAttribute("href")).toBe("/send?draft=doc-1&step=3");
+    // Styled as buttons, not plain text links: the primary action is
+    // dark with white text, the back action is a bordered ghost.
+    expect(window.getComputedStyle(next).backgroundColor).toBe(
+      "rgb(17, 24, 39)"
+    );
+    expect(window.getComputedStyle(next).color).toBe("rgb(255, 255, 255)");
+    expect(window.getComputedStyle(back).backgroundColor).toBe(
+      "rgb(255, 255, 255)"
+    );
+    // Placement order in the document: preview image, then the
+    // navigation, then the Placed fields section.
+    const html = document.body.innerHTML;
+    expect(html.indexOf("Document page 1")).toBeGreaterThan(-1);
+    expect(html.indexOf("Document page 1")).toBeLessThan(
+      html.indexOf("Continue to review")
+    );
+    expect(html.indexOf("Continue to review")).toBeLessThan(
+      html.indexOf("Placed fields")
+    );
+    // The nav row pushes Continue to the right end.
+    const row = next.parentElement as HTMLElement;
+    expect(row.style.justifyContent).toBe("space-between");
+  });
+});

@@ -56,6 +56,29 @@ const toolbarSelectStyle: React.CSSProperties = {
   textOverflow: "ellipsis",
 };
 
+/** Page navigation styled as buttons, matching the send page's
+ * primary/ghost pair. */
+const primaryBtnStyle: React.CSSProperties = {
+  padding: "0.6rem 1.1rem",
+  fontSize: "1rem",
+  fontWeight: 600,
+  color: "#fff",
+  background: "#111827",
+  border: "none",
+  borderRadius: 8,
+  cursor: "pointer",
+  textDecoration: "none",
+  textAlign: "center",
+  boxSizing: "border-box",
+};
+
+const ghostBtnStyle: React.CSSProperties = {
+  ...primaryBtnStyle,
+  color: "#111827",
+  background: "#fff",
+  border: "1px solid #d1d5db",
+};
+
 // A drag on the page is one of three gestures: drawing a new box on
 // empty canvas, moving a placed box, or selecting a completed box
 // (which cannot move). The drag start (in client pixels, for the
@@ -775,6 +798,30 @@ export default function PlaceFieldsPage() {
           })()}
       </div>
 
+      <div
+        style={{
+          marginTop: "1.5rem",
+          display: "flex",
+          justifyContent: "space-between",
+          gap: "1rem",
+        }}
+      >
+        {isDraft || inWizard ? (
+          <>
+            <a href={`/send?draft=${docId}&step=1`} style={ghostBtnStyle}>
+              ← Back to details
+            </a>
+            <a href={`/send?draft=${docId}&step=3`} style={primaryBtnStyle}>
+              Continue to review →
+            </a>
+          </>
+        ) : (
+          <a href={`/d/${docId}`} style={ghostBtnStyle}>
+            ← Back to document
+          </a>
+        )}
+      </div>
+
       <h2 style={{ fontSize: "1.15rem", marginTop: "1.5rem" }}>
         <button
           type="button"
@@ -839,16 +886,6 @@ export default function PlaceFieldsPage() {
           ))}
         </div>
         ))}
-      {isDraft || inWizard ? (
-        <p style={{ marginTop: "1.5rem", display: "flex", gap: "1rem", flexWrap: "wrap" }}>
-          <a href={`/send?draft=${docId}&step=1`}>← Back to details</a>
-          <a href={`/send?draft=${docId}&step=3`}>Continue to review →</a>
-        </p>
-      ) : (
-        <p style={{ marginTop: "1.5rem" }}>
-          <a href={`/d/${docId}`}>← Back to document</a>
-        </p>
-      )}
     </main>
   );
 }
