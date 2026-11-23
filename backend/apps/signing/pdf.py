@@ -50,7 +50,10 @@ def _apply_free_tier_watermark(doc: pymupdf.Document) -> None:
 def _signer_lines(signer: dict) -> list[str]:
     # Plain "-" fallback: the certificate renders in Helvetica, whose
     # encoding turns an em dash into a stray middle dot.
-    lines = [
+    lines = []
+    if signer.get("is_originator"):
+        lines.append("Document Originator")
+    lines += [
         f"Signer: {signer.get('signer_name') or '-'}",
         f"Signed at (UTC): {signer.get('signed_at')}",
         f"Document ID: {signer.get('document_id')}",
