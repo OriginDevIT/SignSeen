@@ -183,7 +183,14 @@ export default function SendPage() {
       ? [{ name: accountName, email: senderEmail.trim() }]
       : []),
   ];
-  const canAddSigner = effectiveSigners.length < maxSigners;
+  // A free sender gets one signer row; the second signer is the sender
+  // themself via "Send to me". The button greys out as soon as one row
+  // exists, instead of letting a second arbitrary email be entered and
+  // failing only at the later "second signer must be you" check.
+  // Premium senders add rows up to the cap, counting the sender too.
+  const canAddSigner = isPremium
+    ? effectiveSigners.length < maxSigners
+    : signers.length < FREE_MAX_SIGNERS - 1;
 
   const updateSigner = (index: number, patch: Partial<SignerInput>) => {
     setSigners((prev) =>
