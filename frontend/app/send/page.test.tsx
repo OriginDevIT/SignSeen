@@ -442,11 +442,11 @@ describe("SendPage wizard (#89)", () => {
     ).toHaveProperty("disabled", true);
     expect(screen.getByText(/Sequential order is a premium feature/)).toBeTruthy();
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "Add another signer" }),
-    );
-    expect(screen.getAllByPlaceholderText("Jane Doe")).toHaveLength(2);
-    // At the cap the add control disables and the limit is explained.
+    // One signer row is the free limit for adding: the second signer
+    // comes only via "Send to me", so the button is greyed out with
+    // one row and the limit is explained — not only once two rows
+    // exist (#150).
+    expect(screen.getAllByPlaceholderText("Jane Doe")).toHaveLength(1);
     expect(
       screen.getByRole("button", { name: "Add another signer" }),
     ).toHaveProperty("disabled", true);
@@ -455,7 +455,19 @@ describe("SendPage wizard (#89)", () => {
     ).toBeTruthy();
     expect(
       screen.getByRole("checkbox", { name: /Send to me for signature also/ }),
+    ).toHaveProperty("disabled", false);
+
+    // Adding the sender via the checkbox keeps the button greyed out.
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: /Send to me for signature also/ }),
+    );
+    expect(screen.getAllByPlaceholderText("Jane Doe")).toHaveLength(1);
+    expect(
+      screen.getByRole("button", { name: "Add another signer" }),
     ).toHaveProperty("disabled", true);
+    expect(
+      screen.getByText(/The free plan allows up to 2 signers/),
+    ).toBeTruthy();
   });
 
   it("premium accounts can add a third signer and choose sequential", async () => {
@@ -658,7 +670,14 @@ describe("SendPage signer reorder (#111)", () => {
       page_count: 1,
       fields: [],
     });
-    await renderAnonymous();
+    // Two signer rows need a premium account now that free senders
+    // add a second signer only via "Send to me" (#150).
+    vi.mocked(getAuthToken).mockReturnValue("token-1");
+    vi.mocked(myAccount).mockResolvedValue(PREMIUM_ACCOUNT);
+    render(<SendPage />);
+    await waitFor(() =>
+      expect(screen.getByText(/Signed in as owner@example.com/)).toBeTruthy(),
+    );
     fireEvent.change(
       screen.getByPlaceholderText("e.g. Contractor Agreement"),
       { target: { value: "Contract" } },
