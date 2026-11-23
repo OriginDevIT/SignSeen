@@ -2778,3 +2778,32 @@ def test_certificate_fifth_signer_flows_to_a_second_page():
     assert pdf[1].rect.width > pdf[1].rect.height
     assert pdf[2].rect.width > pdf[2].rect.height
     assert "Signer Five" in pdf[2].get_text()
+
+
+@pytest.mark.django_db
+def test_certificate_marks_sender_signer_as_document_originator():
+    """The certificate designates the signer who sent the document
+    as the Document Originator, directly above their Signer line,
+    and no other signer gets the designation (#155)."""
+    account = _make_account(
+        email="sender@example.com", tier=Account.Tier.PREMIUM
+    )
+    client = _auth_client(account)
+    signers = [
+        {"name": "Other Signer", "email": "other@example.com"},
+        # Mixed case on purpose: the sender match is case-insensitive.
+        {"name": "Sending Signer", "email": "SENDER@example.com"},
+    ]
+    sent = upload_document(client, email=account.email, signers=signers).json()
+    doc_id = sent["document"]["id"]
+    for s in sent["sessions"]:
+        assert _sign(s["token"]).status_code == 200
+
+    doc = Document.objects.get(pk=doc_id)
+    assert doc.status == Document.Status.SIGNED
+    text = "".join(
+        page.get_text()
+        for page in pymupdf.open(stream=doc.signed_file.read())
+    )
+    assert "Document Originator\nSigner: Sending Signer" in text
+    assert text.count("Document Originator") == 1

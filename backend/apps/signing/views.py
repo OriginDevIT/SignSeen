@@ -1267,6 +1267,14 @@ def submit_signature(request, token):
                         # delivery), so it identifies the signer when
                         # no name was given.
                         "signer_name": s.signer_name or s.signer_email,
+                        # The sender signs as a signer too when they
+                        # countersign; the certificate marks that
+                        # section as the document originator. Email
+                        # comparison is case-insensitive.
+                        "is_originator": (s.signer_email or "")
+                        .strip()
+                        .lower()
+                        == (doc.sender_email or "").strip().lower(),
                         "signed_at": _utc_timestamp(event.created_at),
                         "document_id": str(doc.id),
                         "session_id": str(s.id),
