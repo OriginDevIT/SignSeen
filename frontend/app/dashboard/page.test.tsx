@@ -9,6 +9,7 @@ import {
   getBranding,
   myAccount,
   myDashboard,
+  startCheckout,
 } from "../../lib/api";
 
 vi.mock("next/navigation", () => {
@@ -28,6 +29,7 @@ vi.mock("../../lib/api", async (importOriginal) => {
     myDashboard: vi.fn(),
     getBranding: vi.fn(),
     deleteDocument: vi.fn(),
+    startCheckout: vi.fn(),
   };
 });
 
@@ -211,5 +213,51 @@ describe("DashboardPage row actions (#104)", () => {
     );
     // The last document is gone, so the overall empty state returns.
     expect(screen.getByText(/No documents yet/)).toBeTruthy();
+  });
+});
+
+describe("DashboardPage upgrade notices (#151)", () => {
+  it("the pending-limit and branding notices are checkout buttons (annual by default)", async () => {
+    vi.mocked(startCheckout).mockResolvedValue(
+      "https://checkout.stripe.test/session-1",
+    );
+    const originalLocation = window.location;
+    let navigatedTo = "";
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: {
+        ...originalLocation,
+        set href(url: string) {
+          navigatedTo = url;
+        },
+        get href() {
+          return navigatedTo;
+        },
+      },
+    });
+    try {
+      loadDashboard([PENDING]);
+      await waitFor(() =>
+        expect(screen.getByText("Pending contract")).toBeTruthy(),
+      );
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "upgrade to premium" }),
+      );
+      await waitFor(() =>
+        expect(vi.mocked(startCheckout)).toHaveBeenCalledWith("annual"),
+      );
+      expect(navigatedTo).toBe("https://checkout.stripe.test/session-1");
+
+      fireEvent.click(screen.getByRole("button", { name: "upgrade" }));
+      await waitFor(() =>
+        expect(vi.mocked(startCheckout)).toHaveBeenCalledTimes(2),
+      );
+    } finally {
+      Object.defineProperty(window, "location", {
+        configurable: true,
+        value: originalLocation,
+      });
+    }
   });
 });

@@ -26,6 +26,7 @@ import {
   getDocumentFields,
   myAccount,
   sendDocument,
+  startCheckout,
   uploadDocument,
 } from "../../lib/api";
 
@@ -41,6 +42,7 @@ vi.mock("../../lib/api", async (importOriginal) => {
     getDocumentFields: vi.fn(),
     patchDocument: vi.fn(),
     sendDocument: vi.fn(),
+    startCheckout: vi.fn(),
     discardDraft: vi.fn(),
   };
 });
@@ -720,5 +722,100 @@ describe("SendPage signer reorder (#111)", () => {
       .map((li) => li.textContent ?? "");
     expect(reviewItems[0]).toContain("b@example.com");
     expect(reviewItems[1]).toContain("a@example.com");
+  });
+});
+
+describe("SendPage upgrade notices (#151)", () => {
+  // Intercept the checkout navigation: jsdom cannot navigate, so
+  // capture the URL the page assigns instead of letting it warn.
+  function spyOnNavigation() {
+    const original = window.location;
+    let target = "";
+    Object.defineProperty(window, "location", {
+      configurable: true,
+      value: {
+        ...original,
+        set href(url: string) {
+          target = url;
+        },
+        get href() {
+          return target;
+        },
+      },
+    });
+    return {
+      get target() {
+        return target;
+      },
+      restore() {
+        Object.defineProperty(window, "location", {
+          configurable: true,
+          value: original,
+        });
+      },
+    };
+  }
+
+  it("anonymous visitors get signup links on every notice", async () => {
+    await renderAnonymous();
+
+    expect(
+      screen.getByRole("link", { name: "upgrade" }).getAttribute("href"),
+    ).toBe("/signup");
+    expect(
+      screen
+        .getByRole("link", { name: "Upgrade to enable it." })
+        .getAttribute("href"),
+    ).toBe("/signup");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Add another signer" }),
+    );
+    expect(
+      screen.getByRole("link", { name: "Upgrade" }).getAttribute("href"),
+    ).toBe("/signup");
+    expect(vi.mocked(startCheckout)).not.toHaveBeenCalled();
+  });
+
+  it("logged-in free senders get checkout buttons (annual by default)", async () => {
+    vi.mocked(getAuthToken).mockReturnValue("token-1");
+    vi.mocked(myAccount).mockResolvedValue(FREE_ACCOUNT);
+    vi.mocked(startCheckout).mockResolvedValue(
+      "https://checkout.stripe.test/session-1",
+    );
+    const nav = spyOnNavigation();
+    try {
+      render(<SendPage />);
+      await waitFor(() =>
+        expect(
+          screen.getByText(/Signed in as owner@example.com/),
+        ).toBeTruthy(),
+      );
+
+      const photoUpgrade = screen.getByRole("button", { name: "upgrade" });
+      const sequentialUpgrade = screen.getByRole("button", {
+        name: "Upgrade to enable it.",
+      });
+      fireEvent.click(photoUpgrade);
+      await waitFor(() =>
+        expect(vi.mocked(startCheckout)).toHaveBeenCalledWith("annual"),
+      );
+      expect(nav.target).toBe("https://checkout.stripe.test/session-1");
+
+      fireEvent.click(sequentialUpgrade);
+      await waitFor(() =>
+        expect(vi.mocked(startCheckout)).toHaveBeenCalledTimes(2),
+      );
+
+      fireEvent.click(
+        screen.getByRole("button", { name: "Add another signer" }),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Upgrade" }));
+      await waitFor(() =>
+        expect(vi.mocked(startCheckout)).toHaveBeenCalledTimes(3),
+      );
+    } finally {
+      nav.restore();
+    }
   });
 });

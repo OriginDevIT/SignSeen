@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import SigningLinkPanel from "../../components/SigningLinkPanel";
+import UpgradeAction from "../../components/UpgradeAction";
 import {
   ApiError,
   deleteDocument,
@@ -275,8 +276,11 @@ export default function DashboardPage() {
           The free plan allows 1 document pending signature at a time — one
           document is still pending. You can still start a draft (drafts
           don&apos;t count toward the limit); the limit applies when you
-          send, once the pending document has been signed or expires, or
-          upgrade to premium to send more now.
+          send, once the pending document has been signed or expires, or{" "}
+          <UpgradeAction loggedIn onUpgrade={() => upgrade("annual")}>
+            upgrade to premium
+          </UpgradeAction>{" "}
+          to send more now.
         </p>
       )}
 
@@ -412,7 +416,15 @@ export default function DashboardPage() {
         <p style={{ opacity: 0.65, margin: "0 0 1rem", fontSize: "0.9rem" }}>
           Your brand on the signing page, the sealed-PDF certificate, and
           signed-copy emails for documents you send.
-          {!dash.is_premium && " Premium feature — upgrade to enable it."}
+          {!dash.is_premium && (
+            <>
+              {" Premium feature — "}
+              <UpgradeAction loggedIn onUpgrade={() => upgrade("annual")}>
+                upgrade
+              </UpgradeAction>
+              {" to enable it."}
+            </>
+          )}
         </p>
         <div style={{ display: "grid", gap: "0.9rem", maxWidth: "26rem" }}>
           <label style={{ display: "grid", gap: "0.35rem", fontSize: "0.9rem" }}>
