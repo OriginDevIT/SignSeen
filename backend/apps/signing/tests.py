@@ -2682,3 +2682,51 @@ def test_verify_broken_chain_is_invalid():
     sealed.save(update_fields=["payload"])
     body = _verify(client, _sealed_pdf_bytes(doc_id), ip="10.1.0.15").json()
     assert body == {"valid": False, "reason": "chain_broken"}
+
+
+@pytest.mark.django_db
+def test_session_document_shows_completed_fields_in_progress():
+    """The session-document PDF stamps earlier signers' completed
+    fields while the document is still unsigned (#144)."""
+    client, doc_id, alice, bob = _premium_fields_setup("sequential")
+    a_sig = _place(client, doc_id, alice["id"], "signature", page=1, x=0.1, y=0.2)
+    a_text = _place(client, doc_id, alice["id"], "text", page=1, x=0.1, y=0.45)
+
+    # Before anyone signs, the session document is the original upload.
+    original = Document.objects.get(pk=doc_id).original_file.read()
+    resp = APIClient().get(f"/api/sessions/{alice['token']}/document/")
+    assert resp.status_code == 200
+    assert b"".join(resp.streaming_content) == original
+
+    # Alice signs, completing her text field.
+    done = _sign_with_fields(
+        alice["token"],
+        [
+            {"field_id": a_sig["id"], "value": SIG_DATA_URL},
+            {"field_id": a_text["id"], "value": "Alice agreed"},
+        ],
+    )
+    assert done.status_code == 200, done.content
+    assert done.json()["document_final"] is False
+
+    # Bob, the next signer, sees Alice's text stamped into the PDF —
+    # same page count as the original (no certificate pages yet).
+    resp = APIClient().get(f"/api/sessions/{bob['token']}/document/")
+    assert resp.status_code == 200
+    preview_bytes = resp.content
+    assert preview_bytes != original
+    preview = pymupdf.open(stream=preview_bytes)
+    assert preview.page_count == pymupdf.open(stream=original).page_count
+    assert "Alice agreed" in preview[0].get_text()
+
+
+@pytest.mark.django_db
+def test_session_document_serves_original_when_nothing_completed():
+    """With no completed fields, the in-progress view is the original
+    upload, byte for byte (#144)."""
+    client, doc_id, alice, bob = _premium_fields_setup("sequential")
+
+    original = Document.objects.get(pk=doc_id).original_file.read()
+    resp = APIClient().get(f"/api/sessions/{alice['token']}/document/")
+    assert resp.status_code == 200
+    assert b"".join(resp.streaming_content) == original

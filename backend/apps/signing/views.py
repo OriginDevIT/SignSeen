@@ -66,7 +66,7 @@ from .notifications import (
 )
 from .trust import assess_photo, normalize_photo
 from .models import AuditEvent, Document, DocumentField, SigningSession
-from .pdf import build_signed_pdf_multi
+from .pdf import build_preview_pdf, build_signed_pdf_multi
 from .serializers import (
     AuditEventSerializer,
     DocumentFieldSerializer,
@@ -215,6 +215,36 @@ def _decode_data_url(value: str, field: str) -> bytes:
 
 def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def _completed_field_dicts(doc):
+    """Completed fields in the shape the PDF stamper takes.
+
+    Shared by the seal step and the in-progress preview: each dict
+    carries the field's type, page, normalized box, text value, and
+    the image bytes for a signature/initials field.
+    """
+    completed = []
+    for f in doc.fields.filter(completed_at__isnull=False).order_by(
+        "page", "created_at"
+    ):
+        image_bytes = None
+        if f.value_file:
+            with open(f.value_file.path, "rb") as fh:
+                image_bytes = fh.read()
+        completed.append(
+            {
+                "type": f.field_type,
+                "page": f.page,
+                "x": f.x,
+                "y": f.y,
+                "width": f.width,
+                "height": f.height,
+                "value_text": f.value_text,
+                "image_png": image_bytes,
+            }
+        )
+    return completed
 
 
 def _safe_int(value, default=0):
@@ -1027,7 +1057,19 @@ def session_document(request, token):
     session = get_object_or_404(SigningSession, token=token)
     if not session.is_usable() and session.status != SigningSession.Status.SIGNED:
         return _error("session is no longer available", 410)
-    path = session.document.signed_file.path if session.document.signed_file else session.document.original_file.path
+    if session.document.signed_file:
+        path = session.document.signed_file.path
+        return FileResponse(open(path, "rb"), content_type="application/pdf")
+    completed = _completed_field_dicts(session.document)
+    if completed:
+        # In progress: stamp what earlier signers completed onto the
+        # original, so a later signer reviews the document as it
+        # stands (#144) — no certificate pages until the seal.
+        preview = build_preview_pdf(
+            session.document.original_file.path, completed
+        )
+        return HttpResponse(preview, content_type="application/pdf")
+    path = session.document.original_file.path
     return FileResponse(open(path, "rb"), content_type="application/pdf")
 
 
@@ -1234,26 +1276,7 @@ def submit_signature(request, token):
                 )
             # Completed fields stamp onto their pages before the
             # certificate pages are appended (#13).
-            completed_fields = []
-            for f in doc.fields.filter(
-                completed_at__isnull=False
-            ).order_by("page", "created_at"):
-                image_bytes = None
-                if f.value_file:
-                    with open(f.value_file.path, "rb") as fh:
-                        image_bytes = fh.read()
-                completed_fields.append(
-                    {
-                        "type": f.field_type,
-                        "page": f.page,
-                        "x": f.x,
-                        "y": f.y,
-                        "width": f.width,
-                        "height": f.height,
-                        "value_text": f.value_text,
-                        "image_png": image_bytes,
-                    }
-                )
+            completed_fields = _completed_field_dicts(doc)
             # Premium documents skip the free-tier watermark.
             signed_bytes = build_signed_pdf_multi(
                 doc.original_file.path,
