@@ -482,6 +482,9 @@ export default function DashboardPage() {
         </p>
       ) : (
         <>
+          <h2 style={{ margin: "0.5rem 0 0", fontSize: "1.25rem" }}>
+            Documents you&apos;ve sent
+          </h2>
           <div
             role="tablist"
             aria-label="Documents"
