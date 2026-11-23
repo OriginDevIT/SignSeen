@@ -57,7 +57,6 @@ export default function SendPage() {
   const [file, setFile] = useState<File | null>(null);
   const [pageUrl, setPageUrl] = useState("");
   const [draft, setDraft] = useState<DocumentInfo | null>(null);
-  const [draftLoading, setDraftLoading] = useState(false);
   const [fields, setFields] = useState<DocumentFieldInfo[]>([]);
   const [sessions, setSessions] = useState<SessionInfo[]>([]);
   const [error, setError] = useState("");
@@ -69,6 +68,10 @@ export default function SendPage() {
   // must not render the logged-out view: a signed-in sender would
   // briefly see the anonymous copy and a disabled photo checkbox.
   const [accountLoaded, setAccountLoaded] = useState(false);
+  // Whether the draft resume from the URL has settled. Until it does,
+  // no step content renders: a resume to step 2 or 3 would otherwise
+  // flash the step-1 details form first (#153).
+  const [resumeChecked, setResumeChecked] = useState(false);
   const [working, setWorking] = useState(false);
 
   const goStep = useCallback((next: Step, draftId?: string | null, sentId?: string | null) => {
@@ -115,10 +118,13 @@ export default function SendPage() {
         setSessions(saved);
         setStep("done");
       }
+      setResumeChecked(true);
       return;
     }
-    if (!draftId) return;
-    setDraftLoading(true);
+    if (!draftId) {
+      setResumeChecked(true);
+      return;
+    }
     getDocument(draftId, getDraftToken(draftId))
       .then((doc) => {
         if (doc.status !== "draft") {
@@ -140,7 +146,7 @@ export default function SendPage() {
       .catch(() => {
         setError("Could not load that draft — it may have been discarded or expired.");
       })
-      .finally(() => setDraftLoading(false));
+      .finally(() => setResumeChecked(true));
   }, []);
 
   // Placed-field counts for steps 2 and 3, re-read when the step
@@ -399,6 +405,11 @@ export default function SendPage() {
           ? "Step 3 of 3 — Review & send"
           : "Sent";
 
+  // Both the session check and the draft resume must have settled
+  // before any step renders; otherwise a resume to step 2 or 3
+  // flashes the step-1 form first (#153).
+  const ready = accountLoaded && resumeChecked;
+
   return (
     <main
       style={{
@@ -417,15 +428,17 @@ export default function SendPage() {
           ? "Your document is on its way — each signer was emailed their signing link and the document to sign."
           : "Upload a PDF, place fields if you want them, review, then send. Nothing is emailed until you press Send in step 3."}
       </p>
-      <p style={{ fontSize: "0.9rem", fontWeight: 600, marginTop: 0, marginBottom: "1rem" }}>
-        {stepLabel}
-        {draft && step !== "done" && (
-          <span style={{ fontWeight: 400, opacity: 0.6 }}>
-            {" "}· Draft saved — refreshing resumes here.
-          </span>
-        )}
-      </p>
-      {!accountLoaded || draftLoading ? (
+      {ready && (
+        <p style={{ fontSize: "0.9rem", fontWeight: 600, marginTop: 0, marginBottom: "1rem" }}>
+          {stepLabel}
+          {draft && step !== "done" && (
+            <span style={{ fontWeight: 400, opacity: 0.6 }}>
+              {" "}· Draft saved — refreshing resumes here.
+            </span>
+          )}
+        </p>
+      )}
+      {!ready ? (
         <p style={{ fontSize: "0.9rem", opacity: 0.7, marginTop: "-1rem", marginBottom: "1.5rem" }}>
           Loading…
         </p>
@@ -454,7 +467,7 @@ export default function SendPage() {
         </p>
       )}
 
-      {step === 1 && (
+      {ready && step === 1 && (
         <form onSubmit={submitStep1} style={{ display: "grid", gap: "1rem" }}>
           <div style={{ display: "flex", gap: "0.5rem" }}>
             {(["file", "url"] as Intake[]).map((mode) => (
@@ -814,7 +827,7 @@ export default function SendPage() {
         </form>
       )}
 
-      {step === 2 && draft && (
+      {ready && step === 2 && draft && (
         <section style={{ display: "grid", gap: "1rem" }}>
           <p style={{ margin: 0, opacity: 0.75 }}>
             Draft saved — no email has been sent yet. Place signature,
@@ -890,7 +903,7 @@ export default function SendPage() {
         </section>
       )}
 
-      {step === 3 && draft && (
+      {ready && step === 3 && draft && (
         <section style={{ display: "grid", gap: "1rem" }}>
           <div
             style={{
@@ -1001,7 +1014,7 @@ export default function SendPage() {
         </section>
       )}
 
-      {step === "done" && sessions.length > 0 && (
+      {ready && step === "done" && sessions.length > 0 && (
         <section style={{ display: "grid", gap: "1.25rem" }}>
           <div
             style={{
