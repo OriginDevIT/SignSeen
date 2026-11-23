@@ -116,6 +116,9 @@ export default function Home() {
           <a href="/send" style={cta}>
             Send a document for signature
           </a>
+          <a href="/verify" style={ctaGhost}>
+            Validate a signed document
+          </a>
           <a href="/signup" style={ctaGhost}>
             Create a free account
           </a>
