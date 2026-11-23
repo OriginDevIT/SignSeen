@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import AuthBrandHeader from "../../components/AuthBrandHeader";
+import UpgradeAction from "../../components/UpgradeAction";
 import {
   ApiError,
   clearDraftToken,
@@ -19,6 +20,7 @@ import {
   sendDocument,
   setDraftToken,
   setSendResult,
+  startCheckout,
   uploadDocument,
   type DocumentFieldInfo,
   type DocumentInfo,
@@ -73,6 +75,18 @@ export default function SendPage() {
   // flash the step-1 details form first (#153).
   const [resumeChecked, setResumeChecked] = useState(false);
   const [working, setWorking] = useState(false);
+
+  // Premium checkout for a logged-in sender (annual is the default
+  // plan); anonymous visitors go to account creation instead, which
+  // the upgrade notices handle by rendering a signup link.
+  const startUpgrade = async () => {
+    setError("");
+    try {
+      window.location.href = await startCheckout("annual");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Checkout failed");
+    }
+  };
 
   const goStep = useCallback((next: Step, draftId?: string | null, sentId?: string | null) => {
     setStep(next);
@@ -675,7 +689,20 @@ export default function SendPage() {
                 <p style={{ fontSize: "0.9rem", opacity: 0.7, margin: "0.5rem 0 0" }}>
                   {isPremium
                     ? `The maximum is ${PREMIUM_MAX_SIGNERS} signers per document.`
-                    : "The free plan allows up to 2 signers — the second signer must be you, via “Send to me for signature also” below. Upgrade for up to 10 signers."}
+                    : (
+                      <>
+                        The free plan allows up to 2 signers — the second
+                        signer must be you, via “Send to me for signature
+                        also” below.{" "}
+                        <UpgradeAction
+                          loggedIn={accountEmail !== null}
+                          onUpgrade={startUpgrade}
+                        >
+                          Upgrade
+                        </UpgradeAction>{" "}
+                        for up to 10 signers.
+                      </>
+                    )}
                 </p>
               )}
             </div>
@@ -727,9 +754,18 @@ export default function SendPage() {
               <span style={{ opacity: 0.6 }}>
                 (every signer must attach a photo to complete signing)
               </span>
-              {!isPremium &&
-                accountLoaded &&
-                " Premium feature — upgrade to enable it."}
+              {!isPremium && accountLoaded && (
+                <>
+                  {" Premium feature — "}
+                  <UpgradeAction
+                    loggedIn={accountEmail !== null}
+                    onUpgrade={startUpgrade}
+                  >
+                    upgrade
+                  </UpgradeAction>
+                  {" to enable it."}
+                </>
+              )}
             </span>
           </label>
           <label style={{ display: "grid", gap: "0.35rem" }}>
@@ -746,7 +782,14 @@ export default function SendPage() {
             </select>
             {!isPremium && accountLoaded && (
               <span style={{ fontSize: "0.9rem", opacity: 0.7 }}>
-                Sequential order is a premium feature — free documents are parallel only.
+                Sequential order is a premium feature — free documents are
+                parallel only.{" "}
+                <UpgradeAction
+                  loggedIn={accountEmail !== null}
+                  onUpgrade={startUpgrade}
+                >
+                  Upgrade to enable it.
+                </UpgradeAction>
               </span>
             )}
           </label>
