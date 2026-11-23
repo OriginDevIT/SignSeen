@@ -128,6 +128,20 @@ describe("DashboardPage document tabs (#104)", () => {
     fireEvent.click(await screen.findByRole("tab", { name: "Draft (0)" }));
     expect(screen.getByText("No drafts.")).toBeTruthy();
   });
+
+  it("shows a 'Documents you've sent' header above the tabs (#154)", async () => {
+    loadDashboard([PENDING]);
+
+    const header = await screen.findByRole("heading", {
+      name: "Documents you've sent",
+    });
+    expect(header).toBeTruthy();
+    const tablist = screen.getByRole("tablist");
+    expect(
+      header.compareDocumentPosition(tablist) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+  });
 });
 
 describe("DashboardPage row actions (#104)", () => {
