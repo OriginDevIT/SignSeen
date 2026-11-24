@@ -2514,7 +2514,7 @@ def test_verify_genuine_sealed_pdf_is_valid():
     assert body["document_title"] == "Contract"
     assert body["signed_at"].endswith("Z")
     assert body["signer_count"] == 1
-    assert body["signer_email"] == "jane@example.com"
+    assert "signer_email" not in body
 
     # A stale sender token must not break this public endpoint.
     stale = APIClient()
@@ -2532,7 +2532,7 @@ def test_verify_multi_signer_pdf_is_valid():
     body = _verify(client, _sealed_pdf_bytes(doc_id), ip="10.1.0.3").json()
     assert body["valid"] is True
     assert body["signer_count"] == 2
-    assert body["signer_email"] == "alice@example.com, bob@example.com"
+    assert "signer_email" not in body
 
 
 @pytest.mark.django_db

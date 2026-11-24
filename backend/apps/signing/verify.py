@@ -259,16 +259,11 @@ def verify_document(request):
         # byte-identity cannot be established, so fail closed.
         return _invalid(REASON_FILE_ALTERED)
 
-    signer_emails = []
-    for section in sections:
-        session = sessions[section["session_id"]]
-        signer_emails.append(session.signer_email or session.signer_name or "")
     return Response(
         {
             "valid": True,
             "document_title": doc.title,
             "signed_at": _utc_timestamp(sealed.created_at),
             "signer_count": len(sections),
-            "signer_email": ", ".join(e for e in signer_emails if e),
         }
     )
