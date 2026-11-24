@@ -731,13 +731,11 @@ export default function SendPage() {
                 style={{ marginTop: "0.2rem" }}
               />
               <span>
-                Send to me for signature also{" "}
+                Send to me for signature{" "}
                 <span style={{ opacity: 0.6 }}>
-                  (adds you as a signer
                   {signingMode === "sequential"
-                    ? " — in sequential mode you sign last"
-                    : ""}
-                  )
+                    ? "(adds you as a signer — in sequential mode you sign last)"
+                    : "(adds you as a signer in parallel mode, no signing order enforced)"}
                 </span>
               </span>
             </label>
