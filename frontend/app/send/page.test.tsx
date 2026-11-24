@@ -506,6 +506,40 @@ describe("SendPage wizard (#89)", () => {
   });
 });
 
+describe("SendPage 'Send to me' label (#169)", () => {
+  async function renderSignedIn(account: typeof FREE_ACCOUNT) {
+    vi.mocked(getAuthToken).mockReturnValue("token-1");
+    vi.mocked(myAccount).mockResolvedValue(account);
+    render(<SendPage />);
+    await waitFor(() =>
+      expect(screen.getByText(/Signed in as owner@example.com/)).toBeTruthy(),
+    );
+  }
+
+  it("free accounts never see the 'sign last' clause (parallel only)", async () => {
+    await renderSignedIn(FREE_ACCOUNT);
+    expect(screen.getByText(/adds you as a signer/)).toBeTruthy();
+    expect(screen.queryByText(/in sequential mode you sign last/)).toBeNull();
+  });
+
+  it("premium accounts see the clause only in sequential mode", async () => {
+    await renderSignedIn(PREMIUM_ACCOUNT);
+    // Parallel is the default: no signing order is promised.
+    expect(screen.getByText(/adds you as a signer/)).toBeTruthy();
+    expect(screen.queryByText(/in sequential mode you sign last/)).toBeNull();
+
+    fireEvent.change(screen.getByLabelText(/Signing order/), {
+      target: { value: "sequential" },
+    });
+    expect(screen.getByText(/in sequential mode you sign last/)).toBeTruthy();
+
+    fireEvent.change(screen.getByLabelText(/Signing order/), {
+      target: { value: "parallel" },
+    });
+    expect(screen.queryByText(/in sequential mode you sign last/)).toBeNull();
+  });
+});
+
 describe("SendPage signer reorder (#111)", () => {
   function signerEmails() {
     return screen

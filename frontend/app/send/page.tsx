@@ -733,7 +733,11 @@ export default function SendPage() {
               <span>
                 Send to me for signature also{" "}
                 <span style={{ opacity: 0.6 }}>
-                  (adds you as a signer — in sequential mode you sign last)
+                  (adds you as a signer
+                  {signingMode === "sequential"
+                    ? " — in sequential mode you sign last"
+                    : ""}
+                  )
                 </span>
               </span>
             </label>
