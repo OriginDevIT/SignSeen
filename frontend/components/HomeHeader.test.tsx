@@ -28,6 +28,17 @@ describe("HomeHeader", () => {
     expect(screen.queryByRole("link", { name: "Log in" })).toBeNull();
   });
 
+  it("shows the shared navigation links: Home and Send a document", () => {
+    render(<HomeHeader />);
+    expect(screen.getByRole("link", { name: "Home" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Send a document" })).toBeTruthy();
+    expect(
+      screen
+        .getByRole("link", { name: "Send a document" })
+        .getAttribute("href"),
+    ).toBe("/send");
+  });
+
   it("server render is identical with a token stored (no hydration mismatch)", () => {
     // renderToString runs no effects, like the server: the first render
     // must never read the token, so a signed-in sender's server HTML

@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import HomeHeader from "../../components/HomeHeader";
 import {
   ApiError,
   MAX_VERIFY_FILE_BYTES,
@@ -100,6 +101,7 @@ export default function VerifyPage() {
 
   return (
     <main style={page}>
+      <HomeHeader />
       <h1 style={{ fontSize: "1.75rem", margin: 0 }}>
         Verify a signed document
       </h1>

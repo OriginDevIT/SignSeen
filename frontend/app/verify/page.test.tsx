@@ -26,6 +26,20 @@ describe("VerifyPage", () => {
     expect(html).toContain("not that it is the only or original copy.");
   });
 
+  it("renders the site navigation: brand home, Home, Send, Log in", () => {
+    const html = renderToString(<VerifyPage />);
+    // Brand link home, plus the shared navigation links.
+    expect(html).toContain('href="/"');
+    expect(html).toContain(">SignSeen</a>");
+    expect(html).toContain(">Home</a>");
+    expect(html).toContain('href="/send"');
+    expect(html).toContain(">Send a document</a>");
+    // Signed-out navigation (server render runs no effects, so the
+    // logged-out links render).
+    expect(html).toContain('href="/login"');
+    expect(html).toContain(">Log in</a>");
+  });
+
   it("caps uploads at 15 MB", () => {
     expect(MAX_VERIFY_FILE_BYTES).toBe(15 * 1024 * 1024);
   });
