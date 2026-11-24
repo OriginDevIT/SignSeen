@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { myAccount, updateAccountName } from "../../lib/api";
-import AuthBrandHeader from "../../components/AuthBrandHeader";
+import HomeHeader from "../../components/HomeHeader";
 
 const card: React.CSSProperties = {
   maxWidth: "24rem",
@@ -76,7 +76,7 @@ export default function ProfilePage() {
 
   return (
     <main style={card}>
-      <AuthBrandHeader />
+      <HomeHeader />
       <h1 style={{ margin: 0 }}>Account</h1>
       {loading ? (
         <p style={{ opacity: 0.6, margin: 0 }}>Loading…</p>

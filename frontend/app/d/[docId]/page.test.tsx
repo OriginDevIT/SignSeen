@@ -87,6 +87,21 @@ describe("TrackDocumentPage branding", () => {
       screen.getByRole("link", { name: "SignSeen" }).getAttribute("href")
     ).toBe("/");
   });
+
+  it("shows the shared site navigation: Home, Send a document, Log in (#164)", async () => {
+    mockedGetDocument.mockResolvedValue(PENDING_DOC);
+    renderPage();
+
+    await waitFor(() =>
+      expect(screen.getByRole("link", { name: "Home" })).toBeTruthy()
+    );
+    expect(
+      screen
+        .getByRole("link", { name: "Send a document" })
+        .getAttribute("href")
+    ).toBe("/send");
+    expect(screen.getByRole("link", { name: "Log in" })).toBeTruthy();
+  });
 });
 
 describe("TrackDocumentPage navigation", () => {

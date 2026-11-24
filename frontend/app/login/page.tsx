@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { login } from "../../lib/api";
-import AuthBrandHeader from "../../components/AuthBrandHeader";
+import HomeHeader from "../../components/HomeHeader";
 import GoogleSignIn from "../../components/GoogleSignIn";
 import PasswordInput from "../../components/PasswordInput";
 
@@ -57,7 +57,7 @@ export default function LoginPage() {
 
   return (
     <main style={card}>
-      <AuthBrandHeader />
+      <HomeHeader />
       <h1 style={{ margin: 0 }}>Log in</h1>
       <p style={{ opacity: 0.6, margin: 0 }}>
         Accounts are for senders who keep a document library. Signers never

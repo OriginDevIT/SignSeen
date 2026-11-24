@@ -261,3 +261,28 @@ describe("DashboardPage upgrade notices (#151)", () => {
     }
   });
 });
+
+describe("DashboardPage site navigation (#164)", () => {
+  it("shows the shared navigation above the documents", async () => {
+    loadDashboard([PENDING]);
+
+    expect(await screen.findByText("Pending contract")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "SignSeen" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Home" })).toBeTruthy();
+    // The header nav and the page's own "Send a document" button
+    // both read "Send a document" and both point at /send.
+    const sendLinks = screen.getAllByRole("link", {
+      name: "Send a document",
+    });
+    expect(sendLinks).toHaveLength(2);
+    expect(sendLinks.every((l) => l.getAttribute("href") === "/send")).toBe(
+      true
+    );
+    // Signed in here (loadDashboard stores a token), so the header
+    // shows Dashboard rather than the logged-out links.
+    await waitFor(() =>
+      expect(screen.getByRole("link", { name: "Dashboard" })).toBeTruthy()
+    );
+    expect(screen.queryByRole("link", { name: "Log in" })).toBeNull();
+  });
+});
