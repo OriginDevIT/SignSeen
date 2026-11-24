@@ -1267,6 +1267,9 @@ def submit_signature(request, token):
                         # delivery), so it identifies the signer when
                         # no name was given.
                         "signer_name": s.signer_name or s.signer_email,
+                        # The email is required for every signer; the
+                        # certificate names it explicitly (#168).
+                        "signer_email": s.signer_email,
                         # The sender signs as a signer too when they
                         # countersign; the certificate marks that
                         # section as the document originator. Email

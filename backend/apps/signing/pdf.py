@@ -55,6 +55,7 @@ def _signer_lines(signer: dict) -> list[str]:
         lines.append("Document Originator")
     lines += [
         f"Signer: {signer.get('signer_name') or '-'}",
+        f"Email: {signer.get('signer_email') or '-'}",
         f"Signed at (UTC): {signer.get('signed_at')}",
         f"Document ID: {signer.get('document_id')}",
         f"Session ID: {signer.get('session_id')}",
@@ -236,10 +237,11 @@ def build_signed_pdf_multi(
 
     Each signer dict carries `signature_png`, optional `photo_png`, and
     the metadata rendered in its section (`signer_name` — the signer
-    email when no name was given — `signed_at` as an explicit UTC
-    timestamp, `document_id`, `session_id`, `audit_hash`, optional
-    `photo_assurance`). `audit_hash` is the hash of the document.sealed
-    event, the same seal the done screen and the seal email carry.
+    email when no name was given — `signer_email`, `signed_at` as an
+    explicit UTC timestamp, `document_id`, `session_id`, `audit_hash`,
+    optional `photo_assurance`). `audit_hash` is the hash of the
+    document.sealed event, the same seal the done screen and the seal
+    email carry.
     Sections flow onto additional certificate pages when the grid
     fills; the header appears once, on the first certificate page.
     """
