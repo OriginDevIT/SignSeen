@@ -88,13 +88,16 @@ describe("TrackDocumentPage branding", () => {
     ).toBe("/");
   });
 
-  it("shows the shared site navigation: Home, Send a document, Log in (#164)", async () => {
+  it("shows the shared site navigation, with no separate Home link (#164)", async () => {
     mockedGetDocument.mockResolvedValue(PENDING_DOC);
     renderPage();
 
     await waitFor(() =>
-      expect(screen.getByRole("link", { name: "Home" })).toBeTruthy()
+      expect(
+        screen.getByRole("link", { name: "Send a document" })
+      ).toBeTruthy()
     );
+    expect(screen.queryByRole("link", { name: "Home" })).toBeNull();
     expect(
       screen
         .getByRole("link", { name: "Send a document" })

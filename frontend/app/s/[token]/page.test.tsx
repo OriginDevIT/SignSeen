@@ -1114,7 +1114,7 @@ describe("SignPage site navigation (#164)", () => {
     await renderIntro();
 
     expect(screen.getByRole("link", { name: "SignSeen" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Home" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Home" })).toBeNull();
     expect(
       screen
         .getByRole("link", { name: "Send a document" })
@@ -1133,7 +1133,7 @@ describe("SignPage site navigation (#164)", () => {
 
     expect(screen.getByText("Acme Corp")).toBeTruthy();
     expect(screen.getByRole("link", { name: "SignSeen" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Home" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Home" })).toBeNull();
     expect(
       screen
         .getByRole("link", { name: "Send a document" })

@@ -11,10 +11,10 @@ describe("LegalDoc site navigation (#164)", () => {
         <p>Terms body.</p>
       </LegalDoc>
     );
-    // Brand link home, plus the shared navigation links.
+    // Brand link home (the wordmark is the Home link), plus the shared navigation links.
     expect(html).toContain('href="/"');
     expect(html).toContain(">SignSeen</a>");
-    expect(html).toContain(">Home</a>");
+    expect(html).not.toContain(">Home</a>");
     expect(html).toContain('href="/send"');
     expect(html).toContain(">Send a document</a>");
     // Signed-out navigation (server render runs no effects, so the

@@ -75,7 +75,7 @@ describe("ProfilePage site navigation (#164)", () => {
     expect(await screen.findByText("sender@example.com")).toBeTruthy();
 
     expect(screen.getByRole("link", { name: "SignSeen" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Home" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Home" })).toBeNull();
     expect(
       screen
         .getByRole("link", { name: "Send a document" })

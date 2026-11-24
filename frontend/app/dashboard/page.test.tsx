@@ -268,7 +268,7 @@ describe("DashboardPage site navigation (#164)", () => {
 
     expect(await screen.findByText("Pending contract")).toBeTruthy();
     expect(screen.getByRole("link", { name: "SignSeen" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "Home" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Home" })).toBeNull();
     // The header nav and the page's own "Send a document" button
     // both read "Send a document" and both point at /send.
     const sendLinks = screen.getAllByRole("link", {
