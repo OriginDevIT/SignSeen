@@ -61,12 +61,8 @@ def _signer_lines(signer: dict) -> list[str]:
         f"Session ID: {signer.get('session_id')}",
         f"Audit seal: {signer.get('audit_hash')}",
     ]
-    assurance = signer.get("photo_assurance")
-    if assurance:
-        line = f"Witness photo assurance: {assurance['assurance']}"
-        if assurance["assurance"] == "reduced":
-            line += f" ({assurance['reason']})"
-        lines.append(line)
+    # The witness-photo assurance is recorded in the audit trail only;
+    # the certificate does not carry it.
     return lines
 
 
@@ -238,8 +234,8 @@ def build_signed_pdf_multi(
     Each signer dict carries `signature_png`, optional `photo_png`, and
     the metadata rendered in its section (`signer_name` — the signer
     email when no name was given — `signer_email`, `signed_at` as an
-    explicit UTC timestamp, `document_id`, `session_id`, `audit_hash`,
-    optional `photo_assurance`). `audit_hash` is the hash of the
+    explicit UTC timestamp, `document_id`, `session_id`, `audit_hash`).
+    `audit_hash` is the hash of the
     document.sealed event, the same seal the done screen and the seal
     email carry.
     Sections flow onto additional certificate pages when the grid

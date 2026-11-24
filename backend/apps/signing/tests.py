@@ -719,10 +719,11 @@ def test_submit_records_device_evidence_and_photo_assurance():
     assert assurance["assurance"] == "full"
     assert assurance["reason"] == "timestamp_match"
 
-    # The certificate page carries the assurance line.
+    # The certificate page no longer carries the assurance line; the
+    # assurance stays in the audit trail only.
     doc = Document.objects.get(pk=doc_id)
     pdf = pymupdf.open(stream=doc.signed_file.read())
-    assert "Witness photo assurance: full" in pdf[-1].get_text()
+    assert "Witness photo assurance" not in pdf[-1].get_text()
 
 
 # ---------------------------------------------------------------------------
