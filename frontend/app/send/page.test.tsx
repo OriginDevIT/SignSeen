@@ -272,7 +272,7 @@ describe("SendPage wizard (#89)", () => {
     );
     fillStep1();
     fireEvent.click(
-      screen.getByRole("checkbox", { name: /Send to me for signature also/ }),
+      screen.getByRole("checkbox", { name: /Send to me for signature/ }),
     );
     fireEvent.submit(document.querySelector("form") as HTMLFormElement);
 
@@ -454,12 +454,12 @@ describe("SendPage wizard (#89)", () => {
       screen.getByText(/The free plan allows up to 2 signers/),
     ).toBeTruthy();
     expect(
-      screen.getByRole("checkbox", { name: /Send to me for signature also/ }),
+      screen.getByRole("checkbox", { name: /Send to me for signature/ }),
     ).toHaveProperty("disabled", false);
 
     // Adding the sender via the checkbox keeps the button greyed out.
     fireEvent.click(
-      screen.getByRole("checkbox", { name: /Send to me for signature also/ }),
+      screen.getByRole("checkbox", { name: /Send to me for signature/ }),
     );
     expect(screen.getAllByPlaceholderText("Jane Doe")).toHaveLength(1);
     expect(
