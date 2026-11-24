@@ -164,5 +164,7 @@ test("draw a box, seal it, and verify the sealed document", async ({
     page.getByText("Valid — this is a genuine document sealed by SignSeen."),
   ).toBeVisible();
   await expect(page.getByText(title)).toBeVisible();
-  await expect(page.getByText(signerEmail)).toBeVisible();
+  // The verdict never exposes signer emails (#167): no account is
+  // needed to verify, so the signer's address must not appear here.
+  await expect(page.getByText(signerEmail)).toHaveCount(0);
 });
