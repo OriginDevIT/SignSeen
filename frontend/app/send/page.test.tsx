@@ -272,7 +272,7 @@ describe("SendPage wizard (#89)", () => {
     );
     fillStep1();
     fireEvent.click(
-      screen.getByRole("checkbox", { name: /Send to me for signature also/ }),
+      screen.getByRole("checkbox", { name: /Send to me for signature/ }),
     );
     fireEvent.submit(document.querySelector("form") as HTMLFormElement);
 
@@ -454,12 +454,12 @@ describe("SendPage wizard (#89)", () => {
       screen.getByText(/The free plan allows up to 2 signers/),
     ).toBeTruthy();
     expect(
-      screen.getByRole("checkbox", { name: /Send to me for signature also/ }),
+      screen.getByRole("checkbox", { name: /Send to me for signature/ }),
     ).toHaveProperty("disabled", false);
 
     // Adding the sender via the checkbox keeps the button greyed out.
     fireEvent.click(
-      screen.getByRole("checkbox", { name: /Send to me for signature also/ }),
+      screen.getByRole("checkbox", { name: /Send to me for signature/ }),
     );
     expect(screen.getAllByPlaceholderText("Jane Doe")).toHaveLength(1);
     expect(
@@ -503,6 +503,50 @@ describe("SendPage wizard (#89)", () => {
     api.clearDraftToken("draft-1");
     expect(api.getDraftToken("draft-1")).toBeNull();
     expect(api.getDraftToken("draft-2")).toBe("tok-2");
+  });
+});
+
+describe("SendPage 'Send to me' label (#169)", () => {
+  async function renderSignedIn(account: typeof FREE_ACCOUNT) {
+    vi.mocked(getAuthToken).mockReturnValue("token-1");
+    vi.mocked(myAccount).mockResolvedValue(account);
+    render(<SendPage />);
+    await waitFor(() =>
+      expect(screen.getByText(/Signed in as owner@example.com/)).toBeTruthy(),
+    );
+  }
+
+  it("free accounts never see the 'sign last' clause (parallel only)", async () => {
+    await renderSignedIn(FREE_ACCOUNT);
+    expect(
+      screen.getByText(/in parallel mode, no signing order enforced/),
+    ).toBeTruthy();
+    expect(screen.queryByText(/in sequential mode you sign last/)).toBeNull();
+  });
+
+  it("premium accounts see the clause only in sequential mode", async () => {
+    await renderSignedIn(PREMIUM_ACCOUNT);
+    // Parallel is the default: no signing order is enforced.
+    expect(
+      screen.getByText(/in parallel mode, no signing order enforced/),
+    ).toBeTruthy();
+    expect(screen.queryByText(/in sequential mode you sign last/)).toBeNull();
+
+    fireEvent.change(screen.getByLabelText(/Signing order/), {
+      target: { value: "sequential" },
+    });
+    expect(screen.getByText(/in sequential mode you sign last/)).toBeTruthy();
+    expect(
+      screen.queryByText(/in parallel mode, no signing order enforced/),
+    ).toBeNull();
+
+    fireEvent.change(screen.getByLabelText(/Signing order/), {
+      target: { value: "parallel" },
+    });
+    expect(screen.queryByText(/in sequential mode you sign last/)).toBeNull();
+    expect(
+      screen.getByText(/in parallel mode, no signing order enforced/),
+    ).toBeTruthy();
   });
 });
 
