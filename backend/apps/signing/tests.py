@@ -2807,3 +2807,17 @@ def test_certificate_marks_sender_signer_as_document_originator():
     )
     assert "Document Originator\nSigner: Sending Signer" in text
     assert text.count("Document Originator") == 1
+
+
+@pytest.mark.django_db
+def test_certificate_shows_each_signer_email():
+    """Each signer block carries an Email line directly after the
+    Signer line (#168): the email is required for every signer, so
+    the certificate names it explicitly."""
+    _, doc_id, tokens = _premium_multi_doc(names=("Signer One", "Signer Two"))
+    for token in tokens:
+        assert _sign(token).status_code == 200
+
+    text = _certificate_text(doc_id)
+    assert "Signer: Signer One\nEmail: signer.one@example.com" in text
+    assert "Signer: Signer Two\nEmail: signer.two@example.com" in text
