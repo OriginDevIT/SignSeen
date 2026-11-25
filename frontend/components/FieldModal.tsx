@@ -149,8 +149,8 @@ export default function FieldModal({
           </button>
         </div>
         <p style={{ opacity: 0.65, margin: "0 0 1rem" }}>
-          {field.required ? "Required field." : "Optional field."} Complete it
-          here - it will be stamped on the document where the box sits.
+          Complete it here - it will be stamped on the document where the
+          box sits.
         </p>
 
         {isDrawn &&

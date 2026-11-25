@@ -534,9 +534,9 @@ describe("PlaceFieldsPage placed-fields list (#97)", () => {
     });
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     expect(screen.queryByText("Delete")).toBeNull();
-    // The row's required flag is list-only text (the signer label
-    // also appears in the toolbar select).
-    expect(screen.queryByText(/Signer 1 - Alice · required/)).toBeNull();
+    // The row is list-only text (the signer label also appears in the
+    // toolbar select, so the "page N · " prefix disambiguates the row).
+    expect(screen.queryByText(/page 1 · Signer 1 - Alice/)).toBeNull();
   });
 
   it("rows show the page reference without coordinates (#113)", async () => {
@@ -547,9 +547,10 @@ describe("PlaceFieldsPage placed-fields list (#97)", () => {
     });
     fireEvent.click(toggle);
 
-    expect(
-      screen.getByText(/page 1 · Signer 1 - Alice · required/)
-    ).toBeTruthy();
+    expect(screen.getByText(/page 1 · Signer 1 - Alice/)).toBeTruthy();
+    // No required/optional marker is rendered on the row (#211).
+    expect(screen.queryByText(/· required/)).toBeNull();
+    expect(screen.queryByText(/· optional/)).toBeNull();
     expect(screen.queryByText(/\(0\.10, 0\.20\)/)).toBeNull();
     expect(screen.queryByText(/0\.30 × 0\.15/)).toBeNull();
   });

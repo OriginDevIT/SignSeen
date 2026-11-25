@@ -865,7 +865,6 @@ export default function PlaceFieldsPage() {
               <span style={{ fontWeight: 600, textTransform: "capitalize" }}>{fieldTypeLabel(f.type)}</span>
               <span style={{ opacity: 0.7 }}>
                 page {f.page} · {signerLabel(f)}
-                {f.required ? " · required" : " · optional"}
                 {f.completed ? " · completed" : ""}
               </span>
               <span style={{ flex: 1 }} />
