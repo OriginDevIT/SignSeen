@@ -699,8 +699,8 @@ export default function SendPage() {
                     : (
                       <>
                         The free plan allows up to 2 signers - the second
-                        signer must be you, via “Send to me for signature
-                        also” below.{" "}
+                        signer must be you, via “Send to me for signature”
+                        below.{" "}
                         <UpgradeAction
                           loggedIn={accountEmail !== null}
                           onUpgrade={startUpgrade}
