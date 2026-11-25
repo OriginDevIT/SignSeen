@@ -33,7 +33,7 @@ test("draw a box, seal it, and verify the sealed document", async ({
     .fill(title);
   await page.getByPlaceholder("jane@example.com").fill(signerEmail);
   await page.locator('input[type="file"]').setInputFiles(samplePdf());
-  await page.getByRole("button", { name: "Create draft" }).click();
+  await page.getByRole("button", { name: "Continue to place fields" }).click();
   await expect(page.getByText(/Step 2 of 3/)).toBeVisible();
   const draftId = new URL(page.url()).searchParams.get("draft");
   expect(draftId).toBeTruthy();

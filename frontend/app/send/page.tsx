@@ -868,7 +868,7 @@ export default function SendPage() {
                 : "Creating draft…"
               : draft
                 ? "Save changes"
-                : "Create draft"}
+                : "Continue to place fields"}
           </button>
           <button
             type="button"

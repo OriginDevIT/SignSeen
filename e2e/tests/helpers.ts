@@ -36,7 +36,7 @@ export async function createSigningLink(
       .check();
   }
   await page.locator('input[type="file"]').setInputFiles(samplePdf());
-  await page.getByRole("button", { name: "Create draft" }).click();
+  await page.getByRole("button", { name: "Continue to place fields" }).click();
   await expect(page.getByText(/Step 2 of 3/)).toBeVisible();
   await page
     .getByRole("button", { name: "Skip - no fields needed, continue to review" })
