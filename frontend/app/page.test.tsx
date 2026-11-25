@@ -17,4 +17,10 @@ describe("Home", () => {
         .getAttribute("href")
     ).toBe("/verify");
   });
+
+  it("states no specific signing time in the hero (#202)", () => {
+    const { container } = render(<Home />);
+    expect(container.textContent).toContain("signs on their phone in moments");
+    expect(container.textContent).not.toContain("30 seconds");
+  });
 });

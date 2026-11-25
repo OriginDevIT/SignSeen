@@ -100,7 +100,7 @@ export default function Home() {
         >
           Open-source electronic signature with a photographic witness.
           Send a document, your signer scans a QR code and signs on their
-          phone in about 30 seconds - and every signature carries a
+          phone in moments - and every signature carries a
           tamper-evident audit trail. No accounts for signers, no
           per-envelope fees, no certificates to install.
         </p>
