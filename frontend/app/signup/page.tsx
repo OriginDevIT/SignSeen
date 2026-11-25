@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { signup } from "../../lib/api";
+import { signup, startCheckout } from "../../lib/api";
 import HomeHeader from "../../components/HomeHeader";
 import GoogleSignIn from "../../components/GoogleSignIn";
 import PasswordInput from "../../components/PasswordInput";
@@ -42,6 +42,8 @@ export default function SignupPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  // Free is the default; annual is the default premium plan.
+  const [plan, setPlan] = useState<"free" | "monthly" | "annual">("free");
 
   // Arriving from a signing done screen ("Create a free account" after
   // leaving an email at completion): pre-fill that email so the new
@@ -57,7 +59,20 @@ export default function SignupPage() {
     setBusy(true);
     try {
       await signup(email.trim(), password, name);
-      router.push("/dashboard");
+      if (plan === "free") {
+        router.push("/dashboard");
+        return;
+      }
+      // Premium: the account now exists, so the authenticated
+      // checkout endpoint can start a Stripe session for it. If
+      // checkout fails here the account stays free and the sender
+      // can upgrade later from the dashboard.
+      try {
+        window.location.href = await startCheckout(plan);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Checkout failed");
+        setBusy(false);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Signup failed");
       setBusy(false);
@@ -100,8 +115,53 @@ export default function SignupPage() {
           style={input}
         />
         {error && <p style={{ color: "#b91c1c", margin: 0 }}>{error}</p>}
+        <fieldset
+          style={{
+            border: "1px solid #ccc",
+            borderRadius: "0.375rem",
+            padding: "0.7rem",
+            display: "flex",
+            flexDirection: "column",
+            gap: "0.5rem",
+          }}
+        >
+          <legend style={{ padding: "0 0.3rem", fontWeight: 600 }}>
+            Choose a plan
+          </legend>
+          <label style={{ display: "flex", gap: "0.5rem", cursor: "pointer" }}>
+            <input
+              type="radio"
+              name="plan"
+              checked={plan === "free"}
+              onChange={() => setPlan("free")}
+            />
+            Free - one document pending at a time, 100 MB storage
+          </label>
+          <label style={{ display: "flex", gap: "0.5rem", cursor: "pointer" }}>
+            <input
+              type="radio"
+              name="plan"
+              checked={plan === "annual"}
+              onChange={() => setPlan("annual")}
+            />
+            Premium - $50/yr - no watermark, higher limits, more signers
+          </label>
+          <label style={{ display: "flex", gap: "0.5rem", cursor: "pointer" }}>
+            <input
+              type="radio"
+              name="plan"
+              checked={plan === "monthly"}
+              onChange={() => setPlan("monthly")}
+            />
+            Premium - $5/mo - no watermark, higher limits, more signers
+          </label>
+        </fieldset>
         <button type="submit" disabled={busy} style={button}>
-          {busy ? "Creating…" : "Create account"}
+          {busy
+            ? "Creating…"
+            : plan === "free"
+              ? "Create account"
+              : "Create account and continue to payment"}
         </button>
       </form>
       <p style={{ fontSize: "0.85rem", opacity: 0.65, marginTop: "1rem" }}>
