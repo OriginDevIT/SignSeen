@@ -575,6 +575,10 @@ describe("SendPage signer reorder (#111)", () => {
     fireEvent.change(emails[0], { target: { value: "a@example.com" } });
     fireEvent.change(emails[1], { target: { value: "b@example.com" } });
     fireEvent.change(emails[2], { target: { value: "c@example.com" } });
+    // Reorder controls only render in sequential mode (#190).
+    fireEvent.change(screen.getByLabelText(/Signing order/), {
+      target: { value: "sequential" },
+    });
   }
 
   it("move up/down buttons reorder the signers", async () => {
@@ -735,6 +739,10 @@ describe("SendPage signer reorder (#111)", () => {
     const emails = screen.getAllByPlaceholderText("jane@example.com");
     fireEvent.change(emails[0], { target: { value: "a@example.com" } });
     fireEvent.change(emails[1], { target: { value: "b@example.com" } });
+    // Reorder controls only render in sequential mode (#190).
+    fireEvent.change(screen.getByLabelText(/Signing order/), {
+      target: { value: "sequential" },
+    });
     fireEvent.click(
       screen.getByRole("button", { name: "Move signer 1 down" }),
     );
@@ -759,7 +767,7 @@ describe("SendPage signer reorder (#111)", () => {
       expect.any(File),
       "Contract",
       "sender@example.com",
-      "parallel",
+      "sequential",
       false,
       [
         { name: "", email: "b@example.com" },
@@ -785,6 +793,58 @@ describe("SendPage signer reorder (#111)", () => {
       .map((li) => li.textContent ?? "");
     expect(reviewItems[0]).toContain("b@example.com");
     expect(reviewItems[1]).toContain("a@example.com");
+  });
+});
+
+describe("SendPage signer heading and reorder visibility (#190)", () => {
+  async function renderPremiumWithTwoSigners() {
+    vi.mocked(getAuthToken).mockReturnValue("token-1");
+    vi.mocked(myAccount).mockResolvedValue(PREMIUM_ACCOUNT);
+    render(<SendPage />);
+    await waitFor(() =>
+      expect(screen.getByText(/Signed in as owner@example.com/)).toBeTruthy(),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Add another signer" }),
+    );
+    expect(screen.getAllByTestId("signer-row")).toHaveLength(2);
+  }
+
+  it("headings the section 'Signers', with no mention of order", async () => {
+    await renderPremiumWithTwoSigners();
+    expect(screen.getByText("Signers")).toBeTruthy();
+    expect(screen.queryByText("Signers, in order")).toBeNull();
+  });
+
+  it("hides the reorder controls in parallel mode", async () => {
+    await renderPremiumWithTwoSigners();
+    // Parallel is the default mode.
+    expect(
+      screen.getByLabelText(/Signing order/) as HTMLSelectElement,
+    ).toHaveProperty("value", "parallel");
+    expect(
+      screen.queryByRole("button", { name: "Move signer 1 up" }),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Move signer 1 down" }),
+    ).toBeNull();
+    expect(screen.queryByTestId("reorder-handle-0")).toBeNull();
+    expect(screen.queryByTestId("reorder-handle-1")).toBeNull();
+  });
+
+  it("shows the reorder controls in sequential mode", async () => {
+    await renderPremiumWithTwoSigners();
+    fireEvent.change(screen.getByLabelText(/Signing order/), {
+      target: { value: "sequential" },
+    });
+    expect(
+      screen.getByRole("button", { name: "Move signer 1 up" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Move signer 1 down" }),
+    ).toBeTruthy();
+    expect(screen.getByTestId("reorder-handle-0")).toBeTruthy();
+    expect(screen.getByTestId("reorder-handle-1")).toBeTruthy();
   });
 });
 
