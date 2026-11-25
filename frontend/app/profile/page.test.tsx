@@ -61,6 +61,34 @@ describe("ProfilePage", () => {
     mockedMyAccount.mockRejectedValue(new Error("unauthorized"));
     render(<ProfilePage />);
     expect(await screen.findByText(/Log in to view your account/)).toBeTruthy();
-    expect(screen.getByText("Log in")).toBeTruthy();
+    // The header nav and the page's own error-state link both read
+    // "Log in" and both point at /login.
+    const logins = screen.getAllByText("Log in");
+    expect(logins).toHaveLength(2);
+  });
+});
+
+describe("ProfilePage site navigation (#164)", () => {
+  it("shows the shared navigation and keeps the Back to dashboard link", async () => {
+    mockedMyAccount.mockResolvedValue(ACCOUNT);
+    render(<ProfilePage />);
+    expect(await screen.findByText("sender@example.com")).toBeTruthy();
+
+    expect(screen.getByRole("link", { name: "SignSeen" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Home" })).toBeNull();
+    expect(
+      screen
+        .getByRole("link", { name: "Send a document" })
+        .getAttribute("href")
+    ).toBe("/send");
+    expect(screen.getByRole("link", { name: "Log in" })).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "Back to dashboard" })
+    ).toBeTruthy();
+    expect(
+      screen
+        .getByRole("link", { name: "Back to dashboard" })
+        .getAttribute("href")
+    ).toBe("/dashboard");
   });
 });

@@ -1,3 +1,5 @@
+import HomeHeader from "../../components/HomeHeader";
+
 export const metadata = { title: "Support — SignSeen" };
 
 /**
@@ -16,11 +18,7 @@ export default function SupportPage() {
         color: "#111827",
       }}
     >
-      <p style={{ margin: 0 }}>
-        <a href="/" style={{ color: "#2563eb", textDecoration: "none" }}>
-          ← SignSeen
-        </a>
-      </p>
+      <HomeHeader />
       <h1 style={{ fontSize: "2rem", margin: "1rem 0 0.5rem" }}>Support</h1>
       <p>
         <strong>Fastest:</strong> use the chat assistant at the bottom of

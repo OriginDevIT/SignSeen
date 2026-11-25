@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import { QRCodeSVG } from "qrcode.react";
+import HomeHeader from "../../../components/HomeHeader";
 import SignaturePad, { type SignaturePadHandle } from "../../../components/SignaturePad";
 import FieldModal from "../../../components/FieldModal";
 import PhotoStep from "../../../components/PhotoStep";
@@ -605,6 +606,7 @@ export default function SignPage() {
 
   return (
     <main style={shell}>
+      <HomeHeader />
       {hasBranding && (
         <header
           style={{

@@ -1103,3 +1103,41 @@ describe("SignPage signed-PDF download (#122)", () => {
     expect(link.getAttribute("target")).toBeNull();
   });
 });
+
+describe("SignPage site navigation (#164)", () => {
+  afterEach(() => {
+    cleanup();
+    vi.clearAllMocks();
+  });
+
+  it("shows the shared navigation on the intro step", async () => {
+    await renderIntro();
+
+    expect(screen.getByRole("link", { name: "SignSeen" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Home" })).toBeNull();
+    expect(
+      screen
+        .getByRole("link", { name: "Send a document" })
+        .getAttribute("href")
+    ).toBe("/send");
+    expect(screen.getByRole("link", { name: "Log in" })).toBeTruthy();
+  });
+
+  it("keeps the sender branding header alongside the site navigation", async () => {
+    vi.mocked(getSession).mockResolvedValue({
+      ...SESSION,
+      branding: { name: "Acme Corp", color: "#123456", logo: null },
+    } as never);
+    render(<SignPage />);
+    await screen.findByText("Contract");
+
+    expect(screen.getByText("Acme Corp")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "SignSeen" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "Home" })).toBeNull();
+    expect(
+      screen
+        .getByRole("link", { name: "Send a document" })
+        .getAttribute("href")
+    ).toBe("/send");
+  });
+});

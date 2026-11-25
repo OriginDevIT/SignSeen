@@ -28,9 +28,14 @@ describe("HomeHeader", () => {
     expect(screen.queryByRole("link", { name: "Log in" })).toBeNull();
   });
 
-  it("shows the shared navigation links: Home and Send a document", () => {
+  it("shows the shared navigation link: Send a document, and no separate Home link", () => {
     render(<HomeHeader />);
-    expect(screen.getByRole("link", { name: "Home" })).toBeTruthy();
+    // The wordmark itself is the Home link (#164), so there is no
+    // standalone "Home" link in the navigation.
+    expect(screen.queryByRole("link", { name: "Home" })).toBeNull();
+    expect(
+      screen.getByRole("link", { name: "SignSeen" }).getAttribute("href")
+    ).toBe("/");
     expect(screen.getByRole("link", { name: "Send a document" })).toBeTruthy();
     expect(
       screen

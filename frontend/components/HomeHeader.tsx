@@ -10,9 +10,11 @@ import { getAuthToken } from "../lib/api";
  * (#91). The first render always shows the logged-out links; a
  * signed-in sender sees Dashboard appear after mount.
  *
- * Shared site navigation (#163): the Home and Send a document links
- * render on every page that uses this header, so the verify page and
- * any later page get the same navigation from this one component. */
+ * Shared site navigation (#163): the Send a document link renders on
+ * every page that uses this header, so the verify page and any later
+ * page get the same navigation from this one component. There is no
+ * separate Home link (#164): the SignSeen wordmark itself links home.
+ */
 export default function HomeHeader() {
   const [signedIn, setSignedIn] = useState(false);
 
@@ -42,9 +44,6 @@ export default function HomeHeader() {
         SignSeen
       </a>
       <nav style={{ display: "flex", gap: "1rem", alignItems: "center" }}>
-        <a href="/" style={{ color: "#111827" }}>
-          Home
-        </a>
         <a href="/send" style={{ color: "#111827" }}>
           Send a document
         </a>

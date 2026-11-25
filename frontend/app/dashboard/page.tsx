@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import HomeHeader from "../../components/HomeHeader";
 import SigningLinkPanel from "../../components/SigningLinkPanel";
 import UpgradeAction from "../../components/UpgradeAction";
 import {
@@ -256,6 +257,7 @@ export default function DashboardPage() {
 
   return (
     <main style={page}>
+      <HomeHeader />
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.5rem" }}>
         <h1 style={{ margin: 0 }}>Your documents</h1>
         <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
