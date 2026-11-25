@@ -4,7 +4,7 @@ Identity = the logged-in account when present, else the sender email (free
 one-off sends, scope §3.10). Free tier: 1 pending document at a time,
 100 MB total storage, 2 signers per document (the signer + the sender),
 parallel signing only. Premium raises the storage cap, drops the
-watermark, and lifts the per-document signer cap (up to 10 signers,
+watermark, and lifts the per-document signer cap (up to 20 signers,
 sequential or parallel).
 
 Drafts (#89) have their own caps and never count toward the pending
@@ -99,12 +99,12 @@ def clean_signer_list(raw, sender_email, is_premium) -> list[dict]:
     user-facing message.
 
     Free: 1–2 signers, and a second signer must be the sender
-    themselves ("Send to me for signature also"). Premium: 1–10
+    themselves ("Send to me for signature also"). Premium: 1–20
     signers, any emails. Duplicate emails are rejected either way.
     """
     if not isinstance(raw, list) or not raw:
         raise ValueError("at least one signer is required")
-    max_signers = 10 if is_premium else 2
+    max_signers = 20 if is_premium else 2
     if len(raw) > max_signers:
         raise ValueError(
             f"at most {max_signers} signer(s)"
@@ -161,7 +161,7 @@ def check_storage_limit(account, sender_email, additional_bytes: int) -> None:
 def check_can_create_session(document: Document, signer_email: str = "") -> None:
     """Per-document signer cap (#89): free documents allow a second
     session only for the sender themselves ("Send to me for signature
-    also"); premium documents allow up to 10 sessions. The first
+    also"); premium documents allow up to 20 sessions. The first
     session is always allowed."""
     count = document.sessions.count()
     if count == 0:
@@ -169,7 +169,7 @@ def check_can_create_session(document: Document, signer_email: str = "") -> None
     owner = document.owner
     if owner is not None and getattr(owner, "is_premium", False):
         if count >= 10:
-            raise LimitExceeded("Premium documents allow up to 10 signers.")
+            raise LimitExceeded("Premium documents allow up to 20 signers.")
         return
     if count == 1 and (signer_email or "").strip().lower() == (
         document.sender_email or ""

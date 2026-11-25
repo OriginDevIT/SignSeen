@@ -707,7 +707,7 @@ export default function SendPage() {
                         >
                           Upgrade
                         </UpgradeAction>{" "}
-                        for up to 10 signers.
+                        for up to 20 signers.
                       </>
                     )}
                 </p>
