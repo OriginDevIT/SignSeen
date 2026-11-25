@@ -650,8 +650,9 @@ export default function SignPage() {
           <h1 style={{ margin: 0, fontSize: "1.6rem" }}>{session.document_title}</h1>
           {session.signer_name && <p style={{ margin: 0, opacity: 0.7 }}>Prepared for {session.signer_name}</p>}
           <p style={{ opacity: 0.7 }}>
-            Review the document, then sign with your finger or mouse and snap a
-            quick photo as a witness. No account needed.
+            {photoRequired
+              ? "Review the document, then sign with your finger or mouse and snap a quick photo as a witness. No account needed."
+              : "Review the document, then sign with your finger or mouse. A witness photo is optional. No account needed."}
           </p>
           <a
             href={sessionDocumentUrl(token)}

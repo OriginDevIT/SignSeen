@@ -1141,3 +1141,32 @@ describe("SignPage site navigation (#164)", () => {
     ).toBe("/send");
   });
 });
+
+describe("SignPage ceremony intro photo wording (#193)", () => {
+  afterEach(() => {
+    cleanup();
+  });
+
+  it("says the photo is optional when the document does not require one", async () => {
+    await renderIntro();
+    expect(
+      screen.getByText(/A witness photo is optional/),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText(/snap a quick photo as a witness/),
+    ).toBeNull();
+  });
+
+  it("asks for the photo when the document requires one", async () => {
+    vi.mocked(getSession).mockResolvedValue({
+      ...SESSION,
+      photo_required: true,
+    } as never);
+    render(<SignPage />);
+    await screen.findByText("Contract");
+    expect(
+      screen.getByText(/snap a quick photo as a witness/),
+    ).toBeTruthy();
+    expect(screen.queryByText(/A witness photo is optional/)).toBeNull();
+  });
+});
