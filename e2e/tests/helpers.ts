@@ -39,7 +39,7 @@ export async function createSigningLink(
   await page.getByRole("button", { name: "Create draft" }).click();
   await expect(page.getByText(/Step 2 of 3/)).toBeVisible();
   await page
-    .getByRole("button", { name: "Skip — no fields needed, continue to review" })
+    .getByRole("button", { name: "Skip - no fields needed, continue to review" })
     .click();
   await expect(page.getByText(/Step 3 of 3/)).toBeVisible();
   await page.getByRole("button", { name: "Send document" }).click();
@@ -72,7 +72,7 @@ export async function sealCeremony(
       await signer.getByLabel(/I consent to having my photo captured/).check();
       await signer.locator('input[type="file"]').setInputFiles(samplePhoto());
       await expect(signer.getByAltText("Witness photo preview")).toBeVisible();
-      await signer.getByRole("button", { name: "Seal it — submit" }).click();
+      await signer.getByRole("button", { name: "Seal it - submit" }).click();
     } else {
       await signer.getByRole("button", { name: "Skip photo & submit" }).click();
     }

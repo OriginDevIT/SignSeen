@@ -94,7 +94,7 @@ class DocumentSerializer(serializers.ModelSerializer):
         return None
 
     def get_signing_url(self, obj) -> str | None:
-        """The active session's signing URL — for the document's owner only.
+        """The active session's signing URL - for the document's owner only.
 
         The signing token is a credential: it is exposed only when the
         serializer context carries an authenticated request whose user
@@ -178,14 +178,14 @@ class SigningSessionSerializer(serializers.ModelSerializer):
 
     def get_waiting(self, obj) -> bool:
         """True when this link is not active yet because an earlier
-        signer in the sequence has not signed — distinct from a link
+        signer in the sequence has not signed - distinct from a link
         that is signed or expired."""
         return obj.is_waiting()
     def get_branding(self, obj) -> dict:
         """Sender branding for the ceremony (premium accounts; §3.6).
 
         Sourced from the document's owning account. Empty name/color
-        and a null logo mean "no branding configured" — the ceremony
+        and a null logo mean "no branding configured" - the ceremony
         falls back to SignSeen defaults. Anonymous sends have no
         owner, so they always get the empty form.
         """

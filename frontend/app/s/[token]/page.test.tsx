@@ -24,7 +24,7 @@ import { getDocument, getSession, getSessionEvents, submitSignature } from "../.
 
 // The draw pads are canvas-based; jsdom has no 2d context, so the
 // stub stands in with a handle that reports ink and hands back a
-// fixed data URL — enough to exercise capture and reuse.
+// fixed data URL - enough to exercise capture and reuse.
 vi.mock("../../../components/SignaturePad", async () => {
   const React = await import("react");
   const Stub = React.forwardRef((_props: { height?: number }, ref) => {
@@ -255,7 +255,7 @@ describe("SignPage field modals (#84)", () => {
     fireEvent.click(textBox);
 
     const dialog = await screen.findByRole("dialog");
-    expect(dialog.getAttribute("aria-label")).toBe("Text — page 1");
+    expect(dialog.getAttribute("aria-label")).toBe("Text - page 1");
     const input = screen.getByPlaceholderText("Type here");
     fireEvent.change(input, { target: { value: "Agreed" } });
     fireEvent.click(screen.getByText("Done"));
@@ -267,7 +267,7 @@ describe("SignPage field modals (#84)", () => {
     expect(getComputedStyle(textBox).borderColor).toBe("rgb(21, 128, 61)");
     // Auto-scroll moved on to the next incomplete field (checkbox).
     // The entry scroll is skipped once the signer has opened a field,
-    // so the checkbox scroll is the last call — counting calls would
+    // so the checkbox scroll is the last call - counting calls would
     // depend on whether the 100ms entry timer beat the modal open.
     const checkBox = screen.getByLabelText(/checkbox field on page 1/);
     await waitFor(() =>
@@ -365,7 +365,7 @@ describe("SignPage field modals (#84)", () => {
   it("the continue button stays greyed out until every field, optional included, is complete (#118)", async () => {
     await renderSigning();
     const continueBtn = screen.getByText(
-      "Looks good — continue"
+      "Looks good - continue"
     ) as HTMLButtonElement;
     expect(continueBtn.disabled).toBe(true);
 
@@ -437,7 +437,7 @@ describe("SignPage field modals (#84)", () => {
     );
     expect(getComputedStyle(dateBox).borderColor).toBe("rgb(17, 24, 39)");
 
-    // Saving the modal — even accepting the today default — completes it.
+    // Saving the modal - even accepting the today default - completes it.
     fireEvent.click(dateBox);
     await screen.findByRole("dialog");
     expect(
@@ -468,7 +468,7 @@ describe("SignPage field modals (#84)", () => {
     await screen.findByText("1. Your fields on this document");
 
     const continueBtn = screen.getByText(
-      "Looks good — continue"
+      "Looks good - continue"
     ) as HTMLButtonElement;
     expect(continueBtn.disabled).toBe(true);
 
@@ -539,7 +539,7 @@ describe("SignPage field modals (#84)", () => {
     await renderSigning();
 
     // Complete every field; the date is confirmed from its modal
-    // (accepting the today default) rather than left untouched —
+    // (accepting the today default) rather than left untouched -
     // under the all-fields gate (#118) submit is unreachable until
     // the date is confirmed, so the untouched default can never
     // reach the server at all.
@@ -592,8 +592,8 @@ describe("SignPage field modals (#84)", () => {
 
     // Continue to the photo step (the stub pad reports ink) and
     // submit without a photo.
-    fireEvent.click(screen.getByText("Looks good — continue"));
-    await screen.findByText("2. Seen — snap a witness photo");
+    fireEvent.click(screen.getByText("Looks good - continue"));
+    await screen.findByText("2. Seen - snap a witness photo");
     fireEvent.click(screen.getByText("Skip photo & submit"));
     await screen.findByText("Signature recorded");
 
@@ -842,7 +842,7 @@ describe("SignPage earlier signers' completed fields (#105)", () => {
   it("completed fields do not unlock the continue button", async () => {
     await renderSigningAsBob();
     const continueBtn = screen.getByText(
-      "Looks good — continue"
+      "Looks good - continue"
     ) as HTMLButtonElement;
     // The signer's own required text field is still incomplete.
     expect(continueBtn.disabled).toBe(true);
@@ -896,7 +896,7 @@ describe("SignPage signed-date fields (#106)", () => {
   it("a required signed-date field never blocks the continue button", async () => {
     await renderSigningWithFields([field("f-sd", "signed_date", 1, 0.1, 0.2)]);
     const continueBtn = screen.getByText(
-      "Looks good — continue"
+      "Looks good - continue"
     ) as HTMLButtonElement;
     expect(continueBtn.disabled).toBe(false);
   });
@@ -929,9 +929,9 @@ describe("SignPage photo removal (#121)", () => {
   async function renderPhotoStep() {
     await renderSigning();
 
-    // Complete every field — under the all-fields gate (#118) the
+    // Complete every field - under the all-fields gate (#118) the
     // continue button stays greyed out until the optional fields
-    // are done too — then continue to the photo step.
+    // are done too - then continue to the photo step.
     fireEvent.click(screen.getByLabelText(/signature field on page 1/));
     await screen.findByRole("dialog");
     fireEvent.click(screen.getByText("Use this signature"));
@@ -967,8 +967,8 @@ describe("SignPage photo removal (#121)", () => {
     fireEvent.click(within(sigDialog).getByText("Use your signature"));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 
-    fireEvent.click(screen.getByText("Looks good — continue"));
-    await screen.findByText("2. Seen — snap a witness photo");
+    fireEvent.click(screen.getByText("Looks good - continue"));
+    await screen.findByText("2. Seen - snap a witness photo");
   }
 
   it("removing the photo returns the step to its no-photo state and resets consent", async () => {
@@ -1053,9 +1053,9 @@ describe("SignPage signed-PDF download (#122)", () => {
     } as never);
     await renderSigning();
 
-    // Complete every field — under the all-fields gate (#118) the
+    // Complete every field - under the all-fields gate (#118) the
     // continue button stays greyed out until the optional fields
-    // are done too — then submit through the photo step.
+    // are done too - then submit through the photo step.
     fireEvent.click(screen.getByLabelText(/signature field on page 1/));
     await screen.findByRole("dialog");
     fireEvent.click(screen.getByText("Use this signature"));
@@ -1091,7 +1091,7 @@ describe("SignPage signed-PDF download (#122)", () => {
     fireEvent.click(within(sigDialog).getByText("Use your signature"));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
 
-    fireEvent.click(screen.getByText("Looks good — continue"));
+    fireEvent.click(screen.getByText("Looks good - continue"));
     await screen.findByText("Skip photo & submit");
     fireEvent.click(screen.getByText("Skip photo & submit"));
 

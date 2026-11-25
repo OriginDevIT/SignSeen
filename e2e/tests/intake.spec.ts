@@ -23,7 +23,7 @@ test("docx intake: converts, renders as PDF, seals", async ({
   await page.getByRole("button", { name: "Create draft" }).click();
   await expect(page.getByText(/Step 2 of 3/)).toBeVisible();
   await page
-    .getByRole("button", { name: "Skip — no fields needed, continue to review" })
+    .getByRole("button", { name: "Skip - no fields needed, continue to review" })
     .click();
   await expect(page.getByText(/Step 3 of 3/)).toBeVisible();
   await page.getByRole("button", { name: "Send document" }).click();
@@ -69,7 +69,7 @@ test("web page intake: renders the page to PDF, seals", async ({
   await page.getByRole("button", { name: "Create draft" }).click();
   await expect(page.getByText(/Step 2 of 3/)).toBeVisible();
   await page
-    .getByRole("button", { name: "Skip — no fields needed, continue to review" })
+    .getByRole("button", { name: "Skip - no fields needed, continue to review" })
     .click();
   await expect(page.getByText(/Step 3 of 3/)).toBeVisible();
   await page.getByRole("button", { name: "Send document" }).click();

@@ -8,7 +8,7 @@ export const CEREMONY_STEPS = ["Signed", "Seen", "Sealed"] as const;
 
 export type CeremonyStep = (typeof CEREMONY_STEPS)[number];
 
-/** "Signed. Seen. Sealed." — the product tagline, derived from the steps. */
+/** "Signed. Seen. Sealed." - the product tagline, derived from the steps. */
 export function ceremonyTagline(): string {
   return CEREMONY_STEPS.map((step) => `${step}.`).join(" ");
 }

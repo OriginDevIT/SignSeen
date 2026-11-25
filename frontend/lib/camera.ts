@@ -1,7 +1,7 @@
 /** Helpers for the Seen-step in-app camera (getUserMedia).
  *
  * The witness photo used to rely on `<input capture="user">`, which is
- * only a hint — some phones open the rear camera anyway. These helpers
+ * only a hint - some phones open the rear camera anyway. These helpers
  * drive a real in-app camera that defaults to the front ("user")
  * camera. Pure/structural where possible so they can be unit-tested
  * without a device; nothing here touches `navigator` at module level,
@@ -11,8 +11,8 @@
 export type FacingMode = "user" | "environment";
 
 /** Stream constraints for a facing mode: video only, no audio.
- * A plain facingMode string is only a preference — a device may still
- * open another camera — so this is the fallback shape, not the first
+ * A plain facingMode string is only a preference - a device may still
+ * open another camera - so this is the fallback shape, not the first
  * request. */
 export function cameraConstraints(facing: FacingMode): MediaStreamConstraints {
   return { audio: false, video: { facingMode: facing } };
@@ -30,7 +30,7 @@ export function exactCameraConstraints(
 /** Request a camera stream, preferring the given facing mode.
  * Tries the exact camera first; when no camera matches (or no camera
  * exists at all) retries with the preference form so any available
- * camera is used instead. Permission denial is not retried — the
+ * camera is used instead. Permission denial is not retried - the
  * caller treats it as "camera unavailable". */
 export async function requestCamera(
   facing: FacingMode

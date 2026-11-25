@@ -5,7 +5,7 @@ alerts (deferred), no watermark, higher limits, custom branding (deferred).
 
 All Stripe config comes from env vars (see settings); with no keys set the
 endpoints answer 503 and the app runs free-tier only. The price lives in the
-Stripe dashboard (STRIPE_PRICE_ID) — no amount is hardcoded here.
+Stripe dashboard (STRIPE_PRICE_ID) - no amount is hardcoded here.
 """
 
 import logging
@@ -241,7 +241,7 @@ def webhook(request):
         return HttpResponse(status=400)
 
     # construct_event returns a stripe Event object, not a dict, and
-    # Event rejects dict methods like .get — convert once so the
+    # Event rejects dict methods like .get - convert once so the
     # dict-style access below works on real (unmocked) events.
     event = event.to_dict()
 

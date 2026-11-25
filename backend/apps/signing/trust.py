@@ -16,7 +16,7 @@ it surfaces:
 
 Also here: `normalize_photo`, which applies the EXIF orientation so the
 witness photo isn't stored sideways, and strips EXIF (including GPS) from
-the stored copy — the timestamp evidence lives in the audit trail, the
+the stored copy - the timestamp evidence lives in the audit trail, the
 location doesn't need to live on disk.
 """
 
@@ -133,7 +133,7 @@ def normalize_photo(photo_bytes: bytes) -> bytes:
 
     Phones store portrait photos rotated with an EXIF orientation flag;
     without this the witness photo embeds sideways in the sealed PDF.
-    EXIF (including GPS) is stripped from the stored copy — the capture
+    EXIF (including GPS) is stripped from the stored copy - the capture
     timestamp is preserved separately in the audit trail.
     Raises on unreadable input (caller decides the fallback).
     """

@@ -9,7 +9,7 @@ import {
 const API_URL = process.env.E2E_API_URL ?? "http://localhost:8000";
 
 // Public verification page (#74): seal a document through the UI, then
-// verify the signed download on /verify — and an unsigned PDF must come
+// verify the signed download on /verify - and an unsigned PDF must come
 // back invalid. Runs against the test stack, where the per-IP rate
 // limit is off (docker-compose.test.yml); the limiter itself is covered
 // by backend tests with the default on.
@@ -54,7 +54,7 @@ test("verify page: sealed download verifies valid, unsigned PDF invalid", async 
   await page.getByRole("button", { name: "Verify this document" }).click();
   await expect(
     page.getByText(
-      "Valid — this is a genuine document sealed by SignSeen.",
+      "Valid - this is a genuine document sealed by SignSeen.",
     ),
   ).toBeVisible();
   await expect(page.getByText(title)).toBeVisible();
@@ -70,7 +70,7 @@ test("verify page: sealed download verifies valid, unsigned PDF invalid", async 
   await page.getByRole("button", { name: "Verify this document" }).click();
   await expect(
     page.getByText(
-      "Invalid — this file could not be verified as a document sealed by SignSeen.",
+      "Invalid - this file could not be verified as a document sealed by SignSeen.",
     ),
   ).toBeVisible();
   await expect(

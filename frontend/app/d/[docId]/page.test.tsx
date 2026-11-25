@@ -43,7 +43,7 @@ function renderPage() {
   // The page unwraps its route params with React's use(). A plain
   // resolved promise suspends and its retry never flushes in this
   // vitest/jsdom environment, so pass a promise already marked
-  // resolved — use() reads the status/value fields it attaches to
+  // resolved - use() reads the status/value fields it attaches to
   // thenables and returns synchronously. The boundary stays: the
   // page suspends in production until the params resolve.
   const params = Promise.resolve({ docId: "doc-1" }) as Promise<{
@@ -176,11 +176,11 @@ describe("TrackDocumentPage navigation", () => {
 
     const rendered = new Date(signedAt).toLocaleString();
     await waitFor(() =>
-      expect(document.body.textContent).toContain(`signed — ${rendered}`)
+      expect(document.body.textContent).toContain(`signed - ${rendered}`)
     );
     expect(document.body.textContent).toContain("pending");
     // The pending row carries no timestamp.
-    expect(document.body.textContent).not.toContain(`pending — ${rendered}`);
+    expect(document.body.textContent).not.toContain(`pending - ${rendered}`);
   });
 
   it("shows the signer email when no signer name is available (#143)", async () => {

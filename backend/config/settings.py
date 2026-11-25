@@ -14,7 +14,7 @@ def _env_int(name: str, default: int) -> int:
 
     Compose passthroughs and copied .env examples routinely set
     variables to empty strings, and os.environ.get's default only
-    applies when the variable is absent — int('') crashed settings
+    applies when the variable is absent - int('') crashed settings
     import on staging (#49). A non-blank non-numeric value still
     raises, failing loud on a real misconfiguration.
     """
@@ -99,7 +99,7 @@ CORS_ALLOWED_ORIGINS = [
 ]
 # The draft token (#89) travels as an X-Draft-Token header. A browser
 # only sends it after a preflight that lists it, and the default
-# allowed-headers set does not include it — without this, every
+# allowed-headers set does not include it - without this, every
 # draft-token call (field placement, send) fails the preflight and
 # the browser blocks the request outright.
 from corsheaders.defaults import default_headers
@@ -164,7 +164,7 @@ EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
 EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "1") == "1"
 # A blank value must not wipe the default: the compose files pass this
 # variable through with an empty default, and os.environ.get only falls
-# back when the variable is absent — the same empty-string trap as
+# back when the variable is absent - the same empty-string trap as
 # _env_int above. Without the fallback every invite is rejected with
 # an invalid from-address (#98).
 DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL") or (
@@ -180,7 +180,7 @@ ENABLE_E2E_FIXTURES = os.environ.get("ENABLE_E2E_FIXTURES", "0") == "1"
 # All optional: with no keys set, billing endpoints answer 503 and the app
 # runs free-tier only. STRIPE_PRICE_ID is the Price created in the Stripe
 # dashboard; no amount is hardcoded here. Premium is sold monthly and
-# annually — one Stripe Price per plan;
+# annually - one Stripe Price per plan;
 # STRIPE_PRICE_ID remains as the legacy monthly fallback.
 STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
 STRIPE_PUBLISHABLE_KEY = os.environ.get("STRIPE_PUBLISHABLE_KEY", "")

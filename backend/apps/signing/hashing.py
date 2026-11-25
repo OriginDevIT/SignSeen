@@ -31,7 +31,7 @@ def next_event_hash(session, event_type: str, payload: dict, timestamp):
 
     The hash is fully determined by the chain tip, the event type, the
     payload, and the timestamp, so it can be computed before the event
-    row exists — the sealed PDF needs the document.sealed event's hash
+    row exists - the sealed PDF needs the document.sealed event's hash
     printed on its certificate before that event is recorded.
     """
     last = session.events.order_by("-created_at").first()

@@ -106,7 +106,7 @@ describe("SendPage session loading (#82)", () => {
 
     // The session is still unknown: neither the signed-in line nor
     // the anonymous line may appear, and no step content renders yet
-    // — the photo checkbox must not present itself as a disabled
+    // - the photo checkbox must not present itself as a disabled
     // premium feature, or at all, until the page is ready.
     expect(screen.getByText("Loading…")).toBeTruthy();
     expect(
@@ -236,7 +236,7 @@ describe("SendPage wizard (#89)", () => {
 
     await waitFor(() =>
       expect(
-        screen.getByText("Step 2 of 3 — Place fields (optional)"),
+        screen.getByText("Step 2 of 3 - Place fields (optional)"),
       ).toBeTruthy(),
     );
     expect(vi.mocked(uploadDocument)).toHaveBeenCalledWith(
@@ -278,7 +278,7 @@ describe("SendPage wizard (#89)", () => {
 
     await waitFor(() =>
       expect(
-        screen.getByText("Step 2 of 3 — Place fields (optional)"),
+        screen.getByText("Step 2 of 3 - Place fields (optional)"),
       ).toBeTruthy(),
     );
     expect(vi.mocked(uploadDocument)).toHaveBeenCalledWith(
@@ -309,18 +309,18 @@ describe("SendPage wizard (#89)", () => {
     fireEvent.submit(document.querySelector("form") as HTMLFormElement);
     await waitFor(() =>
       expect(
-        screen.getByText("Step 2 of 3 — Place fields (optional)"),
+        screen.getByText("Step 2 of 3 - Place fields (optional)"),
       ).toBeTruthy(),
     );
 
     fireEvent.click(
       screen.getByRole("button", {
-        name: "Skip — no fields needed, continue to review",
+        name: "Skip - no fields needed, continue to review",
       }),
     );
     await waitFor(() =>
       expect(
-        screen.getByText("Step 3 of 3 — Review & send"),
+        screen.getByText("Step 3 of 3 - Review & send"),
       ).toBeTruthy(),
     );
     expect(screen.getByText(/jane@example.com/)).toBeTruthy();
@@ -359,14 +359,14 @@ describe("SendPage wizard (#89)", () => {
     fireEvent.submit(document.querySelector("form") as HTMLFormElement);
     await waitFor(() =>
       expect(
-        screen.getByText("Step 2 of 3 — Place fields (optional)"),
+        screen.getByText("Step 2 of 3 - Place fields (optional)"),
       ).toBeTruthy(),
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Discard draft" }));
     await waitFor(() =>
       expect(
-        screen.getByText("Step 1 of 3 — Signers & document"),
+        screen.getByText("Step 1 of 3 - Signers & document"),
       ).toBeTruthy(),
     );
     expect(vi.mocked(discardDraft)).toHaveBeenCalledWith("draft-1", "tok-1");
@@ -386,7 +386,7 @@ describe("SendPage wizard (#89)", () => {
     await renderAnonymous();
     await waitFor(() =>
       expect(
-        screen.getByText("Step 3 of 3 — Review & send"),
+        screen.getByText("Step 3 of 3 - Review & send"),
       ).toBeTruthy(),
     );
     expect(vi.mocked(getDocument)).toHaveBeenCalledWith("draft-1", "tok-1");
@@ -406,11 +406,11 @@ describe("SendPage wizard (#89)", () => {
     vi.mocked(getAuthToken).mockReturnValue(null);
     render(<SendPage />);
 
-    // The draft is still loading: only the loading state may appear —
+    // The draft is still loading: only the loading state may appear -
     // no step-1 label and no details form fields.
     expect(screen.getByText("Loading…")).toBeTruthy();
     expect(
-      screen.queryByText("Step 1 of 3 — Signers & document"),
+      screen.queryByText("Step 1 of 3 - Signers & document"),
     ).toBeNull();
     expect(
       screen.queryByPlaceholderText("e.g. Contractor Agreement"),
@@ -419,7 +419,7 @@ describe("SendPage wizard (#89)", () => {
     pending.resolve(DRAFT_DOC);
     await waitFor(() =>
       expect(
-        screen.getByText("Step 3 of 3 — Review & send"),
+        screen.getByText("Step 3 of 3 - Review & send"),
       ).toBeTruthy(),
     );
     // The details form never appeared on the way here.
@@ -444,7 +444,7 @@ describe("SendPage wizard (#89)", () => {
 
     // One signer row is the free limit for adding: the second signer
     // comes only via "Send to me", so the button is greyed out with
-    // one row and the limit is explained — not only once two rows
+    // one row and the limit is explained - not only once two rows
     // exist (#150).
     expect(screen.getAllByPlaceholderText("Jane Doe")).toHaveLength(1);
     expect(
@@ -752,7 +752,7 @@ describe("SendPage signer reorder (#111)", () => {
     fireEvent.submit(document.querySelector("form") as HTMLFormElement);
     await waitFor(() =>
       expect(
-        screen.getByText("Step 2 of 3 — Place fields (optional)"),
+        screen.getByText("Step 2 of 3 - Place fields (optional)"),
       ).toBeTruthy(),
     );
     expect(vi.mocked(uploadDocument)).toHaveBeenCalledWith(
@@ -771,12 +771,12 @@ describe("SendPage signer reorder (#111)", () => {
     // turns into sessions, in order.
     fireEvent.click(
       screen.getByRole("button", {
-        name: "Skip — no fields needed, continue to review",
+        name: "Skip - no fields needed, continue to review",
       }),
     );
     await waitFor(() =>
       expect(
-        screen.getByText("Step 3 of 3 — Review & send"),
+        screen.getByText("Step 3 of 3 - Review & send"),
       ).toBeTruthy(),
     );
     const signersBlock = screen.getByText("Signers:").parentElement as HTMLElement;

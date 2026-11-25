@@ -249,7 +249,7 @@ export default function DashboardPage() {
 
   // Free tier: 1 document pending signature at a time. The limit is
   // enforced at send time (a 409 from the send endpoint), so drafts
-  // are always allowed — drafts never count toward it — and starting
+  // are always allowed - drafts never count toward it - and starting
   // a draft from here is never blocked.
   const pendingDoc = dash.documents.find((d) => d.status === "pending");
   const atPendingLimit = !dash.is_premium && pendingDoc !== undefined;
@@ -275,7 +275,7 @@ export default function DashboardPage() {
 
       {atPendingLimit && (
         <p style={{ margin: 0, opacity: 0.75, fontSize: "0.9rem" }}>
-          The free plan allows 1 document pending signature at a time — one
+          The free plan allows 1 document pending signature at a time - one
           document is still pending. You can still start a draft (drafts
           don&apos;t count toward the limit); the limit applies when you
           send, once the pending document has been signed or expires, or{" "}
@@ -290,7 +290,7 @@ export default function DashboardPage() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "0.75rem" }}>
           <div>
             <div style={{ fontWeight: 600 }}>
-              {account.name ? `${account.name} — ` : ""}
+              {account.name ? `${account.name} - ` : ""}
               {account.email}
             </div>
             <div style={{ opacity: 0.6, fontSize: "0.9rem" }}>
@@ -330,21 +330,21 @@ export default function DashboardPage() {
                 disabled={busyBilling}
                 style={button}
               >
-                {busyBilling ? "…" : "Premium — $50/yr"}
+                {busyBilling ? "…" : "Premium - $50/yr"}
               </button>
               <button
                 onClick={() => upgrade("monthly")}
                 disabled={busyBilling}
                 style={ghost}
               >
-                {busyBilling ? "…" : "Premium — $5/mo"}
+                {busyBilling ? "…" : "Premium - $5/mo"}
               </button>
             </>
           )}
         </div>
         {account.billing_status === "suspended" && (
           <p style={{ color: "#b91c1c", margin: "0.75rem 0 0" }}>
-            Premium is suspended — a payment failed. Update your payment
+            Premium is suspended - a payment failed. Update your payment
             method to restore premium features. Accounts suspended for
             180 days expire, and stored documents are removed 180 days
             after expiry.
@@ -352,7 +352,7 @@ export default function DashboardPage() {
         )}
         {account.billing_status === "paused" && (
           <p style={{ margin: "0.75rem 0 0", opacity: 0.75 }}>
-            Your subscription is paused — premium features are off, and
+            Your subscription is paused - premium features are off, and
             your documents are kept. Resume any time.
           </p>
         )}
@@ -420,7 +420,7 @@ export default function DashboardPage() {
           signed-copy emails for documents you send.
           {!dash.is_premium && (
             <>
-              {" Premium feature — "}
+              {" Premium feature - "}
               <UpgradeAction loggedIn onUpgrade={() => upgrade("annual")}>
                 upgrade
               </UpgradeAction>

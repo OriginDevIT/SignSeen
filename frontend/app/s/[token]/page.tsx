@@ -87,8 +87,8 @@ function StepDots({ active }: { active: number }) {
 
 /** Continue-on-your-phone QR (#94): a signer who opened the signing
  * link on a desktop scans it to continue signing on their phone.
- * The QR opens by default on desktop viewports (#117) — a desktop
- * signer is the one who benefits from scanning it — and stays closed
+ * The QR opens by default on desktop viewports (#117) - a desktop
+ * signer is the one who benefits from scanning it - and stays closed
  * on phones, where the signer is already on the device. The viewport
  * check runs after mount so the server render and the first client
  * render agree (#91 hydration). Same QR block as the other renderings
@@ -176,7 +176,7 @@ function completedFieldValue(f: DocumentFieldInfo, token: string) {
   if (f.type === "checkbox") {
     return (
       <span style={{ fontSize: "1.1rem", lineHeight: 1 }}>
-        {f.value === "true" ? "✓" : "—"}
+        {f.value === "true" ? "✓" : "-"}
       </span>
     );
   }
@@ -210,7 +210,7 @@ function CompletedField({ field: f, token }: { field: DocumentFieldInfo; token: 
       f.type === "signature" || f.type === "initials"
         ? `${f.type} ✓`
         : f.type === "checkbox"
-          ? `checkbox ${f.value === "true" ? "✓" : "—"}`
+          ? `checkbox ${f.value === "true" ? "✓" : "-"}`
           : `${f.type}: ${f.value}`;
     return (
       <div
@@ -241,7 +241,7 @@ function CompletedField({ field: f, token }: { field: DocumentFieldInfo; token: 
     <div
       data-testid="completed-field-box"
       aria-label={label}
-      title={`${f.type} — completed by an earlier signer`}
+      title={`${f.type} - completed by an earlier signer`}
       style={{
         position: "absolute",
         left: `${b.x * 100}%`,
@@ -286,7 +286,7 @@ export default function SignPage() {
   // not count as complete until the signer saves it.
   const [confirmedFields, setConfirmedFields] = useState<Record<string, boolean>>({});
   // Rendered page aspect (width/height) per page, from the preview
-  // image's natural size — used to size field pads to drawn boxes.
+  // image's natural size - used to size field pads to drawn boxes.
   // Letter (612/792) until the image reports its own size.
   const [pageAspects, setPageAspects] = useState<Record<number, number>>({});
   // Field whose modal is open, if any.
@@ -296,7 +296,7 @@ export default function SignPage() {
   // fast signer who completes a field inside its 100ms window would
   // otherwise be yanked back to the first field.
   const fieldActedRef = useRef(false);
-  // A signature/initials image drawn anywhere in this ceremony —
+  // A signature/initials image drawn anywhere in this ceremony -
   // offered for reuse in later field modals and the document pad.
   const [savedSignature, setSavedSignature] = useState<string | null>(null);
   const [savedInitials, setSavedInitials] = useState<string | null>(null);
@@ -329,14 +329,14 @@ export default function SignPage() {
   }, [token]);
 
   // Cross-device completion: while the ceremony is open on this
-  // device, re-check the session — a signer who continued on their
+  // device, re-check the session - a signer who continued on their
   // phone submits there, and this page should move to the done view
   // instead of sitting on the signing form. Polls only while the
   // ceremony is in an active step; the page's own submit flow is
   // untouched. When the session turns signed, the done view is built
   // from the same public endpoints the submit response draws on: the
   // document (for the signed file) and the audit trail (for the seal
-  // — the sealed event's hash when the document is final, else the
+  // - the sealed event's hash when the document is final, else the
   // submitted event's hash, mirroring the submit response). A failed
   // poll changes nothing; the next interval retries.
   const POLL_INTERVAL_MS = 5000;
@@ -432,7 +432,7 @@ export default function SignPage() {
   };
 
   // Preview of the date a signed-date field will record if the signer
-  // submits now (UTC, YYYY-MM-DD — the server fills the submit date).
+  // submits now (UTC, YYYY-MM-DD - the server fills the submit date).
   const signedDatePreview = new Date().toISOString().slice(0, 10);
 
   const sessionFields = session?.fields ?? [];
@@ -441,11 +441,11 @@ export default function SignPage() {
   // counted toward this signer's progress or the continue gate.
   const completedFields = session?.completed_fields ?? [];
   // The fields section renders when there is anything to show on the
-  // document — the signer's own fields, or earlier signers' completed
+  // document - the signer's own fields, or earlier signers' completed
   // ones (a signer with no fields of their own still sees those).
   const showFieldsSection = hasFields || completedFields.length > 0;
   // The continue button stays greyed out until every field is
-  // complete — required and optional alike (#118). Completion is
+  // complete - required and optional alike (#118). Completion is
   // judged by the shared fieldComplete helper.
   const allFieldsComplete = sessionFields.every((f) => fieldComplete(f));
 
@@ -463,7 +463,7 @@ export default function SignPage() {
   };
 
   // Entering the sign step scrolls to the first field still to
-  // complete, so the signer starts where the work is — unless the
+  // complete, so the signer starts where the work is - unless the
   // signer already opened a field inside the 100ms window.
   useEffect(() => {
     if (step !== "sign" || !hasFields) return;
@@ -479,7 +479,7 @@ export default function SignPage() {
   }, [step]);
 
   /** Save one field's modal value, then scroll to the next field
-   * still to complete — or to the continue button when this was the
+   * still to complete - or to the continue button when this was the
    * last one. A drawn signature/initials image joins the reuse pool
    * for later modals and the document pad. */
   const saveFieldValue = (f: DocumentFieldInfo, value: string | boolean) => {
@@ -549,7 +549,7 @@ export default function SignPage() {
         <h1 style={{ textAlign: "center" }}>This link isn&apos;t active yet</h1>
         <p style={{ textAlign: "center", opacity: 0.65 }}>
           This document is signed in order, and an earlier signer
-          hasn&apos;t signed yet. Your link activates as soon as they do —
+          hasn&apos;t signed yet. Your link activates as soon as they do -
           please check back later.
         </p>
       </main>
@@ -684,7 +684,7 @@ export default function SignPage() {
                 </p>
               ) : (
                 <p style={{ opacity: 0.65, margin: 0 }}>
-                  An earlier signer completed these fields — they are shown for reference.
+                  An earlier signer completed these fields - they are shown for reference.
                 </p>
               )}
               {hasFields && completedFields.length > 0 && (
@@ -905,8 +905,8 @@ export default function SignPage() {
           {/* The document signature comes after the fields, not before. */}
           <h2 style={{ margin: 0 }}>
             {showFieldsSection
-              ? "2. Sign the document — draw your signature"
-              : "1. Signed — draw your signature"}
+              ? "2. Sign the document - draw your signature"
+              : "1. Signed - draw your signature"}
           </h2>
           {signatureUrl ? (
             <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
@@ -961,7 +961,7 @@ export default function SignPage() {
                 cursor: hasFields && !allFieldsComplete ? "not-allowed" : "pointer",
               }}
             >
-              Looks good — continue
+              Looks good - continue
             </button>
           </div>
           {modalField && (
@@ -1021,7 +1021,7 @@ export default function SignPage() {
             <>
               <h1 style={{ margin: 0 }}>Signature recorded</h1>
               <p style={{ opacity: 0.7, margin: 0 }}>
-                Your signature is recorded — this document is waiting for
+                Your signature is recorded - this document is waiting for
                 the remaining signer(s). It will be sealed once everyone
                 in the signing order has signed.
               </p>
@@ -1060,8 +1060,8 @@ export default function SignPage() {
           ) : copyState === "sent" ? (
             <p style={{ fontSize: "0.9rem", opacity: 0.65, margin: 0 }}>
               {result.document_final
-                ? `Copy sent to ${copyEmail.trim()} — check your inbox.`
-                : `Thanks — your copy will be emailed to ${copyEmail.trim()} when the document is fully signed.`}
+                ? `Copy sent to ${copyEmail.trim()} - check your inbox.`
+                : `Thanks - your copy will be emailed to ${copyEmail.trim()} when the document is fully signed.`}
             </p>
           ) : (
             <div style={{ display: "grid", gap: "0.5rem", textAlign: "left" }}>
@@ -1101,7 +1101,7 @@ export default function SignPage() {
           )}
           <p style={{ fontSize: "0.9rem", opacity: 0.65, margin: 0 }}>
             Want to keep this document in your own library?{" "}
-            <a href={signupHref}>Create a free account</a> — you&apos;ll find the
+            <a href={signupHref}>Create a free account</a> - you&apos;ll find the
             documents you&apos;ve sent and received there.
           </p>
         </section>

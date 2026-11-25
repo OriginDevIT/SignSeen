@@ -1,6 +1,6 @@
 import HomeHeader from "../../components/HomeHeader";
 
-export const metadata = { title: "Support — SignSeen" };
+export const metadata = { title: "Support - SignSeen" };
 
 /**
  * Support page (issue #38). First line of support is the GoHighLevel
@@ -30,7 +30,7 @@ export default function SupportPage() {
       <p>
         <strong>Email:</strong>{" "}
         <a href="mailto:support@getsignseen.com">support@getsignseen.com</a>{" "}
-        — include the email address on your account (or the one the
+        - include the email address on your account (or the one the
         document was sent to) and, if you have it, the document&apos;s
         tracking ID. Never email us your password or full payment card
         details; we will never ask for them.
@@ -42,7 +42,7 @@ export default function SupportPage() {
         <li>
           <strong>Signer?</strong> You don&apos;t need an account. Open
           the signing link or scan the QR code from your invitation; if
-          the link expired, ask the sender to resend — pending documents
+          the link expired, ask the sender to resend - pending documents
           expire after 30 days.
         </li>
         <li>

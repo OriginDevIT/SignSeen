@@ -15,7 +15,7 @@ import pymupdf
 
 PAGE_WIDTH, PAGE_HEIGHT = 842, 595  # A4 landscape points
 MARGIN = 36
-WATERMARK_TEXT = "Signed with SignSeen — free tier"
+WATERMARK_TEXT = "Signed with SignSeen - free tier"
 CONTENT_BOTTOM = PAGE_HEIGHT - MARGIN
 CERT_COLS, CERT_ROWS = 2, 2
 CERT_GUTTER_X, CERT_GUTTER_Y = 20, 16
@@ -123,9 +123,9 @@ def _render_header(page: pymupdf.Page, brand_name: str = "") -> int:
     # Sender branding (premium): the owner's brand takes the product
     # line's place in the header; SignSeen stays named as the platform.
     product_line = (
-        f"Signed via {brand_name} with SignSeen — Signed. Seen. Sealed."
+        f"Signed via {brand_name} with SignSeen - Signed. Seen. Sealed."
         if brand_name
-        else "Signed with SignSeen — Signed. Seen. Sealed."
+        else "Signed with SignSeen - Signed. Seen. Sealed."
     )
     page.insert_text(
         (MARGIN, y + 32),
@@ -232,8 +232,8 @@ def build_signed_pdf_multi(
     per landscape page in a two-by-two grid.
 
     Each signer dict carries `signature_png`, optional `photo_png`, and
-    the metadata rendered in its section (`signer_name` — the signer
-    email when no name was given — `signer_email`, `signed_at` as an
+    the metadata rendered in its section (`signer_name` - the signer
+    email when no name was given - `signer_email`, `signed_at` as an
     explicit UTC timestamp, `document_id`, `session_id`, `audit_hash`).
     `audit_hash` is the hash of the
     document.sealed event, the same seal the done screen and the seal
@@ -292,8 +292,8 @@ def build_preview_pdf(original_path: str, fields: list[dict]) -> bytes:
 
     Used by the session-document endpoint while the document is still
     unsigned, so a later signer reviews the document as it stands with
-    earlier signers' work in place (#144). No certificate pages — the
-    document is not sealed yet — and no watermark; this is a review
+    earlier signers' work in place (#144). No certificate pages - the
+    document is not sealed yet - and no watermark; this is a review
     copy, not a sealed file.
     """
     doc = pymupdf.open(original_path)

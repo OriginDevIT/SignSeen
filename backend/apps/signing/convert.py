@@ -2,7 +2,7 @@
 
 - Office docs (.doc/.docx) -> PDF via headless LibreOffice.
 - Web pages (URL) -> PDF via WeasyPrint (static HTML/CSS; JS-heavy pages
-  render partially — documented limitation, not a bug).
+  render partially - documented limitation, not a bug).
 
 Both paths are verified against real binaries (see tests).
 """
@@ -73,7 +73,7 @@ def validate_public_url(url: str) -> None:
     """SSRF guard for server-side URL fetching (issue #39).
 
     The URL must be http(s) and EVERY address its host resolves to must
-    be a public address — loopback, private, link-local (cloud metadata
+    be a public address - loopback, private, link-local (cloud metadata
     lives there), multicast, reserved, and unspecified addresses are
     refused. Local development against a local server can opt out with
     URL_FETCH_ALLOW_PRIVATE=1; never set that in production. Residual
@@ -109,7 +109,7 @@ def validate_public_url(url: str) -> None:
 
 class _GuardedURLFetcher(URLFetcher):
     """WeasyPrint fetcher that validates every fetched URL (including
-    subresources) and refuses redirects — a public page redirecting to
+    subresources) and refuses redirects - a public page redirecting to
     an internal address is the classic SSRF bypass, so the URL given
     must be the final one."""
 

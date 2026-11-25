@@ -56,7 +56,7 @@ describe("PhotoStep", () => {
       screen.queryByRole("button", { name: /Skip photo/ })
     ).toBeNull();
     const submit = screen.getByRole("button", {
-      name: "Seal it — submit",
+      name: "Seal it - submit",
     }) as HTMLButtonElement;
     expect(submit.disabled).toBe(true);
     expect(
@@ -79,7 +79,7 @@ describe("PhotoStep", () => {
       photoUrl: "data:image/jpeg;base64,fakephoto",
     });
     const submit = screen.getByRole("button", {
-      name: "Seal it — submit",
+      name: "Seal it - submit",
     }) as HTMLButtonElement;
     expect(submit.disabled).toBe(false);
     expect(
@@ -96,7 +96,7 @@ describe("PhotoStep", () => {
       fieldsComplete: false,
     });
     const submit = screen.getByRole("button", {
-      name: "Seal it — submit",
+      name: "Seal it - submit",
     }) as HTMLButtonElement;
     expect(submit.disabled).toBe(true);
   });
@@ -107,7 +107,7 @@ describe("PhotoStep", () => {
       photoConsent: false,
     });
     const submit = screen.getByRole("button", {
-      name: "Seal it — submit",
+      name: "Seal it - submit",
     }) as HTMLButtonElement;
     expect(submit.disabled).toBe(true);
     expect(
@@ -121,7 +121,7 @@ describe("PhotoStep", () => {
       photoConsent: false,
     });
     const submit = screen.getByRole("button", {
-      name: "Seal it — submit",
+      name: "Seal it - submit",
     }) as HTMLButtonElement;
     expect(submit.disabled).toBe(true);
     rerender(

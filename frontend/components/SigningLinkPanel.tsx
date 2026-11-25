@@ -6,7 +6,7 @@ import { QRCodeSVG } from "qrcode.react";
 /**
  * Copy-link + QR actions for a pending document's signing URL.
  * Shown on the dashboard card and the /d/<id> tracking page, and
- * only ever rendered when the API returned a signing_url — the
+ * only ever rendered when the API returned a signing_url - the
  * server includes that field for the document's owner only.
  */
 export default function SigningLinkPanel({

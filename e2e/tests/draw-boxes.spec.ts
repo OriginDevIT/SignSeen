@@ -6,8 +6,8 @@ const API_URL = process.env.E2E_API_URL ?? "http://localhost:8000";
 // Draw boxes on the document to place signature fields (#78): the owner
 // drags a box on the rendered page, the box renders at its true size,
 // the signer signs inside it in the ceremony, and the sealed document
-// verifies as valid. The pixel geometry of the stamped signature —
-// inside the drawn box, aspect preserved — is asserted in backend
+// verifies as valid. The pixel geometry of the stamped signature -
+// inside the drawn box, aspect preserved - is asserted in backend
 // tests (PyMuPDF rects), where the sealed PDF can be read directly.
 test("draw a box, seal it, and verify the sealed document", async ({
   page,
@@ -111,7 +111,7 @@ test("draw a box, seal it, and verify the sealed document", async ({
     // 30% × 15% box), not the document pad's 200px.
     await signer.getByTestId("field-box").click();
     const dialog = signer.getByRole("dialog", {
-      name: "Signature — page 1",
+      name: "Signature - page 1",
     });
     await expect(dialog).toBeVisible();
     const fieldPad = dialog.getByLabel("Draw your signature here");
@@ -132,7 +132,7 @@ test("draw a box, seal it, and verify the sealed document", async ({
       .click();
     await expect(signer.getByAltText("Signature preview")).toBeVisible();
     await signer
-      .getByRole("button", { name: "Looks good — continue" })
+      .getByRole("button", { name: "Looks good - continue" })
       .click();
     await expect(signer.getByText("2. Seen")).toBeVisible();
     await signer.getByRole("button", { name: "Skip photo & submit" }).click();
@@ -161,7 +161,7 @@ test("draw a box, seal it, and verify the sealed document", async ({
   });
   await page.getByRole("button", { name: "Verify this document" }).click();
   await expect(
-    page.getByText("Valid — this is a genuine document sealed by SignSeen."),
+    page.getByText("Valid - this is a genuine document sealed by SignSeen."),
   ).toBeVisible();
   await expect(page.getByText(title)).toBeVisible();
   // The verdict never exposes signer emails (#167): no account is

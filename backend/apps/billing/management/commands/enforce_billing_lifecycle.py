@@ -1,4 +1,4 @@
-"""Billing lifecycle enforcement (issue #36) — run daily from cron.
+"""Billing lifecycle enforcement (issue #36) - run daily from cron.
 
 Premium lifecycle rules:
 - payment failed -> SUSPENDED (premium features off, documents kept)

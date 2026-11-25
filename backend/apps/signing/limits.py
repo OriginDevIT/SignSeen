@@ -50,7 +50,7 @@ def check_can_create_document(account, sender_email, upload_bytes: int) -> None:
     """Raise LimitExceeded if this identity may not start another draft.
 
     Starting a document creates a draft (#89): the draft cap applies
-    here, not the pending limit — a draft only becomes pending at send
+    here, not the pending limit - a draft only becomes pending at send
     time, where check_pending_limit runs instead.
     """
     check_draft_limit(account, sender_email)
@@ -108,7 +108,7 @@ def clean_signer_list(raw, sender_email, is_premium) -> list[dict]:
     if len(raw) > max_signers:
         raise ValueError(
             f"at most {max_signers} signer(s)"
-            + ("" if is_premium else " on the free tier — upgrade for more")
+            + ("" if is_premium else " on the free tier - upgrade for more")
         )
     sender = (sender_email or "").strip().lower()
     cleaned = []
@@ -127,7 +127,7 @@ def clean_signer_list(raw, sender_email, is_premium) -> list[dict]:
         )
     if not is_premium and len(cleaned) == 2 and sender not in seen:
         raise ValueError(
-            "on the free tier the second signer must be you — "
+            "on the free tier the second signer must be you - "
             "use 'Send to me for signature also'"
         )
     return cleaned
@@ -135,7 +135,7 @@ def clean_signer_list(raw, sender_email, is_premium) -> list[dict]:
 
 def check_pending_limit(account, sender_email) -> None:
     # The free tier's "1 pending document" rule is keyed on the sender email
-    # itself — not on whether there's an account. An email address gets one
+    # itself - not on whether there's an account. An email address gets one
     # pending document at a time, anonymous or logged in. Drafts are not
     # pending (#89), so they never count here; the check runs at send time.
     pending = Document.objects.filter(
@@ -177,7 +177,7 @@ def check_can_create_session(document: Document, signer_email: str = "") -> None
         return
     raise LimitExceeded(
         "Free tier allows up to 2 signers, and the second signer must "
-        "be you — upgrade for more signers."
+        "be you - upgrade for more signers."
     )
 
 

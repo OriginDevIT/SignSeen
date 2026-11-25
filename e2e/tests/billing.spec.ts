@@ -27,7 +27,7 @@ test("billing unconfigured: upgrade fails cleanly, account stays free", async ({
   await page.getByRole("button", { name: "Log in" }).click();
   await expect(page.getByRole("heading", { name: "Your documents" })).toBeVisible();
   await expect(page.getByText("Free plan")).toBeVisible();
-  await page.getByRole("button", { name: "Premium — $50/yr" }).click();
+  await page.getByRole("button", { name: "Premium - $50/yr" }).click();
   await expect(
     page.getByText("billing is not configured on this server"),
   ).toBeVisible();
@@ -61,7 +61,7 @@ test("billing checkout: 4242 card -> return -> signed webhook -> Premium", async
   expect(loginRes.ok()).toBeTruthy();
   const accountId = (await loginRes.json()).account.id;
 
-  await page.getByRole("button", { name: "Premium — $50/yr" }).click();
+  await page.getByRole("button", { name: "Premium - $50/yr" }).click();
   await page.waitForURL(/checkout\.stripe\.com/, { timeout: 30_000 });
   // Stripe's hosted Checkout is a real form (no iframes): the
   // autocomplete attributes are the stable hooks.
@@ -71,7 +71,7 @@ test("billing checkout: 4242 card -> return -> signed webhook -> Premium", async
   await page.getByRole("button", { name: /Pay/ }).click();
   await page.waitForURL(/\/dashboard\?upgraded=1$/, { timeout: 60_000 });
   // Stripe cannot deliver webhooks to localhost, so the account is
-  // still free here — that is the gap the signed event below closes.
+  // still free here - that is the gap the signed event below closes.
   await expect(page.getByText("Free plan")).toBeVisible();
 
   const payload = JSON.stringify({

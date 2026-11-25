@@ -127,7 +127,7 @@ export default function PlaceFieldsPage() {
   // never to a blank form. Read after mount only: the query string
   // does not exist on the server, so reading it during render makes
   // the server render the non-wizard exits while the client renders
-  // the wizard exits, which fails hydration (#91) — the same
+  // the wizard exits, which fails hydration (#91) - the same
   // read-during-render fault as HomeHeader.
   const [inWizard, setInWizard] = useState(false);
 
@@ -189,8 +189,8 @@ export default function PlaceFieldsPage() {
         setLoadError(
           err instanceof ApiError && (err.status === 401 || err.status === 403)
             ? draftToken || inWizard
-              ? "Could not open this draft — return to the send flow and continue from step 2."
-              : "Field placement is only available to the document's owner — log in with the account that sent this document."
+              ? "Could not open this draft - return to the send flow and continue from step 2."
+              : "Field placement is only available to the document's owner - log in with the account that sent this document."
             : "Could not load this document's fields."
         );
       });
@@ -221,24 +221,24 @@ export default function PlaceFieldsPage() {
       if (!s) return "Unknown signer";
       return `Signer ${s.order + 1}${
         s.signer_name
-          ? ` — ${s.signer_name}`
+          ? ` - ${s.signer_name}`
           : s.signer_email
-            ? ` — ${s.signer_email}`
+            ? ` - ${s.signer_email}`
             : ""
       }`;
     }
     const slot = doc?.signer_list?.[field.signer_index];
     if (!slot) return "Unknown signer";
     return `Signer ${field.signer_index + 1}${
-      slot.name ? ` — ${slot.name}` : slot.email ? ` — ${slot.email}` : ""
+      slot.name ? ` - ${slot.name}` : slot.email ? ` - ${slot.email}` : ""
     }`;
   };
 
-  /** Full option label for a session, including its email — shown in
+  /** Full option label for a session, including its email - shown in
    * the dropdown and as the select's tooltip; the select itself
    * truncates it with an ellipsis. */
   const signerOptionLabel = (s: NonNullable<DocumentInfo["sessions"]>[number]): string =>
-    `Signer ${s.order + 1}${s.signer_name ? ` — ${s.signer_name}` : ""}${
+    `Signer ${s.order + 1}${s.signer_name ? ` - ${s.signer_name}` : ""}${
       s.signer_email ? ` (${s.signer_email})` : ""
     }`;
 
@@ -246,7 +246,7 @@ export default function PlaceFieldsPage() {
   const draftSignerOptionLabel = (index: number): string => {
     const slot = doc?.signer_list?.[index];
     if (!slot) return `Signer ${index + 1}`;
-    return `Signer ${index + 1}${slot.name ? ` — ${slot.name}` : ""} (${slot.email})`;
+    return `Signer ${index + 1}${slot.name ? ` - ${slot.name}` : ""} (${slot.email})`;
   };
 
   const selectedSession = isDraft
@@ -274,7 +274,7 @@ export default function PlaceFieldsPage() {
     };
   };
 
-  /** Topmost field under the pointer, if any — a drawn box by
+  /** Topmost field under the pointer, if any - a drawn box by
    * containment, a click-placed marker by a finger-sized radius
    * around its anchor. grabDx/grabDy is the pointer's offset from
    * the box origin (0 for a marker, whose anchor follows the
@@ -467,7 +467,7 @@ export default function PlaceFieldsPage() {
     }
     const box = normalizeBox(start.x, start.y, end.x, end.y);
     if (boxTooSmall(box)) {
-      setError("That box is too small — drag a larger one.");
+      setError("That box is too small - drag a larger one.");
       return;
     }
     setSelectedId(null);
@@ -523,12 +523,12 @@ export default function PlaceFieldsPage() {
   return (
     <main style={shell}>
       <h1 style={{ fontSize: "1.5rem", marginBottom: "0.25rem" }}>
-        Place fields — {doc.title}
+        Place fields - {doc.title}
       </h1>
       <p style={{ opacity: 0.65, marginTop: 0 }}>
         Signing mode: {doc.signing_mode}. Pick a field type and the signer it
         belongs to, then drag on the page to draw a box where the field goes
-        — or click to place a default-size field. Drag a placed box to move
+        - or click to place a default-size field. Drag a placed box to move
         it; click a box to select it, then delete it with the ×. Each signer
         only ever sees their own fields.
       </p>
@@ -685,7 +685,7 @@ export default function PlaceFieldsPage() {
             return (
               <div
                 key={f.id}
-                title={`${f.type} — ${signerLabel(f)}`}
+                title={`${f.type} - ${signerLabel(f)}`}
                 style={{
                   position: "absolute",
                   left: `${pos.x * 100}%`,
@@ -708,7 +708,7 @@ export default function PlaceFieldsPage() {
           return (
             <div
               key={f.id}
-              title={`${f.type} — ${signerLabel(f)}`}
+              title={`${f.type} - ${signerLabel(f)}`}
               data-testid="field-box"
               style={{
                 position: "absolute",
@@ -841,7 +841,7 @@ export default function PlaceFieldsPage() {
       {fieldsExpanded &&
         (fields.length === 0 ? (
           <p style={{ opacity: 0.65 }}>
-            No fields yet — drag on the page to draw a box, or click to place
+            No fields yet - drag on the page to draw a box, or click to place
             a default-size one.
           </p>
         ) : (

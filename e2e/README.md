@@ -4,8 +4,8 @@ End-to-end tests that drive the real stack in a browser, so the flows a
 human would otherwise click through by hand (see
 `docs/manual-test-script.md`) are checked by assertions instead. What
 still needs human eyes is captured as screenshots (below); what a script
-cannot prove at all — a physical phone's camera, EXIF orientation, QR
-scanning on hardware — stays in the manual script.
+cannot prove at all - a physical phone's camera, EXIF orientation, QR
+scanning on hardware - stays in the manual script.
 
 ## Run
 
@@ -36,68 +36,68 @@ npm test
 
 ## Layout
 
-- `tests/happy-path.spec.ts` — manual script §B: desktop sender creates a
+- `tests/happy-path.spec.ts` - manual script §B: desktop sender creates a
   signing link, a mobile-emulated signer draws a signature, consents,
   adds a witness photo, and seals; the audit chain and sealed document
   are then verified through the API for the document the UI produced.
-- `tests/camera-path.spec.ts` — the same ceremony's photo step through
+- `tests/camera-path.spec.ts` - the same ceremony's photo step through
   the real in-app camera UI (getUserMedia against Chromium's fake media
   device), so a WitnessCamera regression cannot hide behind the
   test-only hidden file input the happy path uses (#34). The input has
   no user-facing trigger: there is no upload path in the product.
-- `tests/negative-edge.spec.ts` — manual script §D: double-sign, bad
+- `tests/negative-edge.spec.ts` - manual script §D: double-sign, bad
   file, empty signature, skipped photo, the free-tier 409 (anonymous
   and account, keyed on email), a second session's 409, and the
   stale-sender-token regression from #31.
-- `tests/accounts.spec.ts` — manual script §E: signup/login/logout,
+- `tests/accounts.spec.ts` - manual script §E: signup/login/logout,
   wrong password, password reset through Mailpit, dashboard pending
   state + storage meter + prefilled sender, seal emails to sender and
   signer, the tracking page, the done-screen account offer, and a
   premium branded seal.
-- `tests/intake.spec.ts` — manual script §C: a DOCX converts and
+- `tests/intake.spec.ts` - manual script §C: a DOCX converts and
   seals, and a web page renders to PDF and seals. The page URL is
   `E2E_WEBPAGE_URL` (default `https://example.com`); set it to a
   reachable page when running against a deployment.
-- `tests/billing.spec.ts` — manual script §F. Without Stripe keys
+- `tests/billing.spec.ts` - manual script §F. Without Stripe keys
   (CI's case) it asserts the upgrade fails cleanly with "billing is
   not configured on this server". With test-mode keys in both the
   stack and the spec env (`E2E_STRIPE_SECRET_KEY`,
-  `E2E_STRIPE_WEBHOOK_SECRET`, `E2E_STRIPE_PRICE_ID_ANNUAL` — the
+  `E2E_STRIPE_WEBHOOK_SECRET`, `E2E_STRIPE_PRICE_ID_ANNUAL` - the
   test override passes the same vars into the API container) it
   drives hosted Checkout with the 4242 card, returns to
   `/dashboard?upgraded=1`, then posts a locally signed
-  `checkout.session.completed` event — Stripe cannot deliver webhooks
-  to localhost — and asserts the dashboard flips to Premium.
-- `tests/dashboard-tabs.spec.ts` — dashboard tabs (#104): a draft shows
+  `checkout.session.completed` event - Stripe cannot deliver webhooks
+  to localhost - and asserts the dashboard flips to Premium.
+- `tests/dashboard-tabs.spec.ts` - dashboard tabs (#104): a draft shows
   in the Draft tab and a sent document in In Progress, each row with a
   Download link and a Delete that asks for confirmation first and then
   removes the row.
-- `tests/draw-boxes.spec.ts` — drag a box on the place-fields page to
+- `tests/draw-boxes.spec.ts` - drag a box on the place-fields page to
   place a signature field at its true size, sign inside it in the
   ceremony, and verify the sealed document as valid on /verify (#78).
   The stamped signature's pixel geometry is asserted in backend
   tests, where the sealed PDF can be read directly.
-- `tests/mobile-qr.spec.ts` — the QR codes on /send and in the
+- `tests/mobile-qr.spec.ts` - the QR codes on /send and in the
   dashboard signing-link panel fit a 360px phone.
-- `tests/photo-required.spec.ts` — a premium sender sets photo-required
+- `tests/photo-required.spec.ts` - a premium sender sets photo-required
   and the signer cannot seal without a photo (#73).
-- `tests/verify.spec.ts` — manual script §J: a sealed download verifies
+- `tests/verify.spec.ts` - manual script §J: a sealed download verifies
   valid on /verify and an unsigned PDF verifies invalid (#74).
-- `tests/send-loading.spec.ts` — the /send loading state (#82/#83): a
+- `tests/send-loading.spec.ts` - the /send loading state (#82/#83): a
   signed-in sender sees "Loading…" while the session check settles,
   never the anonymous copy, and the photo checkbox is disabled until
   the check resolves; an anonymous sender settles on the anonymous copy.
-- `tests/send-flow.spec.ts` — the send-flow rework (#89): an anonymous
+- `tests/send-flow.spec.ts` - the send-flow rework (#89): an anonymous
   sender uploads (draft created, no sessions), places a field on the
   draft, reviews, and sends; Mailpit holds nothing for the signer
   before Send and the invite (link + document) after it; a refresh
   mid-flow resumes the draft. Also: a draft shows in the dashboard
   marked as a draft, continues back into the wizard, and can be
   deleted there (with confirmation).
-- `tests/helpers.ts` — shared send/seal flows, Mailpit polling, and
+- `tests/helpers.ts` - shared send/seal flows, Mailpit polling, and
   `recordGalleryDoc`, which appends a sealed document to the review
   manifest.
-- `tests/fixtures.ts` — the sample PDF/photo, the signature-drawing
+- `tests/fixtures.ts` - the sample PDF/photo, the signature-drawing
   helper, and `shot()`, the screenshot helper.
 
 ## Screenshots and the review gallery (visual review)
@@ -109,12 +109,12 @@ step, done screen). Specs that seal a document also record it in
 
 After the suite, `npm run gallery` builds `gallery/index.html`: for
 each recorded document it renders the sealed PDF's first and last
-pages to PNG — signature placement, certificate page, photo block,
-branding, watermark — through the test-stack-only endpoint
+pages to PNG - signature placement, certificate page, photo block,
+branding, watermark - through the test-stack-only endpoint
 `GET /api/e2e/sealed/<doc-id>/page/<n>.png`
 (`backend/apps/signing/e2e_views.py`, 404 unless
 `ENABLE_E2E_FIXTURES=1`), then lists every screenshot with a "what to
-check" caption. The folder is a CI artifact on every run — review is
+check" caption. The folder is a CI artifact on every run - review is
 scrolling the gallery, not re-running the flow. CI also uploads the
 Playwright HTML report and, for failures, traces with video. No
 pixel-diff goldens yet: capture-and-present first, per #31.

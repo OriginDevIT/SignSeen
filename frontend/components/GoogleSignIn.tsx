@@ -31,7 +31,7 @@ const SCRIPT_SRC = "https://accounts.google.com/gsi/client";
  * "Sign in with Google" button for the login/signup pages.
  *
  * Renders nothing when NEXT_PUBLIC_GOOGLE_CLIENT_ID is unset (password
- * flow untouched) or when the Google script fails to load — the
+ * flow untouched) or when the Google script fails to load - the
  * integration must never break the password form.
  */
 export default function GoogleSignIn({

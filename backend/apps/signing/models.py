@@ -67,8 +67,8 @@ class Document(models.Model):
     # Set at send time, premium senders only; default off, and
     # documents sent before this shipped keep the optional behaviour.
     photo_required = models.BooleanField(default=False)
-    # Draft flow (#89): step 1 creates the document as a draft — no
-    # sessions, no emails — and the sender refines it (signers, fields)
+    # Draft flow (#89): step 1 creates the document as a draft - no
+    # sessions, no emails - and the sender refines it (signers, fields)
     # before review + send. The draft token is the anonymous sender's
     # credential: possession authorizes draft edits (fields, PATCH,
     # send, discard) without an account. It is returned once, at
@@ -214,7 +214,7 @@ class DocumentField(models.Model):
     y = models.FloatField()
     # Normalized width/height of a drawn box (fractions of the page
     # size, 0-1). Null for fields placed by a click or before drawn
-    # boxes existed — those render at the fixed per-type sizes.
+    # boxes existed - those render at the fixed per-type sizes.
     width = models.FloatField(null=True, blank=True)
     height = models.FloatField(null=True, blank=True)
     required = models.BooleanField(default=True)

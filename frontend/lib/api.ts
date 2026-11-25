@@ -136,7 +136,7 @@ export interface SessionInfo {
   /** This signer's assigned fields (#13); empty for simple documents. */
   fields: DocumentFieldInfo[];
   /** Fields other signers already completed on this document (#105),
-   * completed only — other signers' empty fields stay hidden. Shown
+   * completed only - other signers' empty fields stay hidden. Shown
    * read-only in the ceremony; never the signer's own fields. */
   completed_fields: DocumentFieldInfo[];
 }
@@ -163,7 +163,7 @@ export interface AuditEventInfo {
 
 const TOKEN_KEY = "signseen_token";
 
-/** Sender account token, stored in localStorage (senders only — signers
+/** Sender account token, stored in localStorage (senders only - signers
  * never have accounts). Guarded for SSR/tests where window is unavailable. */
 export function getAuthToken(): string | null {
   if (typeof window === "undefined") return null;
@@ -251,7 +251,7 @@ async function req<T>(
     headers.set("X-Draft-Token", options.draftToken);
   }
   // A string body without an explicit Content-Type makes fetch send
-  // text/plain, which the API rejects with 415 (#51) — JSON is the
+  // text/plain, which the API rejects with 415 (#51) - JSON is the
   // wire format for every string body this client sends.
   if (typeof init?.body === "string" && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json");
@@ -279,7 +279,7 @@ export interface SignerInput {
 }
 
 /** Sender: upload a PDF to start a signing request. Step 1 (#89)
- * creates a DRAFT — no sessions, no emails — and returns the draft
+ * creates a DRAFT - no sessions, no emails - and returns the draft
  * (with its draft token for anonymous senders). */
 export function uploadDocument(
   file: File,
@@ -338,7 +338,7 @@ export function createDocumentFromUrl(
   });
 }
 
-/** Step 3 Send (#89): turn a draft into a pending document — one
+/** Step 3 Send (#89): turn a draft into a pending document - one
  * session per signer in list order, signer emails sent. The free
  * 1-pending-document limit is enforced here, at send time. */
 export function sendDocument(
@@ -427,7 +427,7 @@ export function collectDeviceInfo(): DeviceInfo {
   };
 }
 
-/** Signer: submit the ceremony — signature image, optional photo, device info. */
+/** Signer: submit the ceremony - signature image, optional photo, device info. */
 export function submitSignature(
   token: string,
   payload: {
@@ -705,7 +705,7 @@ export function getBranding(): Promise<BrandingInfo> {
 
 /** Update branding. Sends multipart when a logo file is included
  * (files can't ride JSON), plain JSON otherwise. Only the fields
- * provided are sent — the API leaves the rest untouched. */
+ * provided are sent - the API leaves the rest untouched. */
 export function updateBranding(input: {
   brandName?: string;
   brandColor?: string;
@@ -867,7 +867,7 @@ export const VERIFY_REASON_TEXT: Record<VerifyReason, string> = {
   seal_mismatch:
     "The audit seal in this file does not match the seal in the document's audit trail.",
   chain_broken:
-    "The document's audit trail does not check out — it may have been tampered with.",
+    "The document's audit trail does not check out - it may have been tampered with.",
   file_altered: "This file was changed after it was sealed.",
 };
 

@@ -50,7 +50,7 @@ const ghostBtn: React.CSSProperties = {
 /**
  * The ceremony's "Seen" step: witness photo, consent, submit.
  * There is no upload path: the photo comes from the in-app camera
- * only, and no camera means no photo — a failed camera shows a QR
+ * only, and no camera means no photo - a failed camera shows a QR
  * code for the same signing link so the signer can continue on their
  * phone. Skipping is available only while the photo is optional
  * (`photoRequired` false). An attached photo can be removed, which
@@ -74,7 +74,7 @@ export default function PhotoStep({
 }: PhotoStepProps) {
   // Test-only file input: the e2e suite attaches the witness photo
   // through it (the live-camera path has its own spec). No UI in the
-  // product triggers it — signers can only use the in-app camera.
+  // product triggers it - signers can only use the in-app camera.
   const photoInputRef = useRef<HTMLInputElement>(null);
 
   const onPhotoPicked = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -93,14 +93,14 @@ export default function PhotoStep({
     (photoRequired && !photoUrl) ||
     (photoUrl !== null && !photoConsent);
   const submitLabel = photoUrl
-    ? "Seal it — submit"
+    ? "Seal it - submit"
     : photoRequired
-      ? "Seal it — submit"
+      ? "Seal it - submit"
       : "Skip photo & submit";
 
   return (
     <section style={{ display: "grid", gap: "1rem" }}>
-      <h2 style={{ margin: 0 }}>2. Seen — snap a witness photo</h2>
+      <h2 style={{ margin: 0 }}>2. Seen - snap a witness photo</h2>
       <p style={{ opacity: 0.7, margin: 0 }}>
         A quick photo of you signing acts as a photographic witness. Optional, but recommended.
       </p>

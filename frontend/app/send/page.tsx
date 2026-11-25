@@ -158,7 +158,7 @@ export default function SendPage() {
         setStep(initialStep === 1 ? 1 : initialStep);
       })
       .catch(() => {
-        setError("Could not load that draft — it may have been discarded or expired.");
+        setError("Could not load that draft - it may have been discarded or expired.");
       })
       .finally(() => setResumeChecked(true));
   }, []);
@@ -291,7 +291,7 @@ export default function SendPage() {
       email: s.email.trim(),
     }));
     if (cleaned.some((s) => !s.email)) {
-      setError("Every signer needs an email — the signer is emailed their signing link and the document to sign.");
+      setError("Every signer needs an email - the signer is emailed their signing link and the document to sign.");
       return;
     }
     if (includeMe && !senderEmail.trim()) {
@@ -419,11 +419,11 @@ export default function SendPage() {
 
   const stepLabel =
     step === 1
-      ? "Step 1 of 3 — Signers & document"
+      ? "Step 1 of 3 - Signers & document"
       : step === 2
-        ? "Step 2 of 3 — Place fields (optional)"
+        ? "Step 2 of 3 - Place fields (optional)"
         : step === 3
-          ? "Step 3 of 3 — Review & send"
+          ? "Step 3 of 3 - Review & send"
           : "Sent";
 
   // Both the session check and the draft resume must have settled
@@ -446,7 +446,7 @@ export default function SendPage() {
       </h1>
       <p style={{ opacity: 0.65, marginTop: 0, marginBottom: "0.5rem" }}>
         {step === "done"
-          ? "Your document is on its way — each signer was emailed their signing link and the document to sign."
+          ? "Your document is on its way - each signer was emailed their signing link and the document to sign."
           : "Upload a PDF, place fields if you want them, review, then send. Nothing is emailed until you press Send in step 3."}
       </p>
       {ready && (
@@ -454,7 +454,7 @@ export default function SendPage() {
           {stepLabel}
           {draft && step !== "done" && (
             <span style={{ fontWeight: 400, opacity: 0.6 }}>
-              {" "}· Draft saved — refreshing resumes here.
+              {" "}· Draft saved - refreshing resumes here.
             </span>
           )}
         </p>
@@ -465,7 +465,7 @@ export default function SendPage() {
         </p>
       ) : accountEmail ? (
         <p style={{ fontSize: "0.9rem", opacity: 0.7, marginTop: "-1rem", marginBottom: "1.5rem" }}>
-          Signed in as {accountEmail} — this document will appear in your{" "}
+          Signed in as {accountEmail} - this document will appear in your{" "}
           <a href="/dashboard">dashboard</a>.
         </p>
       ) : (
@@ -643,7 +643,7 @@ export default function SendPage() {
                   />
                 </label>
                 <label style={{ display: "grid", gap: "0.35rem" }}>
-                  Signer email <span style={{ opacity: 0.6 }}>(required — the signer is emailed their signing link and the document to sign)</span>
+                  Signer email <span style={{ opacity: 0.6 }}>(required - the signer is emailed their signing link and the document to sign)</span>
                   <input
                     style={inputStyle}
                     type="email"
@@ -698,7 +698,7 @@ export default function SendPage() {
                     ? `The maximum is ${PREMIUM_MAX_SIGNERS} signers per document.`
                     : (
                       <>
-                        The free plan allows up to 2 signers — the second
+                        The free plan allows up to 2 signers - the second
                         signer must be you, via “Send to me for signature
                         also” below.{" "}
                         <UpgradeAction
@@ -734,7 +734,7 @@ export default function SendPage() {
                 Send to me for signature{" "}
                 <span style={{ opacity: 0.6 }}>
                   {signingMode === "sequential"
-                    ? "(adds you as a signer — in sequential mode you sign last)"
+                    ? "(adds you as a signer - in sequential mode you sign last)"
                     : "(adds you as a signer in parallel mode, no signing order enforced)"}
                 </span>
               </span>
@@ -765,7 +765,7 @@ export default function SendPage() {
               </span>
               {!isPremium && accountLoaded && (
                 <>
-                  {" Premium feature — "}
+                  {" Premium feature - "}
                   <UpgradeAction
                     loggedIn={accountEmail !== null}
                     onUpgrade={startUpgrade}
@@ -785,13 +785,13 @@ export default function SendPage() {
               onChange={(e) => setSigningMode(e.target.value as "sequential" | "parallel")}
             >
               <option value="sequential" disabled={!isPremium}>
-                Sequential — signers sign one after another, in order
+                Sequential - signers sign one after another, in order
               </option>
-              <option value="parallel">Parallel — all signers can sign in any order</option>
+              <option value="parallel">Parallel - all signers can sign in any order</option>
             </select>
             {!isPremium && accountLoaded && (
               <span style={{ fontSize: "0.9rem", opacity: 0.7 }}>
-                Sequential order is a premium feature — free documents are
+                Sequential order is a premium feature - free documents are
                 parallel only.{" "}
                 <UpgradeAction
                   loggedIn={accountEmail !== null}
@@ -805,14 +805,14 @@ export default function SendPage() {
           {draft ? (
             <p style={{ fontSize: "0.95rem", opacity: 0.75, margin: 0 }}>
               Document already uploaded
-              {draft.original_filename ? ` (${draft.original_filename})` : ""} —
+              {draft.original_filename ? ` (${draft.original_filename})` : ""} -
               discard the draft to upload a different file.
             </p>
           ) : intake === "file" ? (
             <label style={{ display: "grid", gap: "0.35rem" }}>
               Document{" "}
               <span style={{ opacity: 0.6 }}>
-                (PDF, DOC, DOCX — max 25 MB; Word docs convert to PDF)
+                (PDF, DOC, DOCX - max 25 MB; Word docs convert to PDF)
               </span>
               <input
                 key="file-input"
@@ -827,7 +827,7 @@ export default function SendPage() {
             <label style={{ display: "grid", gap: "0.35rem" }}>
               Page URL{" "}
               <span style={{ opacity: 0.6 }}>
-                (rendered to PDF — e.g. a terms page)
+                (rendered to PDF - e.g. a terms page)
               </span>
               <input
                 key="url-input"
@@ -882,7 +882,7 @@ export default function SendPage() {
       {ready && step === 2 && draft && (
         <section style={{ display: "grid", gap: "1rem" }}>
           <p style={{ margin: 0, opacity: 0.75 }}>
-            Draft saved — no email has been sent yet. Place signature,
+            Draft saved - no email has been sent yet. Place signature,
             initials, checkbox, text, or date fields on the document, or
             skip ahead: signers sign on a blank page when there are no
             fields.
@@ -921,7 +921,7 @@ export default function SendPage() {
               cursor: "pointer",
             }}
           >
-            Skip — no fields needed, continue to review
+            Skip - no fields needed, continue to review
           </button>
           <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
             <button
@@ -976,8 +976,8 @@ export default function SendPage() {
             <div>
               <strong>Signing order:</strong>{" "}
               {draft.signing_mode === "sequential"
-                ? "Sequential — signers sign one after another, in order"
-                : "Parallel — all signers can sign in any order"}
+                ? "Sequential - signers sign one after another, in order"
+                : "Parallel - all signers can sign in any order"}
             </div>
             <div>
               <strong>Witness photo:</strong>{" "}
@@ -988,7 +988,7 @@ export default function SendPage() {
               <ol style={{ margin: "0.5rem 0 0", paddingLeft: "1.25rem" }}>
                 {(draft.signer_list ?? []).map((s, i) => (
                   <li key={i} style={{ marginBottom: "0.25rem" }}>
-                    {s.name ? `${s.name} — ` : ""}
+                    {s.name ? `${s.name} - ` : ""}
                     {s.email}
                     {` · ${fieldCountFor(i)} field${fieldCountFor(i) === 1 ? "" : "s"}`}
                   </li>
@@ -1081,8 +1081,8 @@ export default function SendPage() {
             <p style={{ opacity: 0.7, margin: 0 }}>
               {sessions.length > 1
                 ? draft?.signing_mode === "parallel"
-                  ? "Signers can sign in any order — the document seals when everyone has signed."
-                  : "Signers sign in order — each link activates after the previous signer has signed, and the document seals at the final signature."
+                  ? "Signers can sign in any order - the document seals when everyone has signed."
+                  : "Signers sign in order - each link activates after the previous signer has signed, and the document seals at the final signature."
                 : "On a phone? Open the link directly. On a computer? Scan the QR code with your phone."}
             </p>
           </div>
@@ -1101,7 +1101,7 @@ export default function SendPage() {
             >
               <div style={{ fontWeight: 600 }}>
                 Signer {sess.order + 1}
-                {sess.signer_name ? ` — ${sess.signer_name}` : ""}
+                {sess.signer_name ? ` - ${sess.signer_name}` : ""}
               </div>
               <div
                 style={{
@@ -1164,7 +1164,7 @@ export default function SendPage() {
           ))}
           <p style={{ opacity: 0.6, fontSize: "0.9rem", margin: 0 }}>
             Each signer has been emailed their signing link and the
-            document to sign. Links expire in 30 days — no account
+            document to sign. Links expire in 30 days - no account
             needed on their end.
           </p>
           <p style={{ fontSize: "0.95rem", margin: 0 }}>
