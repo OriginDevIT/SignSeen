@@ -1,9 +1,9 @@
 import LegalDoc from "../../components/LegalDoc";
 
-export const metadata = { title: "Terms of Service — SignSeen" };
+export const metadata = { title: "Terms of Service - SignSeen" };
 
 /**
- * DRAFT — prepared in-house for attorney review before public launch
+ * DRAFT - prepared in-house for attorney review before public launch
  * (issue #37). Drafting direction: maximum liability release for the
  * operator, honest commitments on data protection as implemented
  * in the code.
@@ -22,7 +22,7 @@ export default function TermsPage() {
         to these Terms.
       </p>
 
-      <h2>1. What SignSeen is — and is not</h2>
+      <h2>1. What SignSeen is - and is not</h2>
       <p>
         SignSeen provides “simple” electronic signatures: a signer draws
         their signature on a device, optionally provides a photographic
@@ -105,7 +105,7 @@ export default function TermsPage() {
         You keep all rights to the documents, signatures, photos, and
         other content you or your signers submit (“Your Content”). You
         grant us a limited license to host, process, copy, and transmit
-        Your Content solely to operate the service — for example, to
+        Your Content solely to operate the service - for example, to
         assemble signed PDFs, deliver copies to you and your signers,
         and maintain the audit record. We claim no ownership of Your
         Content and do not use it for advertising or for training models.
@@ -205,7 +205,7 @@ export default function TermsPage() {
 
       <h2>11. Contact</h2>
       <p>
-        Origin Development &amp; IT — support@getsignseen.com.
+        Origin Development &amp; IT - support@getsignseen.com.
       </p>
     </LegalDoc>
   );

@@ -1,7 +1,7 @@
 # Staging deployment (GCP)
 
 A real-URL test rig for SignSeen: same compose stack as local dev, plus
-Caddy for automatic HTTPS. This is a **staging** box, not production —
+Caddy for automatic HTTPS. This is a **staging** box, not production -
 data is ephemeral and the web/API run dev servers.
 
 ## What you need
@@ -15,7 +15,7 @@ GCP Console → Compute Engine → Create instance:
 
 - Name: `signseen-staging`
 - Region/zone: `us-central1-a` (free-tier eligible)
-- Machine type: `e2-micro` (2 shared vCPU, 1 GB RAM — free tier)
+- Machine type: `e2-micro` (2 shared vCPU, 1 GB RAM - free tier)
 - Boot disk: 30 GB balanced (free tier covers 30 GB)
 - Firewall: check **Allow HTTP traffic** and **Allow HTTPS traffic**
 
@@ -72,7 +72,7 @@ request (DNS must already resolve).
 ## 6. Run the manual tests
 
 Follow `docs/manual-test-script.md`, replacing `localhost` URLs with the
-staging hostname. Phone testing works with no LAN tricks — you're on a
+staging hostname. Phone testing works with no LAN tricks - you're on a
 real domain.
 
 ## Mail on staging (Mailpit)

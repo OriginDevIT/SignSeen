@@ -114,7 +114,7 @@ export default function TrackDocumentPage({
                 <span style={{ opacity: 0.7 }}>
                   {s.status}
                   {s.status === "signed" && s.signed_at
-                    ? ` — ${new Date(s.signed_at).toLocaleString()}`
+                    ? ` - ${new Date(s.signed_at).toLocaleString()}`
                     : ""}
                 </span>
               </div>

@@ -46,7 +46,7 @@ test("QR on the /send confirmation fits a 360px phone", async ({
   await page.getByRole("button", { name: "Create draft" }).click();
   await expect(page.getByText(/Step 2 of 3/)).toBeVisible();
   await page
-    .getByRole("button", { name: "Skip — no fields needed, continue to review" })
+    .getByRole("button", { name: "Skip - no fields needed, continue to review" })
     .click();
   await expect(page.getByText(/Step 3 of 3/)).toBeVisible();
   await page.getByRole("button", { name: "Send document" }).click();
@@ -90,7 +90,7 @@ test("QR in the dashboard signing-link panel fits a 360px phone", async ({
   await page.getByRole("button", { name: "Create draft" }).click();
   await expect(page.getByText(/Step 2 of 3/)).toBeVisible();
   await page
-    .getByRole("button", { name: "Skip — no fields needed, continue to review" })
+    .getByRole("button", { name: "Skip - no fields needed, continue to review" })
     .click();
   await expect(page.getByText(/Step 3 of 3/)).toBeVisible();
   await page.getByRole("button", { name: "Send document" }).click();

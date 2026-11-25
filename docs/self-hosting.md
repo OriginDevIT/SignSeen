@@ -1,8 +1,8 @@
 # Self-hosting SignSeen
 
-SignSeen is AGPL-3.0 open source. This guide runs the production stack —
+SignSeen is AGPL-3.0 open source. This guide runs the production stack -
 Django API behind **gunicorn**, the Next.js app as a **production build**,
-Postgres, and Caddy for automatic HTTPS — on one Linux host with Docker.
+Postgres, and Caddy for automatic HTTPS - on one Linux host with Docker.
 It is the same shape as the hosted deployment at getsignseen.com.
 
 > The base `docker-compose.yml` is a **development** stack (Django's dev
@@ -31,9 +31,9 @@ Edit `.env.prod`:
 | `DOMAIN` | Your public hostname. |
 | `POSTGRES_PASSWORD` | Long random password for the bundled Postgres. |
 | `DJANGO_SECRET_KEY` | Generate: `python3 -c "import secrets; print(secrets.token_urlsafe(50))"` |
-| `FRONTEND_URL` | `https://<DOMAIN>` — used in signing/reset/status links in emails. |
+| `FRONTEND_URL` | `https://<DOMAIN>` - used in signing/reset/status links in emails. |
 | `EMAIL_*` | An SMTP account for signed-copy delivery and password resets. Without it, mail is logged to the API console and **signers will not receive copies**. |
-| `STRIPE_*` | Optional. Leave blank to run free-tier only. For premium: a secret key, a publishable key, one Price ID per plan (monthly/annual), and a webhook signing secret — register the webhook endpoint `https://<DOMAIN>/api/billing/webhook/` in the Stripe dashboard. |
+| `STRIPE_*` | Optional. Leave blank to run free-tier only. For premium: a secret key, a publishable key, one Price ID per plan (monthly/annual), and a webhook signing secret - register the webhook endpoint `https://<DOMAIN>/api/billing/webhook/` in the Stripe dashboard. |
 | `GOOGLE_OAUTH_CLIENT_ID` / `NEXT_PUBLIC_GOOGLE_CLIENT_ID` | Optional Google sign-in (same client ID in both). |
 | `NEXT_PUBLIC_GHL_CHAT_WIDGET_ID` | Optional GoHighLevel support-chat widget. |
 | `PREMIUM_STORAGE_BYTES` | Premium storage cap (default 5 GB). |
@@ -47,7 +47,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml \
   --env-file .env.prod logs -f api web caddy
 ```
 
-Migrations run on API startup. Open `https://<DOMAIN>` — you should see
+Migrations run on API startup. Open `https://<DOMAIN>` - you should see
 the app, with a valid certificate once Caddy finishes provisioning
 (under a minute on first boot).
 
@@ -103,7 +103,7 @@ Built into the app:
 - **URL→PDF intake is SSRF-guarded.** Any URL the server is asked to
   render must resolve only to public addresses (loopback, private,
   link-local/metadata, and reserved ranges are refused), subresource
-  fetches are validated the same way, and redirects are refused — the
+  fetches are validated the same way, and redirects are refused - the
   URL you give must be the final one. Residual risk: DNS can change
   between the check and the fetch (rebinding). For a deployment that
   allows untrusted senders, add egress firewall rules denying the
@@ -122,7 +122,7 @@ Your part:
 - Never set `URL_FETCH_ALLOW_PRIVATE=1` in production (it disables the
   SSRF guard for local development).
 - Keep the host, Docker, and the repo checkout updated.
-- Restrict who can read `.env.prod` — it holds every secret.
+- Restrict who can read `.env.prod` - it holds every secret.
 - If you enable billing, use **live** Stripe keys only in production,
   and confirm the webhook endpoint shows successful deliveries in the
   Stripe dashboard after your first test purchase.

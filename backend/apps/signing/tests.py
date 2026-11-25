@@ -22,7 +22,7 @@ from .trust import assess_photo, normalize_photo
 from .verify import RATE_LIMIT_HOUR
 from .models import AuditEvent, Document, SigningSession
 
-# 1x1 transparent PNG — stands in for a drawn signature / camera photo.
+# 1x1 transparent PNG - stands in for a drawn signature / camera photo.
 TINY_PNG = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
 )
@@ -77,8 +77,8 @@ def upload_document(client, title="Contract", email="sender@example.com", signer
 
 @pytest.mark.django_db
 def test_upload_document_creates_draft():
-    # Step 1 (#89): the upload creates a draft — no sessions, no
-    # emails — and returns the draft token for anonymous senders.
+    # Step 1 (#89): the upload creates a draft - no sessions, no
+    # emails - and returns the draft token for anonymous senders.
     from django.core import mail
 
     client = APIClient()
@@ -176,7 +176,7 @@ def test_create_session_requires_signer_email():
 @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
 def test_signer_invite_attaches_unsigned_pdf():
     # Email-first delivery: the invite alone must be everything the
-    # signer needs — signing link plus the document to sign.
+    # signer needs - signing link plus the document to sign.
     from django.core import mail
 
     client = APIClient()
@@ -258,7 +258,7 @@ def test_signed_session_reports_signed_at_on_document():
     session = detail["sessions"][0]
     assert session["status"] == "signed"
     assert session["signed_at"] is not None
-    # The reported time is the signature.submitted audit event's time —
+    # The reported time is the signature.submitted audit event's time -
     # the same instant the certificate reports.
     reported = datetime.fromisoformat(session["signed_at"].replace("Z", "+00:00"))
     event = SigningSession.objects.get(token=token).events.get(
@@ -294,7 +294,7 @@ def test_certificate_seal_matches_sealing_event():
     # The certificate, the done screen, and the seal email must all
     # carry the same seal: the hash of the document.sealed event. The
     # certificate used to print the earlier signature.submitted
-    # event's hash instead, so the two never matched — and the
+    # event's hash instead, so the two never matched - and the
     # certificate itself told the reader to check the seal against
     # the audit trail.
     client = APIClient()
@@ -321,7 +321,7 @@ def test_certificate_seal_matches_sealing_event():
 
 @pytest.mark.django_db
 def test_certificate_timestamp_is_true_utc_signing_time():
-    # "Signed at (UTC)" must be the signing instant in UTC — never a
+    # "Signed at (UTC)" must be the signing instant in UTC - never a
     # local-time value wearing a UTC label.
     from datetime import datetime, timezone as dt_timezone
 
@@ -342,7 +342,7 @@ def test_certificate_timestamp_is_true_utc_signing_time():
 @pytest.mark.django_db
 def test_certificate_signer_line_shows_email_when_no_name():
     # The signer name is optional at send time; the certificate must
-    # still identify the signer — the signer email is always known.
+    # still identify the signer - the signer email is always known.
     # It used to render a stray dot (an em-dash fallback the
     # certificate font cannot render).
     client = APIClient()
@@ -1026,7 +1026,7 @@ def _auth_client(account):
 @pytest.mark.django_db
 def test_free_tier_allows_only_one_pending_document():
     # Drafts never count toward the limit (#89): two drafts upload
-    # fine. The limit is enforced at send time — the second send is
+    # fine. The limit is enforced at send time - the second send is
     # rejected while the first document is still pending.
     client = APIClient()
     first = upload_draft(client)
@@ -1508,7 +1508,7 @@ def test_sealed_email_opens_with_brand_name():
     sealed = [m for m in mail.outbox if m.subject.startswith("Signed:")]
     assert sealed
     for message in sealed:
-        assert message.body.startswith("Acme Legal — signed document via SignSeen")
+        assert message.body.startswith("Acme Legal - signed document via SignSeen")
 
 # ---------------------------------------------------------------------------
 # Signing alerts (issue #9): viewed + expiring-soon emails. Premium
@@ -1609,7 +1609,7 @@ def test_expiry_alert_command_sends_stamps_and_does_not_resend():
     call_command("send_expiry_alerts")
     assert len([m for m in mail.outbox if m.subject.startswith("Expiring soon:")]) == 1
 # Issue #15: signing link + QR for pending documents. The dashboard and
-# the tracking page need the active session's signing URL — but the
+# the tracking page need the active session's signing URL - but the
 # token is a credential, so it is exposed to the document owner only.
 # ---------------------------------------------------------------------------
 
@@ -1766,7 +1766,7 @@ def test_three_signer_document_seals_once_in_order():
     assert doc.status == Document.Status.PENDING
     assert not doc.signed_file
     assert anon.get(f"/api/documents/{doc_id}/").json()["signed_file"] is None
-    # The per-session document endpoint still serves the ORIGINAL pdf —
+    # The per-session document endpoint still serves the ORIGINAL pdf -
     # nothing partially signed is downloadable as final.
     served = anon.get(f"/api/sessions/{tokens[0]}/document/")
     assert served.status_code == 200
@@ -1781,7 +1781,7 @@ def test_three_signer_document_seals_once_in_order():
     assert doc.status == Document.Status.PENDING
     assert not doc.signed_file
     # No seal notification yet (a viewed alert may exist: signer 2's
-    # session was viewed once it activated — alerts are issue #9).
+    # session was viewed once it activated - alerts are issue #9).
     assert [m for m in mail.outbox if m.subject.startswith("Signed:")] == []
 
     # Signer 3 seals the document, exactly once.
@@ -2112,7 +2112,7 @@ def test_signed_date_field_fills_with_submit_date():
 @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
 def test_ceremony_shows_earlier_signers_completed_fields():
     # Sequential (#105): once Alice signs, Bob's ceremony payload
-    # carries her completed fields — and nothing else.
+    # carries her completed fields - and nothing else.
     client, doc_id, alice, bob = _premium_fields_setup("sequential")
     a_sig = _place(
         client, doc_id, alice["id"], "signature",
@@ -2202,7 +2202,7 @@ def test_parallel_mode_lets_signer_two_go_first():
     anon = APIClient()
     assert anon.get(f"/api/sessions/{bob['token']}/").json()["usable"] is True
 
-    # Bob (order 1) signs first — allowed in parallel mode.
+    # Bob (order 1) signs first - allowed in parallel mode.
     first = _sign_with_fields(
         bob["token"], [{"field_id": b_text["id"], "value": "Bob first"}]
     )
@@ -2386,7 +2386,7 @@ def test_drawn_box_stamping_fits_inside():
     client, doc_id, alice, bob = _premium_fields_setup("sequential")
 
     # Drawn boxes (normalized): signature 0.3 x 0.15, text 0.4 x 0.06,
-    # checkbox 0.08 x 0.08 — plus a legacy click-placed signature.
+    # checkbox 0.08 x 0.08 - plus a legacy click-placed signature.
     a_sig = _place(
         client, doc_id, alice["id"], "signature",
         page=1, x=0.1, y=0.2, width=0.3, height=0.15,
@@ -2435,7 +2435,7 @@ def test_drawn_box_stamping_fits_inside():
         )
 
     # The test signature is a 1x1 PNG, so a fit-inside stamp is a
-    # square centred in its box — inside the drawn box, never stretched.
+    # square centred in its box - inside the drawn box, never stretched.
     images = page.get_image_info(xrefs=True)
     assert len(images) == 2
     drawn_box = box(0.1, 0.2, 0.3, 0.15)
@@ -2682,7 +2682,7 @@ def test_verify_rate_limit_hour_message():
     response = _verify(client, signed, ip="10.1.0.16")
     assert response.status_code == 429
     assert response.json() == {
-        "error": "You can only validate 7 documents per hour — try again later."
+        "error": "You can only validate 7 documents per hour - try again later."
     }
 
 
@@ -2734,7 +2734,7 @@ def test_session_document_shows_completed_fields_in_progress():
     assert done.status_code == 200, done.content
     assert done.json()["document_final"] is False
 
-    # Bob, the next signer, sees Alice's text stamped into the PDF —
+    # Bob, the next signer, sees Alice's text stamped into the PDF -
     # same page count as the original (no certificate pages yet).
     resp = APIClient().get(f"/api/sessions/{bob['token']}/document/")
     assert resp.status_code == 200

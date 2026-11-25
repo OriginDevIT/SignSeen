@@ -7,7 +7,7 @@ import type { DocumentFieldInfo } from "../lib/api";
 
 interface FieldModalProps {
   field: DocumentFieldInfo;
-  /** Rendered page aspect (width/height) — sizes the draw pad to
+  /** Rendered page aspect (width/height) - sizes the draw pad to
    * the field's drawn box. */
   pageAspect: number;
   /** A signature already drawn elsewhere in this ceremony, offered
@@ -108,7 +108,7 @@ export default function FieldModal({
     onSave(pad.toDataURL());
   };
 
-  const title = `${field.type.charAt(0).toUpperCase() + field.type.slice(1)} — page ${field.page}`;
+  const title = `${field.type.charAt(0).toUpperCase() + field.type.slice(1)} - page ${field.page}`;
 
   return (
     <div
@@ -150,7 +150,7 @@ export default function FieldModal({
         </div>
         <p style={{ opacity: 0.65, margin: "0 0 1rem" }}>
           {field.required ? "Required field." : "Optional field."} Complete it
-          here — it will be stamped on the document where the box sits.
+          here - it will be stamped on the document where the box sits.
         </p>
 
         {isDrawn &&

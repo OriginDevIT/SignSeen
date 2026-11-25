@@ -40,7 +40,7 @@ export async function shot(page: Page, name: string) {
   });
 }
 
-// Draw a simple continuous stroke on the signature canvas with the mouse —
+// Draw a simple continuous stroke on the signature canvas with the mouse -
 // enough ink for the pad to accept it and enable its continue button.
 // Defaults to the first canvas on the page; pass a locator when the page
 // has more than one pad (the ceremony renders the document pad plus one

@@ -29,7 +29,7 @@ def _claim_documents(account: Account) -> None:
 
     Free one-off sends are keyed by sender email with no owner (scope
     §3.10). When that sender signs up or logs in, those documents become
-    theirs — otherwise they'd block sends (the pending limit is keyed on
+    theirs - otherwise they'd block sends (the pending limit is keyed on
     email) while never appearing in their dashboard.
     """
     from apps.signing.models import Document
@@ -112,7 +112,7 @@ def login(request):
     fail_key = _login_failure_key(request, email)
     failures = cache.get(fail_key, 0)
     if failures >= settings.LOGIN_MAX_FAILED_ATTEMPTS:
-        return _error("too many failed login attempts — try again later", 429)
+        return _error("too many failed login attempts - try again later", 429)
     password = request.data.get("password") or ""
     account = authenticate(request, username=email, password=password)
     if account is None:
@@ -186,7 +186,7 @@ def google_login(request):
     The Google ID token is verified server-side; the account is keyed
     by its verified email, so a Google sign-in for an existing password
     account links to that account (same id, tier, and library) instead
-    of creating a duplicate. New accounts get an unusable password —
+    of creating a duplicate. New accounts get an unusable password -
     they can set one later via password reset.
     """
     if not settings.GOOGLE_OAUTH_CLIENT_ID:
@@ -243,7 +243,7 @@ def me(request):
 @permission_classes([AllowAny])
 @authentication_classes([])
 def password_reset(request):
-    """Email a reset link. Always 200 — never reveal whether the email exists."""
+    """Email a reset link. Always 200 - never reveal whether the email exists."""
     email = (request.data.get("email") or "").strip().lower()
     try:
         account = Account.objects.get(email=email, is_active=True)

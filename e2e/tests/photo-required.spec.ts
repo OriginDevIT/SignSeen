@@ -3,7 +3,7 @@ import { samplePhoto, runId, drawSignature } from "./fixtures";
 import { apiContext, createSigningLink } from "./helpers";
 
 // Sender option (#73): a premium sender requires a witness photo, and
-// the signer cannot seal without one — client gating and server
+// the signer cannot seal without one - client gating and server
 // enforcement alike. The no-camera QR path is covered by the mobile-qr
 // spec; this spec covers the requirement itself.
 test("photo required: sender sets it, signer cannot seal without a photo", async ({
@@ -66,7 +66,7 @@ test("photo required: sender sets it, signer cannot seal without a photo", async
         `${senderEmail} requires a witness photo to complete this signing.`
       )
     ).toBeVisible();
-    const submit = signer.getByRole("button", { name: "Seal it — submit" });
+    const submit = signer.getByRole("button", { name: "Seal it - submit" });
     await expect(submit).toBeDisabled();
 
     // Attach the photo, then the same submit seals.

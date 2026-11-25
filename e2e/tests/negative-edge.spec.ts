@@ -97,7 +97,7 @@ test("skipped photo: seals fine, event payload carries no photo", async ({
   // The certificate page of this document is the visual proof: no
   // witness photo block. It joins the review gallery (step 3).
   recordGalleryDoc({
-    label: `Skipped photo — ${id}`,
+    label: `Skipped photo - ${id}`,
     docId: await documentIdForToken(token),
     checks: ["certificate page shows no witness photo block"],
   });
@@ -162,7 +162,7 @@ test("second pending doc, account: the limit is keyed on email, not account", as
   await page.getByRole("button", { name: "Create draft" }).click();
   await expect(page.getByText(/Step 2 of 3/)).toBeVisible();
   await page
-    .getByRole("button", { name: "Skip — no fields needed, continue to review" })
+    .getByRole("button", { name: "Skip - no fields needed, continue to review" })
     .click();
   await expect(page.getByText(/Step 3 of 3/)).toBeVisible();
   await page.getByRole("button", { name: "Send document" }).click();

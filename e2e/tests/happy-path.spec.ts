@@ -7,7 +7,7 @@ const MAILPIT_URL = process.env.E2E_MAILPIT_URL; // optional, compose test stack
 
 // Manual test script §B end to end: a desktop sender creates a signing
 // link, a phone-sized signer completes the ceremony, and the result is
-// verified through the API (audit chain) — the same document the UI
+// verified through the API (audit chain) - the same document the UI
 // produced, so nothing can be mocked around.
 test("happy path: send -> sign with photo -> sealed, audit chain valid", async ({
   page,
@@ -20,7 +20,7 @@ test("happy path: send -> sign with photo -> sealed, audit chain valid", async (
 
   // --- Sender (desktop) -------------------------------------------------
   // Wizard (#89): step 1 creates a draft, step 2 is skipped, step 3
-  // sends — the signer email goes out only at Send.
+  // sends - the signer email goes out only at Send.
   await page.goto("/send");
   await page.getByPlaceholder("e.g. Contractor Agreement").fill(title);
   await expect(page.getByPlaceholder("Jane Doe")).toHaveCount(1);
@@ -31,7 +31,7 @@ test("happy path: send -> sign with photo -> sealed, audit chain valid", async (
   await page.getByRole("button", { name: "Create draft" }).click();
   await expect(page.getByText(/Step 2 of 3/)).toBeVisible();
   await page
-    .getByRole("button", { name: "Skip — no fields needed, continue to review" })
+    .getByRole("button", { name: "Skip - no fields needed, continue to review" })
     .click();
   await expect(page.getByText(/Step 3 of 3/)).toBeVisible();
   await page.getByRole("button", { name: "Send document" }).click();
@@ -53,9 +53,9 @@ test("happy path: send -> sign with photo -> sealed, audit chain valid", async (
   await shot(signer, "02-signer-intro.png");
 
   // View document links straight at the API's PDF endpoint with
-  // target=_blank. Headless Chromium has no PDF viewer — a real click
+  // target=_blank. Headless Chromium has no PDF viewer - a real click
   // turns the new tab's navigation into a download that never settles
-  // — so verify the link's target and markup here, and the document
+  // - so verify the link's target and markup here, and the document
   // itself over HTTP.
   const docLink = signer.getByRole("link", { name: /View document/ });
   const docHref = await docLink.getAttribute("href");
@@ -82,7 +82,7 @@ test("happy path: send -> sign with photo -> sealed, audit chain valid", async (
   await expect(signer.getByAltText("Witness photo preview")).toBeVisible();
   await shot(signer, "04-photo-step.png");
 
-  // The ceremony has no name field — the signer's name comes from the
+  // The ceremony has no name field - the signer's name comes from the
   // session (optionally set by the sender), so sealing is one tap.
   await signer.getByRole("button", { name: /Seal it/ }).click();
   await expect(signer.getByText("Signed. Seen. Sealed.")).toBeVisible();
@@ -115,7 +115,7 @@ test("happy path: send -> sign with photo -> sealed, audit chain valid", async (
   // (step 3): signature placement, photo orientation, certificate
   // metadata, and the free-tier watermark are human-eye checks.
   recordGalleryDoc({
-    label: `Happy path, free tier with photo — ${id}`,
+    label: `Happy path, free tier with photo - ${id}`,
     docId: doc.id,
     checks: [
       "signature image visible and right-side up",

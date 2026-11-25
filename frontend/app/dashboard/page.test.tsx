@@ -14,7 +14,7 @@ import {
 
 vi.mock("next/navigation", () => {
   // The page's load effect depends on the router object, so it must
-  // be referentially stable across renders (as the real router is) —
+  // be referentially stable across renders (as the real router is) -
   // a fresh object per call would re-run the effect every render.
   const router = { replace: vi.fn(), push: vi.fn() };
   return { useRouter: () => router };

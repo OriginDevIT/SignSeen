@@ -4,7 +4,7 @@ Wraps google-auth's verifier behind one small function so the view (and
 its tests, which stub this function) never touch the network library
 directly. Only verified emails are returned: an unverified Google email
 proves nothing about mailbox ownership, and the email is the account
-key — account linking rides on it.
+key - account linking rides on it.
 """
 
 from django.conf import settings

@@ -4,7 +4,7 @@ import HomeHeader from "../components/HomeHeader";
 /**
  * Marketing landing page for getsignseen.com (issue #40).
  * Explainer content condenses scope-doc §8 (simple e-signature vs PKI)
- * and §9 (device identity) — the same sources the support bot trains on.
+ * and §9 (device identity) - the same sources the support bot trains on.
  */
 
 const wrap: React.CSSProperties = {
@@ -100,7 +100,7 @@ export default function Home() {
         >
           Open-source electronic signature with a photographic witness.
           Send a document, your signer scans a QR code and signs on their
-          phone in about 30 seconds — and every signature carries a
+          phone in about 30 seconds - and every signature carries a
           tamper-evident audit trail. No accounts for signers, no
           per-envelope fees, no certificates to install.
         </p>
@@ -133,7 +133,7 @@ export default function Home() {
             <p style={cardTitle}>1 · Signed</p>
             <p style={cardText}>
               The signer opens your link or QR code and draws their
-              signature right on their phone — no app, no account, no
+              signature right on their phone - no app, no account, no
               setup. Signature, initials, checkbox, text, and date fields
               are placed where you put them.
             </p>
@@ -143,7 +143,7 @@ export default function Home() {
             <p style={cardText}>
               When you ask for it, the signer snaps a quick photo with
               the front camera at the moment of signing. A picture of a
-              real person, present at signing — the piece every other
+              real person, present at signing - the piece every other
               lightweight e-signature tool leaves out.
             </p>
           </div>
@@ -163,7 +163,7 @@ export default function Home() {
       <div style={{ ...wrap, ...section }}>
         <h2 style={h2}>Simple signatures, serious evidence</h2>
         <p style={lead}>
-          SignSeen uses <strong>simple electronic signatures</strong> —
+          SignSeen uses <strong>simple electronic signatures</strong> -
           the kind the U.S. ESIGN Act and state UETA laws treat as
           legally equivalent to pen-on-paper for the vast majority of
           documents (contracts, NDAs, HR forms, waivers, consent forms),
@@ -174,13 +174,13 @@ export default function Home() {
           PKI “digital signatures” take a different route: certificates
           and private keys that mathematically seal a file. The math is
           strong, but it proves a <em>key</em> was present, not a{" "}
-          <em>person</em> — a stolen, unlocked phone signs just fine —
+          <em>person</em> - a stolen, unlocked phone signs just fine -
           and asking a casual signer to obtain and manage a certificate
           is a non-starter.
         </p>
         <p style={lead}>
-          So we closed the simple signature’s one real gap —
-          attribution, “was it really them?” — with the ceremony itself:
+          So we closed the simple signature’s one real gap -
+          attribution, “was it really them?” - with the ceremony itself:
           document hashing, server-side timestamps, device evidence, and
           an optional photo of the signer. That’s the evidence that
           actually answers a dispute.
@@ -194,7 +194,7 @@ export default function Home() {
           For each signing we record the session evidence a browser can
           honestly provide: device type, user agent, IP address, and the
           server timestamp. It corroborates that a signature came through
-          a specific session at a specific time — it is not a hardware
+          a specific session at a specific time - it is not a hardware
           ID, and we don’t pretend otherwise. A hardware-backed WebAuthn
           mode is designed into the audit schema for the future. And we
           never fingerprint or track anyone beyond what the audit trail
@@ -207,16 +207,16 @@ export default function Home() {
         <h2 style={h2}>Pricing</h2>
         <div style={row}>
           <div style={card}>
-            <p style={cardTitle}>Free — $0</p>
+            <p style={cardTitle}>Free - $0</p>
             <p style={cardText}>
               1 document pending at a time · up to 2 signers per document
-              (parallel only — add yourself as the second signer) · 100 MB
+              (parallel only - add yourself as the second signer) · 100 MB
               storage · documents pending up to 30 days · attribution mark
               on signed PDFs. No account needed to send your first document.
             </p>
           </div>
           <div style={card}>
-            <p style={cardTitle}>Premium — $5/mo or $50/yr</p>
+            <p style={cardTitle}>Premium - $5/mo or $50/yr</p>
             <p style={cardText}>
               Document library with 5 GB storage · multi-signer
               workflows · status tracking and signing alerts · custom
@@ -226,10 +226,10 @@ export default function Home() {
             </p>
           </div>
           <div style={card}>
-            <p style={cardTitle}>Self-hosted — free forever</p>
+            <p style={cardTitle}>Self-hosted - free forever</p>
             <p style={cardText}>
               SignSeen is AGPL-3.0 open source. Run the whole stack
-              yourself with Docker — same code as the hosted service, your
+              yourself with Docker - same code as the hosted service, your
               infrastructure, your data. See the self-hosting guide in the
               repository.
             </p>
@@ -246,7 +246,7 @@ export default function Home() {
           UETA, when both parties consent to sign electronically.
           SignSeen records that consent and keeps the audit record. Some
           documents are excluded by law (wills and certain family-law,
-          court, and real-estate documents, for example) — when in doubt,
+          court, and real-estate documents, for example) - when in doubt,
           ask your own counsel. SignSeen isn’t a law firm and can’t
           advise you on a specific document.
         </Faq>
@@ -256,7 +256,7 @@ export default function Home() {
           document library.
         </Faq>
         <Faq q="What happens to the witness photo?">
-          It becomes part of that document’s signing record — nothing
+          It becomes part of that document’s signing record - nothing
           else. Photos are never used for advertising, profiling, or
           training models, and they are deleted on the same schedule as
           the document itself. The sender chooses whether a document asks
@@ -277,7 +277,7 @@ export default function Home() {
         </Faq>
         <Faq q="Who runs the hosted service?">
           SignSeen is built and operated by Origin Development &amp; IT.
-          The hosted service runs with no human handling your documents —
+          The hosted service runs with no human handling your documents -
           support is an AI assistant backed by email follow-up.
         </Faq>
       </div>
@@ -298,7 +298,7 @@ export default function Home() {
         }}
       >
         <span>
-          SignSeen — open source under AGPL-3.0 · Operated by Origin
+          SignSeen - open source under AGPL-3.0 · Operated by Origin
           Development &amp; IT
         </span>
         <span>

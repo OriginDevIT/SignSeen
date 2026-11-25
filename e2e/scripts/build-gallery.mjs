@@ -2,7 +2,7 @@
 // step 3): rendered sealed-PDF pages for every document the specs
 // recorded in gallery-manifest.jsonl, plus the numbered screenshots
 // the specs saved, in one gallery/index.html with "what to check"
-// captions. No pixel-diff goldens — capture-and-present first.
+// captions. No pixel-diff goldens - capture-and-present first.
 //
 // Sealed pages come from the test-stack-only endpoint in
 // backend/apps/signing/e2e_views.py (404 outside the test stack, in
@@ -79,7 +79,7 @@ for (const [i, entry] of entries.entries()) {
     );
   }
   if (imgs.length) sealedCount++;
-  sections += `<section><h2>${esc(entry.label)}</h2><p>Check: ${entry.checks.map(esc).join("; ")}</p>${imgs.join("") || "<p><em>Sealed pages unavailable — this run was not against the test stack.</em></p>"}</section>\n`;
+  sections += `<section><h2>${esc(entry.label)}</h2><p>Check: ${entry.checks.map(esc).join("; ")}</p>${imgs.join("") || "<p><em>Sealed pages unavailable - this run was not against the test stack.</em></p>"}</section>\n`;
 }
 
 const shotsDir = path.join(ROOT, "screenshots");
@@ -99,7 +99,7 @@ const shotFigures = shots
 const html = `<!doctype html><meta charset="utf-8"><title>SignSeen review gallery</title>
 <style>body{font-family:system-ui;max-width:72rem;margin:2rem auto;padding:0 1rem}img{max-width:100%;border:1px solid #ddd}figure{margin:1rem 0}figcaption{color:#555;font-size:.9rem}</style>
 <h1>SignSeen review gallery</h1>
-<p>Sealed documents: ${sealedCount} rendered; screenshots: ${shots.length}. Pixel-diff goldens are a later step — this gallery is capture-and-present.</p>
+<p>Sealed documents: ${sealedCount} rendered; screenshots: ${shots.length}. Pixel-diff goldens are a later step - this gallery is capture-and-present.</p>
 ${sections}
 <h2>Screenshots</h2>
 ${shotFigures || "<p><em>No screenshots captured.</em></p>"}

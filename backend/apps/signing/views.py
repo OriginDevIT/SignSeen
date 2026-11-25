@@ -163,7 +163,7 @@ def _photo_required(data, account) -> bool:
     """The sender's witness-photo requirement (#73), set at creation.
 
     Premium senders only: anyone else asking for it gets the default
-    (optional) — the flag is never a way to get a premium feature
+    (optional) - the flag is never a way to get a premium feature
     without the tier. Accepts JSON booleans and form strings alike
     (the upload intake is multipart).
     """
@@ -402,7 +402,7 @@ def my_documents(request):
     """Sender dashboard: this account's documents + storage usage.
 
     Documents the account sent (owned), plus documents the account *signed*
-    as a signer — the signer enters their email at completion, and creating
+    as a signer - the signer enters their email at completion, and creating
     an account with that email gives them a personal archive (scope §3.10).
     """
     docs = (
@@ -527,7 +527,7 @@ def document_detail(request, doc_id):
         )
         if max_ref >= len(signers):
             return _error(
-                "fields are assigned to a signer that would be removed — "
+                "fields are assigned to a signer that would be removed - "
                 "delete those fields first"
             )
         doc.signer_list = signers
@@ -548,7 +548,7 @@ def send_document(request, doc_id):
     Creates one session per signer in list order, links the placed
     fields to their sessions, flips the draft to PENDING, and emails
     each signer their link + the document. Nothing is emailed before
-    this call — that is the point of the draft flow. The free tier's
+    this call - that is the point of the draft flow. The free tier's
     1-pending-document limit is enforced here, at send time.
     """
     doc = get_object_or_404(Document, pk=doc_id)
@@ -575,7 +575,7 @@ def send_document(request, doc_id):
     max_ref = max((f.signer_index for f in doc.fields.all()), default=-1)
     if max_ref >= len(signers):
         return _error(
-            "some fields are assigned to a signer that was removed — "
+            "some fields are assigned to a signer that was removed - "
             "delete those fields or add the signer back"
         )
     try:
@@ -661,7 +661,7 @@ def _field_document(request, doc_id):
     """(document, None) for a caller allowed to manage this document's
     fields, else (None, error response).
 
-    Placement is owner-only for sent documents — and draft-token-only
+    Placement is owner-only for sent documents - and draft-token-only
     for drafts (#89): the anonymous sender who holds the draft token
     places fields on their own draft; the owner uses their account.
     """
@@ -756,7 +756,7 @@ def document_fields(request, doc_id):
             return _error("width and height must be at most 1")
         if width < MIN_FIELD_WIDTH or height < MIN_FIELD_HEIGHT:
             return _error(
-                "the box is too small — width must be at least "
+                "the box is too small - width must be at least "
                 f"{MIN_FIELD_WIDTH} and height at least {MIN_FIELD_HEIGHT}"
             )
         if x + width > 1.0 or y + height > 1.0:
@@ -850,7 +850,7 @@ def session_field_image(request, token, field_id):
     ceremony's read-only view of earlier signers' completed fields
     (#105). Possession of the token is the auth, and the image is
     served only while the session is usable or already signed. The
-    field must belong to the session's document and be completed —
+    field must belong to the session's document and be completed -
     anything else is a 404, so no field (or document) existence
     leaks across sessions."""
     session = get_object_or_404(SigningSession, token=token)
@@ -878,7 +878,7 @@ def create_session(request, doc_id):
     signer_email = (request.data.get("signer_email") or "").strip()
     if not signer_email:
         return _error(
-            "signer_email is required — the signer is emailed their "
+            "signer_email is required - the signer is emailed their "
             "signing link and the document to sign"
         )
     try:
@@ -1032,7 +1032,7 @@ def get_session(request, token):
         # First view of a live pending session (signing.viewed alert):
         # stamp it and add the audit event for every session; the email
         # itself is premium + opt-in gated inside the notification
-        # helper. Best-effort — alerting must never fail the view.
+        # helper. Best-effort - alerting must never fail the view.
         session.viewed_at = timezone.now()
         session.save(update_fields=["viewed_at"])
         record_event(
@@ -1064,7 +1064,7 @@ def session_document(request, token):
     if completed:
         # In progress: stamp what earlier signers completed onto the
         # original, so a later signer reviews the document as it
-        # stands (#144) — no certificate pages until the seal.
+        # stands (#144) - no certificate pages until the seal.
         preview = build_preview_pdf(
             session.document.original_file.path, completed
         )
@@ -1098,7 +1098,7 @@ def submit_signature(request, token):
         except ValueError as exc:
             return _error(str(exc))
     # Sender option (#73): when the document requires a witness photo,
-    # a submission without one is rejected here — client gating alone
+    # a submission without one is rejected here - client gating alone
     # is not enforcement, and a bypassed client must not seal.
     if session.document.photo_required and not photo_png:
         return _error("a witness photo is required to complete this signing")
@@ -1200,8 +1200,8 @@ def submit_signature(request, token):
             record_event(session, "field.completed", payload)
 
         # This signer's ceremony is complete. The signed time is the
-        # signature.submitted audit event's timestamp — the same instant
-        # the certificate reports — not a second clock read.
+        # signature.submitted audit event's timestamp - the same instant
+        # the certificate reports - not a second clock read.
         session.status = SigningSession.Status.SIGNED
         session.signed_at = submitted.created_at
         if signer_email:
@@ -1226,7 +1226,7 @@ def submit_signature(request, token):
             # document.sealed event, so the seal has to be known
             # before the PDF is built. A sealed event's hash covers
             # its payload, and the payload used to carry the sealed
-            # file's hash — but that hash only exists once the PDF
+            # file's hash - but that hash only exists once the PDF
             # (with the seal in it) exists. The file hash therefore
             # moves to a follow-up event recorded right after the
             # seal, and the sealed event itself carries only the
@@ -1366,7 +1366,7 @@ def set_signer_email(request, token):
 
     This is what links the signed document to a later account: the
     dashboard archive matches on the session's signer_email, and the
-    ceremony itself never collects one. Signed sessions only — the
+    ceremony itself never collects one. Signed sessions only - the
     address is recorded in the audit trail and the copy is emailed.
     """
     session = get_object_or_404(SigningSession, token=token)

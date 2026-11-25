@@ -216,7 +216,7 @@ test("premium branding: seeded premium account brands, seals, joins the gallery"
   // No free-tier watermark + brand name on the certificate: the
   // gallery's rendered last page is where a human confirms both.
   recordGalleryDoc({
-    label: `Premium branded — ${id}`,
+    label: `Premium branded - ${id}`,
     docId: await documentIdForToken(token),
     checks: [
       "certificate page shows the brand name",

@@ -7,9 +7,9 @@ without this their rows sit in PENDING forever. Run nightly, e.g.:
     0 3 * * * cd /app && python manage.py cleanup_expired
 
 Documents older than 30 days whose sessions are all settled are flagged
-EXPIRED too. Files are NOT deleted — storage enforcement is a Phase 4
+EXPIRED too. Files are NOT deleted - storage enforcement is a Phase 4
 concern. Drafts are the exception: a draft older than 30 days is
-removed entirely, files included — a draft was never sent, so there
+removed entirely, files included - a draft was never sent, so there
 is nothing to keep. Expiry is operational, not ceremonial, so no audit
 events are recorded (the hash chain covers the signing ceremony itself).
 """

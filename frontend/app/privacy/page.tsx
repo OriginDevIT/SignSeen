@@ -1,9 +1,9 @@
 import LegalDoc from "../../components/LegalDoc";
 
-export const metadata = { title: "Privacy Policy — SignSeen" };
+export const metadata = { title: "Privacy Policy - SignSeen" };
 
 /**
- * DRAFT — prepared in-house for attorney review before public launch
+ * DRAFT - prepared in-house for attorney review before public launch
  * (issue #37). Every statement here is written to match what the code
  * actually does; if the implementation changes, this page must change
  * with it.
@@ -35,8 +35,8 @@ export default function PrivacyPage() {
         <li>
           <strong>Signer information:</strong> the signer’s name and
           email address (provided by the sender or by the signer),
-          the drawn signature image, and — only when a document requests
-          it and the signer consents — a witness photo taken at signing.
+          the drawn signature image, and - only when a document requests
+          it and the signer consents - a witness photo taken at signing.
         </li>
         <li>
           <strong>Signing evidence:</strong> for each signing session the
@@ -106,7 +106,7 @@ export default function PrivacyPage() {
         the record is detectable. Access to production systems is
         restricted to the operator. Passwords are stored only as salted
         hashes, and signing links use unguessable tokens. No system is
-        perfectly secure, and we do not promise absolute security — but
+        perfectly secure, and we do not promise absolute security - but
         the protections above are implemented in the service itself, not
         just promised here.
       </p>
@@ -176,7 +176,7 @@ export default function PrivacyPage() {
       <p>
         We will post changes to this policy here with a new “last
         updated” date and, for material changes, notify account holders
-        by email. Questions or requests: Origin Development &amp; IT —
+        by email. Questions or requests: Origin Development &amp; IT -
         support@getsignseen.com.
       </p>
     </LegalDoc>

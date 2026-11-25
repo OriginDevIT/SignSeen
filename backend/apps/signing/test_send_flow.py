@@ -1,6 +1,6 @@
 """Send-flow rework (#89): drafts, draft-token auth, send-time limits.
 
-The upload (step 1) creates a DRAFT — no sessions, no emails. Field
+The upload (step 1) creates a DRAFT - no sessions, no emails. Field
 placement (step 2) works on the draft with the draft token. The send
 (step 3) creates the sessions in order and emails the signers. Drafts
 never count toward the free 1-pending-document limit and expire after
@@ -192,7 +192,7 @@ def test_drafts_do_not_count_toward_pending_limit():
 @pytest.mark.django_db
 def test_removing_signer_with_fields_is_rejected_until_fields_deleted():
     # The PATCH guard (#89): a signer with placed fields cannot be
-    # removed out from under them — the sender deletes those fields
+    # removed out from under them - the sender deletes those fields
     # first.
     account = _make_account(email="rm@example.com", tier=Account.Tier.PREMIUM)
     client = _auth_client(account)

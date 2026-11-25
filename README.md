@@ -1,4 +1,4 @@
-# SignSeen — Signed. Seen. Sealed.
+# SignSeen - Signed. Seen. Sealed.
 
 Open-source electronic signature with a photographic witness. Scan a QR code,
 sign on your phone, snap a photo.
@@ -19,8 +19,8 @@ The hosted service runs at [getsignseen.com](https://getsignseen.com).
 
 - **Send** a PDF (or DOC/DOCX, or a web page URL) and get a signing
   link + QR code. Signers never need an account.
-- **Sign** on any phone: draw a signature, place fields, and — when the
-  sender requests it — snap a witness photo with the front camera.
+- **Sign** on any phone: draw a signature, place fields, and - when the
+  sender requests it - snap a witness photo with the front camera.
 - **Sealed**: the signed PDF carries a completion certificate and a
   hash-chained audit record (timestamps, device evidence, photo check),
   so tampering is detectable.
@@ -40,7 +40,7 @@ docker compose up
 
 ## Self-hosting (production)
 
-See **[docs/self-hosting.md](docs/self-hosting.md)** — production
+See **[docs/self-hosting.md](docs/self-hosting.md)** - production
 compose overlay (gunicorn + built frontend + Caddy HTTPS), the full
 environment reference, daily lifecycle jobs, backups, and the security
 checklist.
@@ -69,8 +69,8 @@ npm run dev
 ## Contributing
 
 Pull requests welcome. CI runs the backend and frontend test suites on every
-PR — please keep them green.
+PR - please keep them green.
 
 ## License
 
-GNU Affero General Public License v3.0 — see [LICENSE](LICENSE).
+GNU Affero General Public License v3.0 - see [LICENSE](LICENSE).

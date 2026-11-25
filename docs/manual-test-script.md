@@ -16,7 +16,7 @@ This script covers those by hand.
    - `http://localhost:8000/api/health/` → `{"status":"ok","service":"signseen-api"}`
    - `http://localhost:3000` → SignSeen landing page
 
-## B. Happy path — desktop sender, phone signer
+## B. Happy path - desktop sender, phone signer
 
 5. On desktop, open `http://localhost:3000/send`. Fill in title, your
    email, and upload a PDF. Click **Create signing link**.
@@ -30,15 +30,15 @@ This script covers those by hand.
    - ✅ **Rotate the phone mid-signature**: drawing stays 1:1 with your
      finger (no stretching/doubling), and ink drawn before rotating is
      still there.
-8. **Take photo** — first check the consent box ("I consent to having my
+8. **Take photo** - first check the consent box ("I consent to having my
    photo captured…"); the **Take photo** button stays disabled until you do.
    Take the photo (camera should open). Confirm the preview, or **Skip**.
    - ✅ No checkbox → no camera. Photo without consent is rejected (400).
 9. **Submit** → ✅ **Signed. Seen. Sealed.** screen with an audit seal.
-10. **Download signed PDF** — open it and check the last page:
+10. **Download signed PDF** - open it and check the last page:
     - ✅ Signature image is visible and right-side up.
     - ✅ Witness photo is visible and correctly oriented (portrait photos
-      are the tricky case — see §E).
+      are the tricky case - see §E).
     - ✅ Metadata lines present: signer, UTC timestamp, document/session
       IDs, audit seal, **Witness photo assurance: full**.
     - ✅ Every page carries a light diagonal "Signed with SignSeen"
@@ -53,7 +53,7 @@ This script covers those by hand.
 
 ## C. Intake breadth
 
-Scripted in `e2e/tests/intake.spec.ts` (#31 step 4) — the items
+Scripted in `e2e/tests/intake.spec.ts` (#31 step 4) - the items
 below are the spec's assertions, kept here for reference.
 
 12. **DOCX**: on `/send`, upload a `.docx` with real formatting (headings,
@@ -66,7 +66,7 @@ below are the spec's assertions, kept here for reference.
 
 ## D. Negative / edge cases
 
-Scripted in `e2e/tests/negative-edge.spec.ts` (#31 step 2) — the items
+Scripted in `e2e/tests/negative-edge.spec.ts` (#31 step 2) - the items
 below are the spec's assertions, kept here for reference.
 
 14. **Double-sign**: revisit the same signing link.
@@ -82,13 +82,13 @@ below are the spec's assertions, kept here for reference.
     - ✅ 409: "Free tier allows 1 document pending signature at a time."
 19. **Second pending doc (same email, account)**: sign up with the same
     sender email, try `/send` again while the first is pending.
-    - ✅ Still 409 — the limit is keyed on the email, not the account.
+    - ✅ Still 409 - the limit is keyed on the email, not the account.
 20. **Second signing session on one document**: POST a second session.
     - ✅ 409: "This document already has a signing session."
 
 ## E. Accounts, dashboard, email (Phase 4)
 
-Scripted in `e2e/tests/accounts.spec.ts` (#31 step 2) — the items
+Scripted in `e2e/tests/accounts.spec.ts` (#31 step 2) - the items
 below are the spec's assertions, kept here for reference.
 
 21. **Signup/login**: `/signup` → create account → land on `/dashboard`.
@@ -100,17 +100,17 @@ below are the spec's assertions, kept here for reference.
     prefilled on `/send` with a "Signed in as …" note.
 23. **Seal email**: complete a ceremony with a signer email entered. Check
     both the sender and signer inboxes for the signed PDF + audit seal.
-    (Without SMTP configured, check the API server log instead — the
+    (Without SMTP configured, check the API server log instead - the
     console email backend prints there. Sealing must succeed regardless.)
 24. **Tracking page**: open `/d/<doc-id>` from the dashboard or the email.
     - ✅ Title, status, sender, and a signed-PDF download once sealed.
 25. **Watermark**: seal a doc as a free user → every page carries the light
-    diagonal "Signed with SignSeen — free tier". (Premium accounts skip it —
+    diagonal "Signed with SignSeen - free tier". (Premium accounts skip it -
     testable only with Stripe keys configured; see §I.)
 26. **Done-screen offer**: after sealing, the confirmation page offers
     "Create a free account" → `/signup`. Factual wording, no upsell copy.
 
-## F. Billing (Stripe test mode — needs keys)
+## F. Billing (Stripe test mode - needs keys)
 
 Scripted in `e2e/tests/billing.spec.ts` (#31 step 4): without keys the
 spec asserts the clean unconfigured failure; with test-mode keys it
@@ -123,7 +123,7 @@ Only when `STRIPE_SECRET_KEY` / `STRIPE_PRICE_ID` are set in `.env.staging`:
 29. **Portal**: **Manage billing** → Stripe customer portal → cancel →
     webhook flips the account back to free.
 
-## G. Eyeball items (known unknowns — report what you see)
+## G. Eyeball items (known unknowns - report what you see)
 
 - **Photo orientation**: take the witness photo in portrait. Is it upright
   in the sealed PDF, or rotated 90°? (Mobile EXIF orientation handling.)
@@ -147,14 +147,14 @@ both the web app and the API.
 
 ## I. Cleanup
 
-`docker compose down -v` — wipes containers, the test database, and
+`docker compose down -v` - wipes containers, the test database, and
 uploaded files.
 
 ## J. Verify page (#74)
 
 30. **Genuine sealed PDF**: on `/verify`, upload a signed PDF
     downloaded from a sealed document.
-    - ✅ "Valid — this is a genuine document sealed by SignSeen.",
+    - ✅ "Valid - this is a genuine document sealed by SignSeen.",
       with the document title, signed date, signer count, and signer
       email.
 31. **Anything else**: upload an unsigned PDF, an edited copy of a
@@ -163,5 +163,5 @@ uploaded files.
       document / seal mismatch / file altered). Note the 1-per-minute,
       7-per-hour per-IP limit: a second check right after the first
       is refused with "too many verification attempts".
-32. **No storage**: check the server afterwards — no trace of the
+32. **No storage**: check the server afterwards - no trace of the
     uploaded file on disk or in the database.

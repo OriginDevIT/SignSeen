@@ -67,7 +67,7 @@ export default function VerifyPage() {
       candidate.name.toLowerCase().endsWith(".pdf");
     if (!looksPdf) {
       setFile(null);
-      setError("That doesn't look like a PDF — choose a .pdf file.");
+      setError("That doesn't look like a PDF - choose a .pdf file.");
       return;
     }
     if (candidate.size > MAX_VERIFY_FILE_BYTES) {
@@ -111,12 +111,12 @@ export default function VerifyPage() {
       </p>
       <p style={{ margin: 0, lineHeight: 1.6 }}>
         We don&apos;t store your document. It is uploaded, checked, and
-        deleted right away — nothing is kept, and no record of the check
+        deleted right away - nothing is kept, and no record of the check
         is saved.
       </p>
       <p style={{ margin: 0, lineHeight: 1.6, opacity: 0.75 }}>
         A copy of a genuine sealed document verifies as valid. This check
-        proves the file is a genuine document sealed by SignSeen — not
+        proves the file is a genuine document sealed by SignSeen - not
         that it is the only or original copy.
       </p>
 
@@ -155,7 +155,7 @@ export default function VerifyPage() {
           <div>
             <div style={{ fontWeight: 600 }}>{file.name}</div>
             <div style={{ opacity: 0.65, fontSize: "0.9rem" }}>
-              {(file.size / (1024 * 1024)).toFixed(2)} MB — click to choose
+              {(file.size / (1024 * 1024)).toFixed(2)} MB - click to choose
               a different file, or drop another here.
             </div>
           </div>
@@ -205,7 +205,7 @@ export default function VerifyPage() {
           }}
         >
           <h2 style={{ margin: "0 0 0.75rem", fontSize: "1.25rem" }}>
-            Valid — this is a genuine document sealed by SignSeen.
+            Valid - this is a genuine document sealed by SignSeen.
           </h2>
           <dl style={{ margin: 0, display: "grid", gap: "0.5rem" }}>
             <div>
@@ -237,7 +237,7 @@ export default function VerifyPage() {
           }}
         >
           <h2 style={{ margin: "0 0 0.5rem", fontSize: "1.25rem" }}>
-            Invalid — this file could not be verified as a document sealed
+            Invalid - this file could not be verified as a document sealed
             by SignSeen.
           </h2>
           <p style={{ margin: 0 }}>

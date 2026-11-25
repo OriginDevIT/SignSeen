@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import SupportChat from "../components/SupportChat";
 
 export const metadata: Metadata = {
-  title: "SignSeen — Signed. Seen. Sealed.",
+  title: "SignSeen - Signed. Seen. Sealed.",
   description:
     "Open-source electronic signature with a photographic witness.",
 };
@@ -16,8 +16,8 @@ export default function RootLayout({
     <html lang="en">
       <body style={{ fontFamily: "system-ui, sans-serif", margin: 0 }}>
         {children}
-        {/* Discreet attribution (#48): the link's TEXT is transparent —
-            matching any background — until hovered, fading in/out over
+        {/* Discreet attribution (#48): the link's TEXT is transparent -
+            matching any background - until hovered, fading in/out over
             0.5s via a color transition on the link itself (no hidden
             container), so it stays clickable while invisible. */}
         <style>{`

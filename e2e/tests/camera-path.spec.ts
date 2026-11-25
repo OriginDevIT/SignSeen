@@ -2,8 +2,8 @@ import { test, expect, devices } from "@playwright/test";
 import { samplePdf, runId, shot, drawSignature } from "./fixtures";
 
 // Issue #34: the happy-path spec supplies the witness photo through the
-// fallback file input, so a regression in WitnessCamera — the real
-// getUserMedia path every phone signer uses — would pass CI unnoticed.
+// fallback file input, so a regression in WitnessCamera - the real
+// getUserMedia path every phone signer uses - would pass CI unnoticed.
 // This spec drives the actual camera UI against Chromium's fake media
 // device (configured in playwright.config.ts): consent -> Take photo ->
 // live preview -> Capture photo -> the captured frame is the photo that
@@ -25,7 +25,7 @@ test("camera path: sign with a live-captured witness photo", async ({
   await page.getByRole("button", { name: "Create draft" }).click();
   await expect(page.getByText(/Step 2 of 3/)).toBeVisible();
   await page
-    .getByRole("button", { name: "Skip — no fields needed, continue to review" })
+    .getByRole("button", { name: "Skip - no fields needed, continue to review" })
     .click();
   await expect(page.getByText(/Step 3 of 3/)).toBeVisible();
   await page.getByRole("button", { name: "Send document" }).click();
@@ -67,9 +67,9 @@ test("camera path: sign with a live-captured witness photo", async ({
   // The captured frame is attached: the submit button offers to seal
   // with the photo (not "Skip photo & submit"), then sealing succeeds.
   await expect(
-    signer.getByRole("button", { name: "Seal it — submit" }),
+    signer.getByRole("button", { name: "Seal it - submit" }),
   ).toBeVisible();
-  await signer.getByRole("button", { name: "Seal it — submit" }).click();
+  await signer.getByRole("button", { name: "Seal it - submit" }).click();
   await expect(signer.getByText("Signed. Seen. Sealed.")).toBeVisible();
 
   await signerContext.close();

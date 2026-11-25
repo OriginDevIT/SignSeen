@@ -5,7 +5,7 @@ import HomeHeader from "./HomeHeader";
 /**
  * Shared shell for the legal pages (/terms, /privacy). Content is
  * drafted in-house (issue #37) and is pending attorney review before
- * public launch — the drafts double as the review copy.
+ * public launch - the drafts double as the review copy.
  */
 export default function LegalDoc({
   title,

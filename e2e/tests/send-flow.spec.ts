@@ -7,7 +7,7 @@ import {
   waitForMail,
 } from "./helpers";
 
-// Send-flow rework (#89): the full wizard for an anonymous sender —
+// Send-flow rework (#89): the full wizard for an anonymous sender -
 // upload creates a draft (no sessions, no emails), fields are placed
 // on the draft, review shows the draft, and only Send emails the
 // signer. Mailpit assertions only run on the compose test stack
@@ -88,7 +88,7 @@ test("send flow: anonymous upload -> place a field -> review -> send, no email b
   const beforeData = await beforeRes.json();
   expect(beforeData.messages ?? []).toHaveLength(0);
 
-  // --- Step 3: Send — sessions created, invite emailed ------------------
+  // --- Step 3: Send - sessions created, invite emailed ------------------
   await page.getByRole("button", { name: "Send document" }).click();
   await expect(page.getByText("Ready to sign")).toBeVisible();
   const signingUrl = (await page.locator("code").first().innerText()).trim();

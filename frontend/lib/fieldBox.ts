@@ -39,7 +39,7 @@ export function normalizeBox(
   };
 }
 
-/** True when the pointer barely moved — a click, not a drag. */
+/** True when the pointer barely moved - a click, not a drag. */
 export function isClick(
   startX: number,
   startY: number,

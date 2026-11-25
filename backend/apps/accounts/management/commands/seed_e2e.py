@@ -23,7 +23,7 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         if not settings.ENABLE_E2E_FIXTURES:
             raise CommandError(
-                "ENABLE_E2E_FIXTURES is not set — refusing to seed "
+                "ENABLE_E2E_FIXTURES is not set - refusing to seed "
                 "known-password accounts outside a test stack."
             )
         for email, tier in FIXTURES:

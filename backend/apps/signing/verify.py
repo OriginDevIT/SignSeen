@@ -51,7 +51,7 @@ REASON_FILE_ALTERED = "file_altered"
 # Abuse guards: 1 verification per minute, 7 per hour, per client IP.
 # Fixed windows in the cache (the default local-memory cache: per
 # process, which is the whole API on the current single-process
-# deployment — a shared cache would be needed if the API ever ran
+# deployment - a shared cache would be needed if the API ever ran
 # multi-process).
 RATE_LIMIT_MINUTE = 1
 RATE_LIMIT_HOUR = 7
@@ -105,8 +105,8 @@ def _rate_limited(ip: str) -> str | None:
 def _extract_certificate(pdf_bytes: bytes) -> list[dict] | None:
     """Pull the certificate sections out of a sealed PDF.
 
-    Returns a list of {document_id, session_id, audit_seal} dicts —
-    one per signer section — or None when the file has no SignSeen
+    Returns a list of {document_id, session_id, audit_seal} dicts -
+    one per signer section - or None when the file has no SignSeen
     certificate page or no complete section. A section is complete
     only when it carries all three values; the header check keeps a
     random PDF that happens to contain matching labels from getting
@@ -171,7 +171,7 @@ def verify_document(request):
     page; (b) the claimed document / sessions exist in the trail;
     (c) the claimed seal equals the stored document.sealed event
     hash; (d) the audit chain recomputes clean; (e) the uploaded
-    bytes' SHA-256 equals the sealed_file.recorded hash — i.e. the
+    bytes' SHA-256 equals the sealed_file.recorded hash - i.e. the
     file is byte-identical to the sealed file.
     """
     uploaded = request.FILES.get("file")
@@ -179,7 +179,7 @@ def verify_document(request):
         return _error("a PDF file is required")
     if uploaded.size > MAX_VERIFY_BYTES:
         return _error("file exceeds the 15 MB limit")
-    # The magic bytes are the "is this a PDF" test — before any
+    # The magic bytes are the "is this a PDF" test - before any
     # parsing, and without trusting the client-sent content type.
     try:
         head = uploaded.read(5)
@@ -197,7 +197,7 @@ def verify_document(request):
         )
     if limited_window == "hour":
         return _error(
-            "You can only validate 7 documents per hour — try again later.",
+            "You can only validate 7 documents per hour - try again later.",
             code=status.HTTP_429_TOO_MANY_REQUESTS,
         )
 

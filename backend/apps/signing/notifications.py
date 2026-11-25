@@ -2,7 +2,7 @@
 
 On seal, the sender gets the signed PDF + audit receipt; the signer gets a
 copy too if they left an email. Best-effort: failures are logged, never
-raised — email must not fail a completed signing.
+raised - email must not fail a completed signing.
 """
 
 import logging
@@ -26,7 +26,7 @@ def _email_copy(document, audit_seal: str, recipient: str) -> None:
     brand_name = _brand_name(document)
     # Branded sends (premium) open with the sender's brand; SignSeen
     # remains named as the platform. Default body otherwise.
-    opening = f"{brand_name} — signed document via SignSeen\n\n" if brand_name else ""
+    opening = f"{brand_name} - signed document via SignSeen\n\n" if brand_name else ""
     body = (
         f"{opening}"
         f'"{document.title}" has been signed.\n\n'
@@ -52,7 +52,7 @@ def _email_copy(document, audit_seal: str, recipient: str) -> None:
 def send_sealed_notifications(document, session, audit_seal: str) -> None:
     """Seal-time copies: the sender plus every signer who left an email
     (multi-signer documents seal once, at the final signature, so all
-    signers' copies go out here — including signers who left their
+    signers' copies go out here - including signers who left their
     email at their own completion step earlier in the sequence)."""
     recipients = []
     if document.sender_email:
@@ -138,7 +138,7 @@ def send_signer_copy(document, session, audit_seal: str) -> None:
     ceremony, so it cannot ride the seal-time notification).
 
     Multi-signer: if the document has not sealed yet there is no final
-    PDF to send — the copy goes out at final seal via
+    PDF to send - the copy goes out at final seal via
     send_sealed_notifications, which covers every session's email."""
     signer_email = (session.signer_email or "").strip()
     if signer_email and document.signed_file:
@@ -149,8 +149,8 @@ def send_signer_invite(document, session) -> None:
     """Invite a pre-defined signer to their signing session (#13).
 
     Email-first delivery: when a session with a
-    signer_email becomes active — at creation if it is already usable,
-    or when its predecessor signs in sequential mode — the signer gets
+    signer_email becomes active - at creation if it is already usable,
+    or when its predecessor signs in sequential mode - the signer gets
     their own signing link AND the unsigned document attached, so the
     email alone is everything they need. Best-effort, like every
     notification here.
@@ -170,7 +170,7 @@ def send_signer_invite(document, session) -> None:
         f'"{document.title}".\n\n'
         f"Your signing link: {signing_url}\n"
         f"{order_note}\n"
-        "The document you need to sign is attached. No account needed — "
+        "The document you need to sign is attached. No account needed - "
         "open the link, complete your fields, and sign."
     )
     msg = EmailMessage(

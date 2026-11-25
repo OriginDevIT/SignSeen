@@ -217,7 +217,7 @@ describe("PlaceFieldsPage drag-to-draw (#78)", () => {
     fireEvent.pointerMove(img, { clientX: 105, clientY: 102, pointerId: 1 });
     fireEvent.pointerUp(img, { clientX: 105, clientY: 102, pointerId: 1 });
 
-    await screen.findByText("That box is too small — drag a larger one.");
+    await screen.findByText("That box is too small - drag a larger one.");
     expect(vi.mocked(createDocumentField)).not.toHaveBeenCalled();
   });
 });
@@ -478,7 +478,7 @@ describe("PlaceFieldsPage draft mode (#89)", () => {
     // The placed-fields list names the same signer (expand it first:
     // it is collapsed by default, #97).
     fireEvent.click(screen.getByRole("button", { name: /Placed fields/ }));
-    expect(screen.getAllByText(/Signer 2 — Bob/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Signer 2 - Bob/).length).toBeGreaterThan(0);
   });
 
   it("a field assigned to a nameless slot shows the slot email in the list (#114)", async () => {
@@ -500,7 +500,7 @@ describe("PlaceFieldsPage draft mode (#89)", () => {
     // Expand the placed-fields list: it is collapsed by default (#97).
     fireEvent.click(screen.getByRole("button", { name: /Placed fields/ }));
     expect(
-      screen.getAllByText(/Signer 2 — bob@example\.com/).length
+      screen.getAllByText(/Signer 2 - bob@example\.com/).length
     ).toBeGreaterThan(0);
   });
 
@@ -536,7 +536,7 @@ describe("PlaceFieldsPage placed-fields list (#97)", () => {
     expect(screen.queryByText("Delete")).toBeNull();
     // The row's required flag is list-only text (the signer label
     // also appears in the toolbar select).
-    expect(screen.queryByText(/Signer 1 — Alice · required/)).toBeNull();
+    expect(screen.queryByText(/Signer 1 - Alice · required/)).toBeNull();
   });
 
   it("rows show the page reference without coordinates (#113)", async () => {
@@ -548,7 +548,7 @@ describe("PlaceFieldsPage placed-fields list (#97)", () => {
     fireEvent.click(toggle);
 
     expect(
-      screen.getByText(/page 1 · Signer 1 — Alice · required/)
+      screen.getByText(/page 1 · Signer 1 - Alice · required/)
     ).toBeTruthy();
     expect(screen.queryByText(/\(0\.10, 0\.20\)/)).toBeNull();
     expect(screen.queryByText(/0\.30 × 0\.15/)).toBeNull();
@@ -617,7 +617,7 @@ describe("PlaceFieldsPage placed-fields list (#97)", () => {
     });
     fireEvent.click(toggle);
     expect(
-      screen.getAllByText(/Signer 1 — carol@example\.com/).length
+      screen.getAllByText(/Signer 1 - carol@example\.com/).length
     ).toBeGreaterThan(0);
   });
 });

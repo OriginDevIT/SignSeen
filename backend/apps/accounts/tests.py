@@ -342,7 +342,7 @@ def test_google_login_links_existing_password_account(settings, monkeypatch):
         "/api/auth/google/", {"id_token": "fake-token"}, format="json"
     )
     assert response.status_code == 200
-    # Linked, not duplicated — and the password still works afterwards.
+    # Linked, not duplicated - and the password still works afterwards.
     assert response.json()["account"]["id"] == password_id
     assert Account.objects.filter(email="a@example.com").count() == 1
     assert client.post(

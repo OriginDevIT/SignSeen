@@ -42,7 +42,7 @@ const ghostBtn: React.CSSProperties = {
 /**
  * Live in-app camera for the witness photo. Requests the front
  * ("user") camera exactly first and falls back to any camera only
- * when no front camera exists — the file input's capture="user"
+ * when no front camera exists - the file input's capture="user"
  * attribute is only a hint and some phones ignore it. There is no
  * upload path: no camera means no photo. When no camera can be
  * started at all, the component shows a QR code for the same signing
@@ -130,7 +130,7 @@ export default function WitnessCamera({
     const video = videoRef.current;
     const dataUrl = video ? captureVideoFrame(video) : null;
     if (!dataUrl) {
-      // No frame to capture — the camera is not really working.
+      // No frame to capture - the camera is not really working.
       // Treat it like a failed start: the phone QR is the way on.
       setFailed(true);
       return;
@@ -148,7 +148,7 @@ export default function WitnessCamera({
         <p style={{ margin: 0, opacity: 0.75 }}>
           This device has no camera, so you can&apos;t take a witness photo
           here. Scan the code with your phone to open the same signing
-          link and continue signing there — you&apos;ll draw your signature
+          link and continue signing there - you&apos;ll draw your signature
           on your phone.
         </p>
         <div
