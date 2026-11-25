@@ -83,10 +83,12 @@ export default function TermsPage() {
         </li>
         <li>
           <strong>Premium:</strong> $5/month or $50/year, billed through
-          Stripe. Premium adds document storage (5 GB), multi-signer
-          workflows, status tracking and alerts, custom branding, and
-          removes the attribution mark. Prices may change with at least
-          30 days’ notice to account holders.
+          Stripe. Premium adds document storage (5 GB), up to 20 signers
+          per document with sequential signing, the option to require a
+          witness photo, status tracking and expiry alerts, a higher
+          draft limit (10 drafts instead of 3 on the free tier), custom
+          branding, and removes the attribution mark. Prices may change
+          with at least 30 days’ notice to account holders.
         </li>
         <li>
           <strong>Renewal and management:</strong> subscriptions renew
