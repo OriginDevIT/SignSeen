@@ -12,6 +12,8 @@ limit: 3 drafts free, 10 premium.
 """
 
 from django.conf import settings
+from django.core.exceptions import ValidationError
+from django.core.validators import validate_email
 
 from .models import Document
 
@@ -93,6 +95,37 @@ def check_draft_limit(account, sender_email) -> None:
         )
 
 
+def _has_control_chars(value: str) -> bool:
+    """Newlines and other control characters, which must never reach
+    a stored name, email, or brand (they break invite delivery and
+    can inject extra lines into the certificate)."""
+    return any(ord(ch) < 32 or ord(ch) == 127 for ch in value)
+
+
+def clean_signer_email(raw) -> str:
+    """One signer email: stripped and validated with Django's
+    validate_email (a bare '@' check accepts newlines). Raises
+    ValueError with a user-facing message."""
+    email = str(raw or "").strip()
+    try:
+        validate_email(email)
+    except ValidationError:
+        raise ValueError("each signer needs a valid email")
+    return email
+
+
+def clean_signer_name(raw) -> str:
+    """One signer name: stripped; newlines/control characters are
+    rejected. An empty name is fine (the email identifies the
+    signer). Raises ValueError with a user-facing message."""
+    name = str(raw or "").strip()
+    if _has_control_chars(name):
+        raise ValueError(
+            "signer names must not contain newlines or control characters"
+        )
+    return name
+
+
 def clean_signer_list(raw, sender_email, is_premium) -> list[dict]:
     """Validate a step-1 signer list (#89). Returns the cleaned list
     (name/email dicts, in order) or raises ValueError with a
@@ -116,14 +149,12 @@ def clean_signer_list(raw, sender_email, is_premium) -> list[dict]:
     for entry in raw:
         if not isinstance(entry, dict):
             raise ValueError("each signer needs a name and an email")
-        email = str(entry.get("email") or "").strip()
-        if not email or "@" not in email:
-            raise ValueError("each signer needs a valid email")
+        email = clean_signer_email(entry.get("email"))
         if email.lower() in seen:
             raise ValueError("each signer email can only appear once")
         seen.add(email.lower())
         cleaned.append(
-            {"name": str(entry.get("name") or "").strip(), "email": email}
+            {"name": clean_signer_name(entry.get("name")), "email": email}
         )
     if not is_premium and len(cleaned) == 2 and sender not in seen:
         raise ValueError(

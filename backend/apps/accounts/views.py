@@ -45,6 +45,13 @@ def _error(message, code=status.HTTP_400_BAD_REQUEST):
     return Response({"error": message}, status=code)
 
 
+def _has_control_chars(value: str) -> bool:
+    """Newlines and other control characters, which must never reach
+    a stored brand name (they can inject extra lines into the
+    certificate header)."""
+    return any(ord(ch) < 32 or ord(ch) == 127 for ch in value)
+
+
 def _account_payload(account: Account) -> dict:
     return {
         "id": str(account.id),
@@ -160,7 +167,12 @@ def branding(request):
 
     update_fields = []
     if "brand_name" in request.data:
-        account.brand_name = (request.data.get("brand_name") or "").strip()
+        name = (request.data.get("brand_name") or "").strip()
+        if _has_control_chars(name):
+            return _error(
+                "brand_name must not contain newlines or control characters"
+            )
+        account.brand_name = name
         update_fields.append("brand_name")
     if "brand_color" in request.data:
         color = (request.data.get("brand_color") or "").strip()

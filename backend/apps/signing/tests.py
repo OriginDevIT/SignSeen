@@ -121,6 +121,40 @@ def test_upload_requires_title_and_email():
 
 
 @pytest.mark.django_db
+def test_upload_rejects_signer_email_with_newline():
+    # A newline in the email used to pass the bare "@" check and be
+    # stored, breaking invite delivery.
+    client = APIClient()
+    response = upload_draft(
+        client,
+        signers=[{"name": "Jane", "email": "jane@example.com\ninjected@example.com"}],
+    )
+    assert response.status_code == 400
+    assert "valid email" in response.json()["error"]
+
+
+@pytest.mark.django_db
+def test_upload_rejects_signer_email_without_at_sign():
+    client = APIClient()
+    response = upload_draft(
+        client, signers=[{"name": "Jane", "email": "jane.example.com"}]
+    )
+    assert response.status_code == 400
+    assert "valid email" in response.json()["error"]
+
+
+@pytest.mark.django_db
+def test_upload_rejects_signer_name_with_newline():
+    client = APIClient()
+    response = upload_draft(
+        client,
+        signers=[{"name": "Jane\nFake Section", "email": "jane@example.com"}],
+    )
+    assert response.status_code == 400
+    assert "newlines" in response.json()["error"]
+
+
+@pytest.mark.django_db
 def test_create_session_returns_token_and_signing_url():
     # create_session now adds a further signer to an already-sent
     # document (#89); on a free document the second signer must be
@@ -170,6 +204,30 @@ def test_create_session_requires_signer_email():
     # The document already has its one send-created session; the
     # rejected attempts added no further sessions.
     assert SigningSession.objects.count() == 1
+
+
+@pytest.mark.django_db
+def test_create_session_rejects_newline_in_signer_email_and_name():
+    # The post-send add-signer endpoint takes the same inputs as the
+    # step-1 list, so it gets the same validation.
+    account = _make_account(email="pro3@example.com", tier=Account.Tier.PREMIUM)
+    client = _auth_client(account)
+    doc_id = upload_document(client, email=account.email).json()["document"]["id"]
+    response = client.post(
+        f"/api/documents/{doc_id}/sessions/",
+        {"signer_name": "Jane", "signer_email": "jane@example.com\nx@example.com"},
+        format="json",
+    )
+    assert response.status_code == 400
+    assert "valid email" in response.json()["error"]
+    response = client.post(
+        f"/api/documents/{doc_id}/sessions/",
+        {"signer_name": "Jane\nFake Section", "signer_email": "jane@example.com"},
+        format="json",
+    )
+    assert response.status_code == 400
+    assert "newlines" in response.json()["error"]
+    assert SigningSession.objects.filter(document_id=doc_id).count() == 1
 
 
 @pytest.mark.django_db
@@ -1488,6 +1546,28 @@ def test_sealed_pdf_certificate_shows_brand_name():
     doc_id = upload_document(client, email=account.email).json()["document"]["id"]
     text, _doc = _sign_and_get_pdf_text(client, doc_id)
     assert "via Acme Legal" in text
+
+
+@pytest.mark.django_db
+def test_certificate_flattens_newlines_from_stored_name_and_brand():
+    # Input validation rejects these, but values stored before that
+    # fix still render through the certificate: a newline in the
+    # signer name or brand must collapse to a space, never an extra
+    # line that could pose as a certificate section.
+    account = _branded_account(email="render-brand@example.com")
+    account.brand_name = "Acme\nFake Certificate"
+    account.save(update_fields=["brand_name"])
+    client = _auth_client(account)
+    doc_id = upload_document(client, email=account.email).json()["document"]["id"]
+    SigningSession.objects.filter(document_id=doc_id).update(
+        signer_name="Jane\nFake Signer"
+    )
+    text, _doc = _sign_and_get_pdf_text(client, doc_id)
+    assert "Signer: Jane Fake Signer" in text
+    assert "Signed via Acme Fake Certificate with SignSeen" in text
+    lines = text.splitlines()
+    assert "Fake Signer" not in lines
+    assert "Fake Certificate" not in lines
 
 
 @pytest.mark.django_db
