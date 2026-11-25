@@ -29,6 +29,24 @@ class AccountManager(BaseUserManager):
         return self.create_user(email, password, **extra)
 
 
+class TermsNotice(models.Model):
+    """Record of a terms-change notice (issue #210).
+
+    Terms section 10 promises account holders are emailed at least 14
+    days before material terms changes take effect. One row per terms
+    version; notified_at is stamped when the notice goes out so a
+    re-run never re-sends for the same version.
+    """
+
+    version = models.CharField(max_length=32, unique=True)
+    effective_date = models.DateField()
+    notified_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self) -> str:
+        return f"Terms {self.version} (effective {self.effective_date})"
+
+
 class Account(AbstractBaseUser, PermissionsMixin):
     class Tier(models.TextChoices):
         FREE = "free", "Free"
