@@ -70,6 +70,15 @@ urlpatterns = [
     # Public document verification (#74): anyone can upload a PDF and
     # check whether this system sealed it. No auth, no storage.
     path("verify/", verify.verify_document, name="verify-document"),
+    # Verify the stored sealed file for a document (#212): the same
+    # checks, run against the file on disk, shown on the document
+    # page. No auth; the document UUID is already the public
+    # tracking key.
+    path(
+        "documents/<uuid:doc_id>/verify/",
+        verify.verify_stored_document,
+        name="document-verify-stored",
+    ),
     # Test-stack only (e2e_views guards on ENABLE_E2E_FIXTURES): sealed
     # pages for the Playwright review gallery.
     path(
