@@ -879,8 +879,6 @@ export interface VerifyVerdict {
   signed_at?: string;
   /** Present when valid: how many signers the certificate names. */
   signer_count?: number;
-  /** Present when valid: the signer email(s), comma-separated. */
-  signer_email?: string;
   /** Present when invalid: the reason category, nothing more. */
   reason?: VerifyReason;
 }

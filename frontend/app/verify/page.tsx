@@ -224,10 +224,6 @@ export default function VerifyPage() {
               <dt style={{ fontWeight: 600 }}>Signers</dt>
               <dd style={{ margin: 0 }}>{verdict.signer_count}</dd>
             </div>
-            <div>
-              <dt style={{ fontWeight: 600 }}>Signer email</dt>
-              <dd style={{ margin: 0 }}>{verdict.signer_email}</dd>
-            </div>
           </dl>
         </div>
       )}
