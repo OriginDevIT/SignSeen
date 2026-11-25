@@ -24,6 +24,9 @@ describe("VerifyPage", () => {
       "A copy of a genuine sealed document verifies as valid.",
     );
     expect(html).toContain("not that it is the only or original copy.");
+    // Rate limits are disclosed up front, before the user hits them.
+    expect(html).toContain("one document per minute");
+    expect(html).toContain("up to 20 documents per hour");
   });
 
   it("renders the site navigation: brand home, Send, Log in (no separate Home link)", () => {

@@ -2682,7 +2682,7 @@ def test_verify_rate_limit_hour_message():
     response = _verify(client, signed, ip="10.1.0.16")
     assert response.status_code == 429
     assert response.json() == {
-        "error": "You can only validate 7 documents per hour - try again later."
+        "error": "You can only validate 20 documents per hour - try again later."
     }
 
 
