@@ -685,6 +685,16 @@ export async function logout(): Promise<void> {
   }
 }
 
+/** Close the account: removes the account, its documents, and their
+ * files. The token is dropped either way, like logout. */
+export async function deleteAccount(): Promise<void> {
+  try {
+    await req("/api/auth/me/", { method: "DELETE" });
+  } finally {
+    setAuthToken(null);
+  }
+}
+
 export function myAccount(): Promise<AccountInfo> {
   return req<AccountInfo>("/api/auth/me/");
 }

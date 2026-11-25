@@ -4,13 +4,17 @@ Tokens are DRF authtokens (``Authorization: Token <key>``), which work
 cross-origin for the Next.js app without cookie/CORS plumbing.
 """
 
+import logging
 import re
 
+import stripe
 from django.contrib.auth import authenticate
 from django.contrib.auth.tokens import PasswordResetTokenGenerator
 from django.core.mail import send_mail
 from django.core.cache import cache
 from django.conf import settings
+from django.db import transaction
+from django.db.models import Q
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from rest_framework import status
@@ -22,6 +26,9 @@ from rest_framework.response import Response
 
 from .google_auth import verify_google_id_token
 from .models import Account
+
+log = logging.getLogger(__name__)
+stripe.api_key = settings.STRIPE_SECRET_KEY
 
 
 def _claim_documents(account: Account) -> None:
@@ -215,9 +222,79 @@ def logout(request):
     return Response({"status": "logged out"})
 
 
-@api_view(["GET", "PATCH"])
+def _cancel_stripe_subscription(account: Account) -> str | None:
+    """Cancel the Stripe subscription, if one is recorded.
+
+    Returns an error string when the cancel fails, else None. A
+    subscription Stripe no longer knows (already cancelled, or an id
+    left over from an expired account) is not an error - there is
+    nothing left to stop. Billing is only attempted when Stripe is
+    configured on this server; self-hosted instances without billing
+    skip it entirely.
+    """
+    if not account.stripe_subscription_id:
+        return None
+    if not settings.STRIPE_SECRET_KEY:
+        return None
+    try:
+        stripe.Subscription.delete(account.stripe_subscription_id)
+    except stripe.InvalidRequestError:
+        log.info("stripe subscription already gone for account %s", account.id)
+    except stripe.StripeError as exc:
+        log.exception("stripe subscription cancel failed")
+        return str(exc)
+    return None
+
+
+def _delete_owned_documents(account: Account) -> None:
+    """Delete the account's stored documents and their files.
+
+    Documents owned by the account, plus owner-less documents sent
+    from the account's email (the same rule _claim_documents uses to
+    attach anonymous sends). Sessions, fields, and audit events go
+    with each document through their cascade deletes, and field files
+    (drawn signatures, witness photos) are removed from storage
+    alongside the document files. Documents owned by OTHER accounts -
+    including ones where this account only signed - are untouched, so
+    a counterparty's sealed-document audit chain survives.
+    """
+    from apps.signing.models import Document
+
+    docs = Document.objects.filter(
+        Q(owner=account)
+        | Q(owner__isnull=True, sender_email__iexact=account.email)
+    )
+    for doc in docs:
+        for field in doc.fields.all():
+            if field.value_file:
+                field.value_file.delete(save=False)
+        if doc.original_file:
+            doc.original_file.delete(save=False)
+        if doc.signed_file:
+            doc.signed_file.delete(save=False)
+        doc.delete()
+    if account.brand_logo:
+        account.brand_logo.delete(save=False)
+
+
+@api_view(["GET", "PATCH", "DELETE"])
 @permission_classes([IsAuthenticated])
 def me(request):
+    if request.method == "DELETE":
+        # Close the account: stop billing first, then remove the
+        # account and its stored documents and files. The Stripe
+        # cancel runs before the delete so a failed cancel leaves the
+        # account intact instead of stranding a live subscription.
+        stripe_error = _cancel_stripe_subscription(request.user)
+        if stripe_error:
+            return _error(
+                f"could not cancel the subscription: {stripe_error}",
+                status.HTTP_502_BAD_GATEWAY,
+            )
+        with transaction.atomic():
+            _delete_owned_documents(request.user)
+            request.user.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
     if request.method == "PATCH":
         # Self-service settings: signing alerts opt-out/in, and the
         # account name. Only the fields present are changed; an empty

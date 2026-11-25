@@ -424,3 +424,162 @@ def test_login_throttles_after_repeated_failures():
     )
     assert response.status_code == 429
     cache.clear()
+
+
+# ----------------------------------------------------------------------
+# Account close / delete (#183)
+# ----------------------------------------------------------------------
+
+import os
+from unittest import mock
+
+import stripe
+from django.core.files.base import ContentFile
+
+from apps.signing.models import AuditEvent, Document, DocumentField, SigningSession
+
+
+def _auth_client_for(email="a@example.com", password="longpassword1"):
+    client = APIClient()
+    response = signup(client, email=email, password=password)
+    assert response.status_code == 201
+    token = response.json()["token"]
+    client.credentials(HTTP_AUTHORIZATION=f"Token {token}")
+    return client, Account.objects.get(email=email)
+
+
+def _owned_document(account, title="Contract"):
+    doc = Document.objects.create(
+        title=title, sender_email=account.email, owner=account
+    )
+    doc.original_file.save("doc.pdf", ContentFile(b"%PDF-1.4 fake"), save=True)
+    doc.signed_file.save("signed.pdf", ContentFile(b"%PDF-1.4 sealed"), save=True)
+    session = SigningSession.objects.create(
+        document=doc, signer_email="jane@example.com"
+    )
+    field = DocumentField.objects.create(
+        document=doc,
+        session=session,
+        field_type=DocumentField.Type.SIGNATURE,
+        page=1,
+        x=0.1,
+        y=0.1,
+    )
+    field.value_file.save("sig.png", ContentFile(b"fake png"), save=True)
+    AuditEvent.objects.create(
+        session=session,
+        event_type="signature.submitted",
+        payload={},
+        prev_hash="0" * 64,
+        hash="1" * 64,
+    )
+    return doc
+
+
+@pytest.mark.django_db
+def test_delete_account_removes_account_documents_and_files():
+    client, account = _auth_client_for()
+    doc = _owned_document(account)
+    paths = [
+        doc.original_file.path,
+        doc.signed_file.path,
+        doc.fields.first().value_file.path,
+    ]
+    for path in paths:
+        assert os.path.exists(path)
+    # An anonymous send from the same email is the account's too.
+    anon = Document.objects.create(
+        title="Anonymous", sender_email=account.email, owner=None
+    )
+    anon.original_file.save("anon.pdf", ContentFile(b"%PDF-1.4 anon"), save=True)
+    anon_path = anon.original_file.path
+
+    response = client.delete("/api/auth/me/")
+    assert response.status_code == 204
+    assert not Account.objects.filter(email="a@example.com").exists()
+    assert not Document.objects.filter(pk=doc.pk).exists()
+    assert not Document.objects.filter(pk=anon.pk).exists()
+    assert not SigningSession.objects.filter(document_id=doc.pk).exists()
+    assert not DocumentField.objects.filter(document_id=doc.pk).exists()
+    assert not AuditEvent.objects.filter(
+        session__document_id=doc.pk
+    ).exists()
+    for path in paths + [anon_path]:
+        assert not os.path.exists(path)
+    # The token died with the account.
+    assert client.get("/api/auth/me/").status_code == 401
+
+
+@pytest.mark.django_db
+def test_delete_account_requires_auth():
+    client = APIClient()
+    assert client.delete("/api/auth/me/").status_code == 401
+
+
+@pytest.mark.django_db
+def test_delete_account_keeps_other_accounts_and_counterparty_documents():
+    client_a, account_a = _auth_client_for(email="a@example.com")
+    client_b, account_b = _auth_client_for(email="b@example.com")
+    own_doc = _owned_document(account_a, title="A's doc")
+    # B's document, where A is only a signer: not A's to delete, and
+    # its audit chain must survive A's account closing.
+    other_doc = _owned_document(account_b, title="B's doc")
+    other_session = other_doc.sessions.get()
+    other_session.signer_email = account_a.email
+    other_session.save(update_fields=["signer_email"])
+
+    assert client_a.delete("/api/auth/me/").status_code == 204
+    assert not Document.objects.filter(pk=own_doc.pk).exists()
+    assert Account.objects.filter(email="b@example.com").exists()
+    assert Document.objects.filter(pk=other_doc.pk).exists()
+    assert SigningSession.objects.filter(pk=other_session.pk).exists()
+    assert AuditEvent.objects.filter(
+        session__document_id=other_doc.pk
+    ).exists()
+    assert client_b.get("/api/auth/me/").status_code == 200
+
+
+@pytest.mark.django_db
+@override_settings(STRIPE_SECRET_KEY="sk_test_x")
+def test_delete_account_cancels_stripe_subscription():
+    client, account = _auth_client_for()
+    account.tier = Account.Tier.PREMIUM
+    account.stripe_subscription_id = "sub_123"
+    account.save(update_fields=["tier", "stripe_subscription_id"])
+    with mock.patch(
+        "apps.accounts.views.stripe.Subscription.delete"
+    ) as cancel:
+        assert client.delete("/api/auth/me/").status_code == 204
+    cancel.assert_called_once_with("sub_123")
+    assert not Account.objects.filter(email="a@example.com").exists()
+
+
+@pytest.mark.django_db
+@override_settings(STRIPE_SECRET_KEY="sk_test_x")
+def test_delete_account_tolerates_already_cancelled_subscription():
+    client, account = _auth_client_for()
+    account.stripe_subscription_id = "sub_gone"
+    account.save(update_fields=["stripe_subscription_id"])
+    with mock.patch(
+        "apps.accounts.views.stripe.Subscription.delete",
+        side_effect=stripe.InvalidRequestError(
+            "No such subscription: sub_gone", param="id"
+        ),
+    ):
+        assert client.delete("/api/auth/me/").status_code == 204
+    assert not Account.objects.filter(email="a@example.com").exists()
+
+
+@pytest.mark.django_db
+@override_settings(STRIPE_SECRET_KEY="sk_test_x")
+def test_delete_account_fails_when_stripe_cancel_fails():
+    client, account = _auth_client_for()
+    account.stripe_subscription_id = "sub_123"
+    account.save(update_fields=["stripe_subscription_id"])
+    with mock.patch(
+        "apps.accounts.views.stripe.Subscription.delete",
+        side_effect=stripe.StripeError("stripe is down"),
+    ):
+        response = client.delete("/api/auth/me/")
+    assert response.status_code == 502
+    assert Account.objects.filter(email="a@example.com").exists()

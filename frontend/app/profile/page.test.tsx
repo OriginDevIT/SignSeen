@@ -3,7 +3,17 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import ProfilePage from "./page";
-import { myAccount, updateAccountName, type AccountInfo } from "../../lib/api";
+import {
+  deleteAccount,
+  myAccount,
+  updateAccountName,
+  type AccountInfo,
+} from "../../lib/api";
+
+vi.mock("next/navigation", () => {
+  const router = { push: vi.fn(), replace: vi.fn() };
+  return { useRouter: () => router };
+});
 
 vi.mock("../../lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../lib/api")>();
@@ -11,11 +21,13 @@ vi.mock("../../lib/api", async (importOriginal) => {
     ...actual,
     myAccount: vi.fn(),
     updateAccountName: vi.fn(),
+    deleteAccount: vi.fn(),
   };
 });
 
 const mockedMyAccount = vi.mocked(myAccount);
 const mockedUpdateAccountName = vi.mocked(updateAccountName);
+const mockedDeleteAccount = vi.mocked(deleteAccount);
 
 const ACCOUNT: AccountInfo = {
   id: "acct-1",
@@ -90,5 +102,58 @@ describe("ProfilePage site navigation (#164)", () => {
         .getByRole("link", { name: "Back to dashboard" })
         .getAttribute("href")
     ).toBe("/dashboard");
+  });
+});
+
+describe("ProfilePage close account (#183)", () => {
+  it("asks for confirmation before closing, and Cancel backs out", async () => {
+    mockedMyAccount.mockResolvedValue(ACCOUNT);
+    render(<ProfilePage />);
+    expect(await screen.findByText("sender@example.com")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close account" }));
+    expect(screen.getByText(/Close your account?/)).toBeTruthy();
+    expect(mockedDeleteAccount).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByText(/Close your account?/)).toBeNull();
+    expect(mockedDeleteAccount).not.toHaveBeenCalled();
+  });
+
+  it("confirming closes the account and navigates home", async () => {
+    const { useRouter } = await import("next/navigation");
+    mockedMyAccount.mockResolvedValue(ACCOUNT);
+    mockedDeleteAccount.mockResolvedValue(undefined);
+    render(<ProfilePage />);
+    expect(await screen.findByText("sender@example.com")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close account" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Confirm close account" })
+    );
+    await waitFor(() =>
+      expect(mockedDeleteAccount).toHaveBeenCalledTimes(1)
+    );
+    expect(useRouter().push).toHaveBeenCalledWith("/");
+  });
+
+  it("a failed close shows the error and stays on the page", async () => {
+    mockedMyAccount.mockResolvedValue(ACCOUNT);
+    mockedDeleteAccount.mockRejectedValue(
+      new Error("Could not close your account")
+    );
+    render(<ProfilePage />);
+    expect(await screen.findByText("sender@example.com")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close account" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Confirm close account" })
+    );
+    expect(
+      await screen.findByText("Could not close your account")
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Confirm close account" })
+    ).toBeTruthy();
   });
 });
