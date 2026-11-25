@@ -104,6 +104,18 @@ export default function Home() {
           tamper-evident audit trail. No accounts for signers, no
           per-envelope fees, no certificates to install.
         </p>
+        <p
+          style={{
+            maxWidth: "38rem",
+            margin: "1rem auto 0",
+            lineHeight: 1.65,
+            fontSize: "1.05rem",
+            fontWeight: 600,
+          }}
+        >
+          Free to send your first document. Premium is $5/month or
+          $50/year.
+        </p>
         <div
           style={{
             display: "flex",
