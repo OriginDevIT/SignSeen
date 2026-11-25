@@ -7,8 +7,9 @@ import { getAuthToken } from "../lib/api";
  * Dashboard for a signed-in sender. The token is read after mount
  * only: reading it during render makes the server render the logged-out
  * links while the client renders Dashboard, which fails hydration
- * (#91). The first render always shows the logged-out links; a
- * signed-in sender sees Dashboard appear after mount.
+ * (#91). Until the account check settles after mount, no auth links
+ * render at all (#201): the first render must not show the signed-out
+ * links to a signed-in sender, even briefly.
  *
  * Shared site navigation (#163): the Send a document link renders on
  * every page that uses this header, so the verify page and any later
@@ -17,9 +18,11 @@ import { getAuthToken } from "../lib/api";
  */
 export default function HomeHeader() {
   const [signedIn, setSignedIn] = useState(false);
+  const [accountChecked, setAccountChecked] = useState(false);
 
   useEffect(() => {
     setSignedIn(getAuthToken() !== null);
+    setAccountChecked(true);
   }, []);
 
   return (
@@ -47,20 +50,22 @@ export default function HomeHeader() {
         <a href="/send" style={{ color: "#111827" }}>
           Send a document
         </a>
-        {signedIn ? (
-          <a href="/dashboard" style={{ color: "#111827", fontWeight: 600 }}>
-            Dashboard
-          </a>
-        ) : (
-          <>
-            <a href="/login" style={{ color: "#111827" }}>
-              Log in
+        {accountChecked ? (
+          signedIn ? (
+            <a href="/dashboard" style={{ color: "#111827", fontWeight: 600 }}>
+              Dashboard
             </a>
-            <a href="/signup" style={{ color: "#111827", fontWeight: 600 }}>
-              Create account
-            </a>
-          </>
-        )}
+          ) : (
+            <>
+              <a href="/login" style={{ color: "#111827" }}>
+                Log in
+              </a>
+              <a href="/signup" style={{ color: "#111827", fontWeight: 600 }}>
+                Create account
+              </a>
+            </>
+          )
+        ) : null}
       </nav>
     </header>
   );

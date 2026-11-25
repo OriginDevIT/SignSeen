@@ -13,10 +13,11 @@ describe("SupportPage site navigation (#164)", () => {
     expect(html).not.toContain(">Home</a>");
     expect(html).toContain('href="/send"');
     expect(html).toContain(">Send a document</a>");
-    // Signed-out navigation (server render runs no effects, so the
-    // logged-out links render).
-    expect(html).toContain('href="/login"');
-    expect(html).toContain(">Log in</a>");
+    // No auth links in the server render (the account check has not
+    // settled yet, so the header shows no auth links at all, #201).
+    expect(html).not.toContain('href="/login"');
+    expect(html).not.toContain('href="/signup"');
+    expect(html).not.toContain('href="/dashboard"');
     expect(html).toContain("Support");
   });
 });

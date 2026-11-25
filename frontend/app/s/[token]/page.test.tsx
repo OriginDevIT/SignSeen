@@ -1120,7 +1120,11 @@ describe("SignPage site navigation (#164)", () => {
         .getByRole("link", { name: "Send a document" })
         .getAttribute("href")
     ).toBe("/send");
-    expect(screen.getByRole("link", { name: "Log in" })).toBeTruthy();
+    // The signed-out links appear only once the header's account check
+    // settles after mount (#201).
+    expect(
+      await screen.findByRole("link", { name: "Log in" })
+    ).toBeTruthy();
   });
 
   it("keeps the sender branding header alongside the site navigation", async () => {
