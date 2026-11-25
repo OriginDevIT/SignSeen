@@ -67,7 +67,7 @@ test("empty signature: Looks good without ink stays on the sign step", async ({
     await signer.getByRole("button", { name: "Start signing" }).click();
     await expect(signer.locator("canvas")).toBeVisible();
     await signer.getByRole("button", { name: /Looks good/ }).click();
-    await expect(signer.getByText("1. Sign")).toBeVisible();
+    await expect(signer.getByText("Sign to seal the document")).toBeVisible();
     await expect(signer.getByText("2. Seen")).toHaveCount(0);
   } finally {
     await signerContext.close();
