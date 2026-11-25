@@ -75,19 +75,21 @@ def _client_ip(request) -> str:
     return request.META.get("REMOTE_ADDR", "")
 
 
-def _rate_limited(ip: str) -> bool:
-    """True when this IP has used up either verification window.
+def _rate_limited(ip: str) -> str | None:
+    """The verification window this IP has used up, or None.
 
-    Each attempt that reaches the checks consumes one slot in both
-    windows; malformed uploads (missing / oversized / non-PDF) are
-    rejected before this runs and consume nothing. Disabled entirely
-    when VERIFY_RATE_LIMIT_ENABLED is off (the Playwright suite only).
+    Returns "minute" or "hour" naming the window that tripped, so the
+    429 message can say which limit was hit. Each attempt that reaches
+    the checks consumes one slot in both windows; malformed uploads
+    (missing / oversized / non-PDF) are rejected before this runs and
+    consume nothing. Disabled entirely when VERIFY_RATE_LIMIT_ENABLED
+    is off (the Playwright suite only).
     """
     if not getattr(settings, "VERIFY_RATE_LIMIT_ENABLED", True):
-        return False
-    for key, limit, timeout in (
-        (f"verify:rl:{ip}:minute", RATE_LIMIT_MINUTE, 60),
-        (f"verify:rl:{ip}:hour", RATE_LIMIT_HOUR, 3600),
+        return None
+    for key, limit, timeout, window in (
+        (f"verify:rl:{ip}:minute", RATE_LIMIT_MINUTE, 60, "minute"),
+        (f"verify:rl:{ip}:hour", RATE_LIMIT_HOUR, 3600, "hour"),
     ):
         try:
             count = cache.incr(key)
@@ -96,8 +98,8 @@ def _rate_limited(ip: str) -> bool:
             cache.set(key, 1, timeout=timeout)
             count = 1
         if count > limit:
-            return True
-    return False
+            return window
+    return None
 
 
 def _extract_certificate(pdf_bytes: bytes) -> list[dict] | None:
@@ -187,9 +189,15 @@ def verify_document(request):
     if head != PDF_MAGIC:
         return _error("file must be a PDF")
 
-    if _rate_limited(_client_ip(request)):
+    limited_window = _rate_limited(_client_ip(request))
+    if limited_window == "minute":
         return _error(
-            "too many verification attempts — try again later",
+            "You can only validate one document per minute.",
+            code=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+    if limited_window == "hour":
+        return _error(
+            "You can only validate 7 documents per hour — try again later.",
             code=status.HTTP_429_TOO_MANY_REQUESTS,
         )
 

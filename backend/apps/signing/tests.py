@@ -12,12 +12,14 @@ from datetime import datetime, timedelta
 import pymupdf
 import pytest
 from PIL import Image
+from django.core.cache import cache
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
 from rest_framework.test import APIClient
 
 from .hashing import GENESIS_HASH, verify_chain
 from .trust import assess_photo, normalize_photo
+from .verify import RATE_LIMIT_HOUR
 from .models import AuditEvent, Document, SigningSession
 
 # 1x1 transparent PNG — stands in for a drawn signature / camera photo.
@@ -2652,14 +2654,36 @@ def test_verify_rate_limit_enforced():
     assert first.status_code == 200
     assert first.json()["valid"] is True
 
-    # Second attempt inside the minute from the same IP: 429.
+    # Second attempt inside the minute from the same IP: 429, naming
+    # the per-minute window.
     second = _verify(client, signed, ip="10.1.0.12")
     assert second.status_code == 429
+    assert second.json() == {
+        "error": "You can only validate one document per minute."
+    }
 
     # A different IP is unaffected.
     third = _verify(client, signed, ip="10.1.0.13")
     assert third.status_code == 200
     assert third.json()["valid"] is True
+
+
+@pytest.mark.django_db
+def test_verify_rate_limit_hour_message():
+    client = APIClient()
+    doc_id, _token, _response = _seal_document(client)
+    signed = _sealed_pdf_bytes(doc_id)
+
+    # This IP already used up its hour window; the minute window is
+    # still fresh, so the hourly message is the one that reports.
+    # (The IP must not be shared with any other verify test: the
+    # seeded hour key persists in the cache for the whole run.)
+    cache.set("verify:rl:10.1.0.16:hour", RATE_LIMIT_HOUR, timeout=3600)
+    response = _verify(client, signed, ip="10.1.0.16")
+    assert response.status_code == 429
+    assert response.json() == {
+        "error": "You can only validate 7 documents per hour — try again later."
+    }
 
 
 @pytest.mark.django_db

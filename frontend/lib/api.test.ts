@@ -875,7 +875,7 @@ describe("verifyDocument", () => {
   it("throws an ApiError on rate limiting", async () => {
     vi.mocked(fetch).mockResolvedValue(
       jsonResponse(
-        { error: "too many verification attempts — try again later" },
+        { error: "You can only validate one document per minute." },
         429,
       ),
     );
