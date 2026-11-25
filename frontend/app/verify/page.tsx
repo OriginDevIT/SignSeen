@@ -120,6 +120,15 @@ export default function VerifyPage() {
         that it is the only or original copy.
       </p>
       <p style={{ margin: 0, lineHeight: 1.6, opacity: 0.75 }}>
+        Sealed means locked: once every signer has signed, SignSeen seals
+        the document and records a seal that proves the file is exactly
+        what was signed. A Valid result means the file matches the sealed
+        original. An Invalid result means it does not match - it may have
+        been changed after signing, or it was never sealed by SignSeen.
+        If a document comes back Invalid, ask the sender for a fresh copy
+        of the sealed file.
+      </p>
+      <p style={{ margin: 0, lineHeight: 1.6, opacity: 0.75 }}>
         To keep the check free for everyone, each address can validate
         one document per minute and up to 20 documents per hour.
       </p>

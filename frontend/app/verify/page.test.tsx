@@ -29,6 +29,14 @@ describe("VerifyPage", () => {
     expect(html).toContain("up to 20 documents per hour");
   });
 
+  it("explains what sealed means, what Valid and Invalid mean, and what to do if Invalid", () => {
+    const html = renderToString(<VerifyPage />);
+    expect(html).toContain("Sealed means locked");
+    expect(html).toContain("A Valid result means the file matches the sealed original.");
+    expect(html).toContain("An Invalid result means it does not match");
+    expect(html).toContain("ask the sender for a fresh copy of the sealed file.");
+  });
+
   it("renders the site navigation: brand home, Send, Log in (no separate Home link)", () => {
     const html = renderToString(<VerifyPage />);
     // Brand link home (the wordmark is the Home link), plus the shared navigation links.
