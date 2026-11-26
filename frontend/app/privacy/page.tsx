@@ -24,8 +24,12 @@ export default function PrivacyPage() {
       <ul>
         <li>
           <strong>Account information:</strong> your email address and a
-          hashed password. Free-tier senders who never create an account
-          give us only an email address per document.
+          hashed password, and an optional name you can add or change
+          on your profile page. You can also create an account with
+          Google sign-in, in which case Google provides your verified
+          email address and, for a new account, your name. Free-tier
+          senders who never create an account give us only an email
+          address per document.
         </li>
         <li>
           <strong>Documents:</strong> the files you upload, the fields you
