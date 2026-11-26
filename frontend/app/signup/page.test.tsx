@@ -127,6 +127,15 @@ describe("SignupPage plan choice (#173)", () => {
     expect(navigatedTo).toBe("https://checkout.stripe.test/session-1");
   });
 
+  it("frames the free plan as no monthly limit, one pending at a time (#205)", () => {
+    render(<SignupPage />);
+    expect(
+      screen.getByRole("radio", {
+        name: /Free - no monthly limit, one document pending at a time/,
+      }),
+    ).toBeTruthy();
+  });
+
   it("a failed checkout keeps the free account and shows the error", async () => {
     vi.mocked(startCheckout).mockRejectedValue(new Error("Checkout failed"));
     render(<SignupPage />);

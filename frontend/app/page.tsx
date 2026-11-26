@@ -100,9 +100,32 @@ export default function Home() {
         >
           Open-source electronic signature with a photographic witness.
           Send a document, your signer scans a QR code and signs on their
-          phone in about 30 seconds - and every signature carries a
+          phone in moments - and every signature carries a
           tamper-evident audit trail. No accounts for signers, no
           per-envelope fees, no certificates to install.
+        </p>
+        <p
+          style={{
+            maxWidth: "38rem",
+            margin: "1rem auto 0",
+            lineHeight: 1.65,
+            fontSize: "1.05rem",
+            fontWeight: 600,
+          }}
+        >
+          Free to send your first document. Premium is $5/month or
+          $50/year.
+        </p>
+        <p
+          style={{
+            maxWidth: "38rem",
+            margin: "0.5rem auto 0",
+            lineHeight: 1.65,
+            opacity: 0.7,
+            fontSize: "0.95rem",
+          }}
+        >
+          Signatures are legally binding under the ESIGN Act and UETA.
         </p>
         <div
           style={{
@@ -209,10 +232,11 @@ export default function Home() {
           <div style={card}>
             <p style={cardTitle}>Free - $0</p>
             <p style={cardText}>
-              1 document pending at a time · up to 2 signers per document
-              (parallel only - add yourself as the second signer) · 100 MB
-              storage · documents pending up to 30 days · attribution mark
-              on signed PDFs. No account needed to send your first document.
+              No monthly limit - 1 document pending at a time · up to 2
+              signers per document (parallel only - add yourself as the
+              second signer) · 100 MB storage · documents pending up to 30
+              days · attribution mark on signed PDFs. No account needed to
+              send a document.
             </p>
           </div>
           <div style={card}>
@@ -263,12 +287,16 @@ export default function Home() {
           for a photo at all.
         </Faq>
         <Faq q="How long do you keep my documents?">
-          On the free tier, pending documents are deleted after 30 days.
-          Premium documents are kept while the account is in good
-          standing; if an account’s payment fails, documents survive a
-          180-day suspension window and a further 180 days after expiry
-          before they are removed. You can download or delete your
-          documents at any time.
+          On the free tier, pending documents are marked expired and no
+          longer signable after 30 days - they are not deleted, and a
+          pending document counts against your one-document limit and
+          your storage until you delete it or send it. Drafts are
+          deleted after 30 days (3 drafts on the free tier, 10 on
+          Premium). Premium documents are kept while the account is in
+          good standing; if an account’s payment fails, documents
+          survive a 180-day suspension window and a further 180 days
+          after expiry before they are removed. You can download or
+          delete your documents at any time.
         </Faq>
         <Faq q="Can I verify a signed document later?">
           Yes. Every sealed PDF carries its completion certificate, and

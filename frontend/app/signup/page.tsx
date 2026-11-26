@@ -135,7 +135,8 @@ export default function SignupPage() {
               checked={plan === "free"}
               onChange={() => setPlan("free")}
             />
-            Free - one document pending at a time, 100 MB storage
+            Free - no monthly limit, one document pending at a time, 100 MB
+            storage
           </label>
           <label style={{ display: "flex", gap: "0.5rem", cursor: "pointer" }}>
             <input
