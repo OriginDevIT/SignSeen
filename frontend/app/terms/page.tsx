@@ -22,7 +22,36 @@ export default function TermsPage() {
         to these Terms.
       </p>
 
-      <h2>1. What SignSeen is - and is not</h2>
+      <h2>In short</h2>
+      <p>
+        SignSeen is an electronic signature service: you send a document,
+        your signer signs it on their device (with an optional
+        photographic witness), and we assemble a signed PDF with a
+        tamper-evident audit record. Anyone can check a sealed document
+        on the public verify page. The free tier covers one document
+        pending signature at a time with up to two signers; Premium
+        ($5/month or $50/year) adds storage, more signers, and the other
+        features listed in Section 4. These Terms are governed by the
+        laws of the State of Illinois.
+      </p>
+
+      <nav aria-label="Contents">
+        <ul>
+          <li><a href="#section-1">1. What SignSeen is - and is not</a></li>
+          <li><a href="#section-2">2. Accounts and eligibility</a></li>
+          <li><a href="#section-3">3. Acceptable use</a></li>
+          <li><a href="#section-4">4. Plans, billing, and the account lifecycle</a></li>
+          <li><a href="#section-5">5. Your documents and content</a></li>
+          <li><a href="#section-6">6. Disclaimers</a></li>
+          <li><a href="#section-7">7. Limitation of liability and release</a></li>
+          <li><a href="#section-8">8. Indemnification</a></li>
+          <li><a href="#section-9">9. Termination</a></li>
+          <li><a href="#section-10">10. General</a></li>
+          <li><a href="#section-11">11. Contact</a></li>
+        </ul>
+      </nav>
+
+      <h2 id="section-1">1. What SignSeen is - and is not</h2>
       <p>
         SignSeen provides “simple” electronic signatures: a signer draws
         their signature on a device, optionally provides a photographic
@@ -42,14 +71,14 @@ export default function TermsPage() {
         confirmed an electronic signature is appropriate for it.
       </p>
 
-      <h2>2. Accounts and eligibility</h2>
+      <h2 id="section-2">2. Accounts and eligibility</h2>
       <ul>
         <li>You must be at least 18 years old and able to form a binding contract.</li>
         <li>Senders may use the free tier with an email address; stored-document features require an account. You are responsible for activity under your account and for keeping your credentials secure.</li>
         <li>Signers do not need an account. If you send a document, you represent that you have the right to share the document and the signer’s contact details with us for the purpose of the signing, and that the signer has consented to sign electronically and, where the document requests it, to provide a witness photo.</li>
       </ul>
 
-      <h2>3. Acceptable use</h2>
+      <h2 id="section-3">3. Acceptable use</h2>
       <p>You agree not to use SignSeen to:</p>
       <ul>
         <li>forge, impersonate, or obtain a signature without the signer’s knowledge and consent;</li>
@@ -63,7 +92,7 @@ export default function TermsPage() {
         reasonably suspected.
       </p>
 
-      <h2>4. Plans, billing, and the account lifecycle</h2>
+      <h2 id="section-4">4. Plans, billing, and the account lifecycle</h2>
       <ul>
         <li>
           <strong>Free tier:</strong> one document pending signature at a
@@ -111,7 +140,7 @@ export default function TermsPage() {
         </li>
       </ul>
 
-      <h2>5. Your documents and content</h2>
+      <h2 id="section-5">5. Your documents and content</h2>
       <p>
         You keep all rights to the documents, signatures, photos, and
         other content you or your signers submit (“Your Content”). You
@@ -122,7 +151,7 @@ export default function TermsPage() {
         Content and do not use it for advertising or for training models.
       </p>
 
-      <h2>6. Disclaimers</h2>
+      <h2 id="section-6">6. Disclaimers</h2>
       <p>
         THE SERVICE IS PROVIDED “AS IS” AND “AS AVAILABLE”, WITHOUT
         WARRANTIES OF ANY KIND, EXPRESS, IMPLIED, OR STATUTORY, INCLUDING
@@ -137,7 +166,7 @@ export default function TermsPage() {
         documents.
       </p>
 
-      <h2>7. Limitation of liability and release</h2>
+      <h2 id="section-7">7. Limitation of liability and release</h2>
       <p>
         TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT
         WILL ODIT, ITS OWNERS, OFFICERS, EMPLOYEES, CONTRACTORS, OR
@@ -167,7 +196,7 @@ export default function TermsPage() {
         the court permits, and the remaining parts stay in effect.
       </p>
 
-      <h2>8. Indemnification</h2>
+      <h2 id="section-8">8. Indemnification</h2>
       <p>
         You agree to indemnify and hold harmless ODIT and the persons
         listed in Section 7 from claims, damages, and expenses (including
@@ -176,7 +205,7 @@ export default function TermsPage() {
         of these Terms or of any law or third-party right.
       </p>
 
-      <h2>9. Termination</h2>
+      <h2 id="section-9">9. Termination</h2>
       <p>
         You may stop using the service and close your account at any
         time. We may suspend or terminate access as described in Section
@@ -185,7 +214,7 @@ export default function TermsPage() {
         in the Privacy Policy.
       </p>
 
-      <h2>10. General</h2>
+      <h2 id="section-10">10. General</h2>
       <ul>
         <li>
           <strong>Governing law:</strong> these Terms are governed by the
@@ -214,7 +243,7 @@ export default function TermsPage() {
         </li>
       </ul>
 
-      <h2>11. Contact</h2>
+      <h2 id="section-11">11. Contact</h2>
       <p>
         Origin Development &amp; IT - support@getsignseen.com.
       </p>
