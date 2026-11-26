@@ -311,6 +311,20 @@ def create_document(request):
     except ConversionError as exc:
         return _error(str(exc))
 
+    # An already-sealed file can never seal verifiably again (#222):
+    # a second seal appends a second certificate, and the file then
+    # carries two document IDs. Reject it at upload with a clear
+    # error instead of letting the sender build an unverifiable
+    # document. The check reads only the last certificate pages.
+    # (Lazy import: verify imports _utc_timestamp from this module.)
+    from .verify import _extract_certificate
+
+    if _extract_certificate(pdf_bytes) is not None:
+        return _error(
+            "file already contains a SignSeen signature certificate - "
+            "upload the original unsigned document instead"
+        )
+
     account = request.user if request.user.is_authenticated else None
     signers, err = _parse_signer_list(request.data, sender_email, account)
     if err is not None:
@@ -1313,13 +1327,17 @@ def submit_signature(request, token):
                 raise RuntimeError("sealed event hash changed before record")
             # The sealed file's hash can only be known now that the
             # file exists; it is chained right after the seal so the
-            # trail still covers the sealed file.
+            # trail still covers the sealed file. The original page
+            # count is recorded with it: verification scopes
+            # certificate extraction to the pages appended after the
+            # original (#222).
             record_event(
                 session,
                 "sealed_file.recorded",
                 {
                     "document_id": str(doc.id),
                     "signed_sha256": _sha256(signed_bytes),
+                    "original_page_count": _page_count(doc),
                 },
             )
 

@@ -7,19 +7,21 @@ import http.server
 import io
 import json
 import threading
+import time
 from datetime import datetime, timedelta
 
 import pymupdf
 import pytest
 from PIL import Image
 from django.core.cache import cache
+from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
 from rest_framework.test import APIClient
 
 from .hashing import GENESIS_HASH, verify_chain
 from .trust import assess_photo, normalize_photo
-from .verify import RATE_LIMIT_HOUR
+from .verify import RATE_LIMIT_HOUR, _extract_certificate
 from .models import AuditEvent, Document, SigningSession
 
 # 1x1 transparent PNG - stands in for a drawn signature / camera photo.
@@ -2474,13 +2476,17 @@ def test_drawn_box_stamping_fits_inside():
 # ---------------------------------------------------------------------------
 
 
-def _verify(client, pdf_bytes, ip="10.1.0.1", name="signed.pdf"):
+def _verify(client, pdf_bytes, ip="10.1.0.1", name="signed.pdf", **meta):
     """POST a PDF to /api/verify/ from one client IP."""
     uploaded = SimpleUploadedFile(
         name, pdf_bytes, content_type="application/pdf"
     )
     return client.post(
-        "/api/verify/", {"file": uploaded}, format="multipart", REMOTE_ADDR=ip
+        "/api/verify/",
+        {"file": uploaded},
+        format="multipart",
+        REMOTE_ADDR=ip,
+        **meta,
     )
 
 
@@ -2682,8 +2688,78 @@ def test_verify_rate_limit_hour_message():
     response = _verify(client, signed, ip="10.1.0.16")
     assert response.status_code == 429
     assert response.json() == {
-        "error": "You can only validate 7 documents per hour - try again later."
+        "error": "You can only validate 20 documents per hour - try again later."
     }
+
+
+@pytest.mark.django_db
+def test_verify_rate_limit_ignores_spoofed_x_forwarded_for():
+    client = APIClient()
+    doc_id, _token, _response = _seal_document(client)
+    signed = _sealed_pdf_bytes(doc_id)
+
+    first = _verify(
+        client, signed, ip="10.1.0.21", HTTP_X_FORWARDED_FOR="10.201.0.99"
+    )
+    assert first.status_code == 200
+
+    # The same peer IP with a different spoofed X-Forwarded-For is
+    # the same bucket: a forged first entry no longer buys a fresh
+    # allowance.
+    second = _verify(
+        client, signed, ip="10.1.0.21", HTTP_X_FORWARDED_FOR="10.202.0.77"
+    )
+    assert second.status_code == 429
+    assert second.json() == {
+        "error": "You can only validate one document per minute."
+    }
+
+
+@pytest.mark.django_db
+def test_verify_rate_limit_uses_cf_connecting_ip():
+    client = APIClient()
+    doc_id, _token, _response = _seal_document(client)
+    signed = _sealed_pdf_bytes(doc_id)
+
+    # Cloudflare's header names the real client: the same header
+    # value is the same bucket, and a different one is unaffected.
+    first = _verify(
+        client, signed, ip="10.1.0.22", HTTP_CF_CONNECTING_IP="203.0.113.5"
+    )
+    assert first.status_code == 200
+    second = _verify(
+        client, signed, ip="10.1.0.22", HTTP_CF_CONNECTING_IP="203.0.113.5"
+    )
+    assert second.status_code == 429
+    third = _verify(
+        client, signed, ip="10.1.0.22", HTTP_CF_CONNECTING_IP="203.0.113.9"
+    )
+    assert third.status_code == 200
+
+
+@pytest.mark.django_db
+def test_verify_rate_limit_key_is_capped():
+    client = APIClient()
+    doc_id, _token, _response = _seal_document(client)
+    signed = _sealed_pdf_bytes(doc_id)
+
+    # An unbounded header must not make an unbounded cache key: two
+    # overlong values sharing the first 45 characters land in the
+    # same bucket.
+    first = _verify(
+        client,
+        signed,
+        ip="10.1.0.23",
+        HTTP_CF_CONNECTING_IP="203.0.113." + "1" * 100,
+    )
+    assert first.status_code == 200
+    second = _verify(
+        client,
+        signed,
+        ip="10.1.0.23",
+        HTTP_CF_CONNECTING_IP="203.0.113." + "1" * 99 + "2",
+    )
+    assert second.status_code == 429
 
 
 @pytest.mark.django_db
@@ -2707,6 +2783,262 @@ def test_verify_broken_chain_is_invalid():
     sealed.save(update_fields=["payload"])
     body = _verify(client, _sealed_pdf_bytes(doc_id), ip="10.1.0.15").json()
     assert body == {"valid": False, "reason": "chain_broken"}
+
+
+def _seal_two_signer_document(client):
+    """Upload, send, and sign a two-signer document; return doc_id.
+
+    Anonymous sends are parallel, so both sessions are usable at
+    once; the second signature seals the document, on the second
+    signer's chain.
+    """
+    # Free tier: a second signer must be the sender themselves.
+    sent = upload_document(
+        client,
+        signers=[
+            {"name": "Jane", "email": "jane@example.com"},
+            {"name": "", "email": "sender@example.com"},
+        ],
+    ).json()
+    doc_id = sent["document"]["id"]
+    for session in sent["sessions"]:
+        response = client.post(
+            f"/api/sessions/{session['token']}/sign/",
+            {"signature": SIG_DATA_URL, "device_info": {}},
+            format="json",
+        )
+        assert response.status_code == 200
+    return doc_id
+
+
+@pytest.mark.django_db
+def test_verify_multi_signer_document_is_valid():
+    client = APIClient()
+    doc_id = _seal_two_signer_document(client)
+    body = _verify(client, _sealed_pdf_bytes(doc_id), ip="10.1.0.24").json()
+    assert body["valid"] is True
+    assert body["signer_count"] == 2
+
+
+@pytest.mark.django_db
+def test_verify_broken_chain_in_earlier_signer_is_invalid():
+    client = APIClient()
+    doc_id = _seal_two_signer_document(client)
+    # Tamper with a chain that is NOT the sealing session's: the
+    # seal lives on the last signer's chain, so only checking that
+    # one (#225's gap) would still call this document valid.
+    sealed_session = SigningSession.objects.get(
+        document_id=doc_id, events__event_type="document.sealed"
+    )
+    earlier = (
+        SigningSession.objects.filter(document_id=doc_id)
+        .exclude(pk=sealed_session.pk)
+        .first()
+    )
+    submitted = earlier.events.get(event_type="signature.submitted")
+    submitted.payload = {"signature_file": "tampered"}
+    submitted.save(update_fields=["payload"])
+    body = _verify(client, _sealed_pdf_bytes(doc_id), ip="10.1.0.25").json()
+    assert body == {"valid": False, "reason": "chain_broken"}
+
+
+# ---------------------------------------------------------------------------
+# Certificate-page scoping (#222)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.django_db
+def test_verify_records_original_page_count():
+    client = APIClient()
+    doc_id, _token, _response = _seal_document(client)
+    session = SigningSession.objects.get(document_id=doc_id)
+    recorded = session.events.get(event_type="sealed_file.recorded")
+    # make_pdf_bytes() is a one-page original; the certificate page
+    # is appended after it.
+    assert recorded.payload["original_page_count"] == 1
+
+
+@pytest.mark.django_db
+def test_upload_rejects_already_sealed_pdf():
+    client = APIClient()
+    doc_id, _token, _response = _seal_document(client)
+    uploaded = SimpleUploadedFile(
+        "sealed.pdf", _sealed_pdf_bytes(doc_id), content_type="application/pdf"
+    )
+    response = client.post(
+        "/api/documents/",
+        {
+            "title": "Countersign",
+            "sender_email": "sender@example.com",
+            "file": uploaded,
+            "signers": json.dumps([{"name": "", "email": "bob@example.com"}]),
+            "photo_required": "false",
+        },
+        format="multipart",
+    )
+    assert response.status_code == 400
+    assert "certificate" in response.json()["error"]
+
+
+@pytest.mark.django_db
+def test_verify_resealed_pdf_is_valid():
+    """A sealed PDF sealed again (#222): the second seal appends a
+    second certificate, and verification must read only the appended
+    pages, so the re-sealed file verifies against the second seal.
+    The upload path rejects sealed files, so this reaches the seal by
+    replacing the draft's original on disk - the situation of a file
+    sealed before that rejection existed."""
+    client = APIClient()
+    doc_id_a, _token, _response = _seal_document(client)
+    sealed_a = _sealed_pdf_bytes(doc_id_a)
+
+    draft = upload_draft(client, title="Countersign")
+    assert draft.status_code == 201
+    doc_b = Document.objects.get(pk=draft.json()["id"])
+    doc_b.original_file.save(f"document-{doc_b.id}.pdf", ContentFile(sealed_a))
+    sent = client.post(
+        f"/api/documents/{doc_b.id}/send/",
+        {},
+        format="json",
+        HTTP_X_DRAFT_TOKEN=draft.json()["draft_token"],
+    )
+    assert sent.status_code == 201
+    token_b = sent.json()["sessions"][0]["token"]
+    signed = client.post(
+        f"/api/sessions/{token_b}/sign/",
+        {"signature": SIG_DATA_URL, "device_info": {}},
+        format="json",
+    )
+    assert signed.status_code == 200
+
+    body = _verify(client, _sealed_pdf_bytes(doc_b.id), ip="10.2.0.1").json()
+    assert body["valid"] is True
+    assert body["signer_count"] == 1
+
+
+@pytest.mark.django_db
+def test_verify_seal_without_recorded_page_count_is_valid():
+    """A seal recorded before the page count was stored (#222): the
+    recorded event carries no original_page_count, so verification
+    falls back to the last certificate pages and still verifies.
+    The event hash is recomputed for the stripped payload - the
+    chain covers the payload, so a bare edit would read as a broken
+    chain instead of an old seal."""
+    from .hashing import chain_hash
+
+    client = APIClient()
+    doc_id, _token, _response = _seal_document(client)
+    session = SigningSession.objects.get(document_id=doc_id)
+    recorded = session.events.get(event_type="sealed_file.recorded")
+    payload = dict(recorded.payload)
+    del payload["original_page_count"]
+    recorded.payload = payload
+    recorded.hash = chain_hash(
+        recorded.prev_hash,
+        recorded.event_type,
+        payload,
+        recorded.created_at.isoformat(),
+    )
+    recorded.save(update_fields=["payload", "hash"])
+    body = _verify(client, _sealed_pdf_bytes(doc_id), ip="10.2.0.2").json()
+    assert body["valid"] is True
+    assert body["signer_count"] == 1
+
+
+def _huge_pdf_with_certificate(pages=20000) -> bytes:
+    """A many-page PDF with a certificate page appended at the end."""
+    doc = pymupdf.open()
+    for _ in range(pages):
+        doc.new_page()
+    cert = pymupdf.open(
+        stream=_forged_certificate_pdf(
+            "33333333-3333-3333-3333-333333333333",
+            "44444444-4444-4444-4444-444444444444",
+            "b" * 64,
+        )
+    )
+    doc.insert_pdf(cert)
+    return doc.tobytes()
+
+
+def test_extract_certificate_bounded_on_huge_pdf():
+    """Extraction reads only the certificate pages (#222): on a
+    20,000-page PDF it calls get_text at most MAX_CERTIFICATE_PAGES
+    times, where the old whole-document scan read every page (over
+    10 seconds in the audit). The wall-clock bound is a second,
+    looser check."""
+    from unittest import mock
+
+    pdf_bytes = _huge_pdf_with_certificate()
+    calls = []
+    original_get_text = pymupdf.Page.get_text
+
+    def counting(self, *args, **kwargs):
+        calls.append(1)
+        return original_get_text(self, *args, **kwargs)
+
+    start = time.monotonic()
+    with mock.patch.object(pymupdf.Page, "get_text", counting):
+        sections = _extract_certificate(pdf_bytes)
+    elapsed = time.monotonic() - start
+    assert sections is not None
+    assert len(sections) == 1
+    assert sections[0]["document_id"] == "33333333-3333-3333-3333-333333333333"
+    # At most 6 pages are read: one per four signers, plus a footer
+    # spill (see MAX_CERTIFICATE_PAGES in verify.py).
+    assert len(calls) <= 6
+    assert elapsed < 2.0
+
+
+@pytest.mark.django_db
+def test_verify_huge_pdf_is_fast():
+    """End to end (#222): a sealed 20,000-page document verifies in
+    well under a second, because extraction reads only the pages
+    after the recorded original page count."""
+    client = APIClient()
+    # Plain blank pages only: a certificate page in the original
+    # would trip the sealed-upload rejection.
+    doc = pymupdf.open()
+    for _ in range(20000):
+        doc.new_page()
+    uploaded = SimpleUploadedFile(
+        "huge.pdf", doc.tobytes(), content_type="application/pdf"
+    )
+    # Upload, send, and sign it so the seal appends a real
+    # certificate after 20,000 pages.
+    draft = client.post(
+        "/api/documents/",
+        {
+            "title": "Huge",
+            "sender_email": "sender@example.com",
+            "file": uploaded,
+            "signers": json.dumps([{"name": "", "email": "jane@example.com"}]),
+            "photo_required": "false",
+        },
+        format="multipart",
+    )
+    assert draft.status_code == 201
+    doc_id = draft.json()["id"]
+    sent = client.post(
+        f"/api/documents/{doc_id}/send/",
+        {},
+        format="json",
+        HTTP_X_DRAFT_TOKEN=draft.json()["draft_token"],
+    )
+    assert sent.status_code == 201
+    token = sent.json()["sessions"][0]["token"]
+    signed = client.post(
+        f"/api/sessions/{token}/sign/",
+        {"signature": SIG_DATA_URL, "device_info": {}},
+        format="json",
+    )
+    assert signed.status_code == 200
+
+    start = time.monotonic()
+    body = _verify(client, _sealed_pdf_bytes(doc_id), ip="10.2.0.3").json()
+    elapsed = time.monotonic() - start
+    assert body["valid"] is True
+    assert elapsed < 2.0
 
 
 @pytest.mark.django_db
