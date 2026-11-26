@@ -2785,6 +2785,63 @@ def test_verify_broken_chain_is_invalid():
     assert body == {"valid": False, "reason": "chain_broken"}
 
 
+def _seal_two_signer_document(client):
+    """Upload, send, and sign a two-signer document; return doc_id.
+
+    Anonymous sends are parallel, so both sessions are usable at
+    once; the second signature seals the document, on the second
+    signer's chain.
+    """
+    # Free tier: a second signer must be the sender themselves.
+    sent = upload_document(
+        client,
+        signers=[
+            {"name": "Jane", "email": "jane@example.com"},
+            {"name": "", "email": "sender@example.com"},
+        ],
+    ).json()
+    doc_id = sent["document"]["id"]
+    for session in sent["sessions"]:
+        response = client.post(
+            f"/api/sessions/{session['token']}/sign/",
+            {"signature": SIG_DATA_URL, "device_info": {}},
+            format="json",
+        )
+        assert response.status_code == 200
+    return doc_id
+
+
+@pytest.mark.django_db
+def test_verify_multi_signer_document_is_valid():
+    client = APIClient()
+    doc_id = _seal_two_signer_document(client)
+    body = _verify(client, _sealed_pdf_bytes(doc_id), ip="10.1.0.24").json()
+    assert body["valid"] is True
+    assert body["signer_count"] == 2
+
+
+@pytest.mark.django_db
+def test_verify_broken_chain_in_earlier_signer_is_invalid():
+    client = APIClient()
+    doc_id = _seal_two_signer_document(client)
+    # Tamper with a chain that is NOT the sealing session's: the
+    # seal lives on the last signer's chain, so only checking that
+    # one (#225's gap) would still call this document valid.
+    sealed_session = SigningSession.objects.get(
+        document_id=doc_id, events__event_type="document.sealed"
+    )
+    earlier = (
+        SigningSession.objects.filter(document_id=doc_id)
+        .exclude(pk=sealed_session.pk)
+        .first()
+    )
+    submitted = earlier.events.get(event_type="signature.submitted")
+    submitted.payload = {"signature_file": "tampered"}
+    submitted.save(update_fields=["payload"])
+    body = _verify(client, _sealed_pdf_bytes(doc_id), ip="10.1.0.25").json()
+    assert body == {"valid": False, "reason": "chain_broken"}
+
+
 # ---------------------------------------------------------------------------
 # Certificate-page scoping (#222)
 # ---------------------------------------------------------------------------

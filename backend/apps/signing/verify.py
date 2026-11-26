@@ -207,9 +207,9 @@ def verify_document(request):
     Checks, in order: (a) parseable PDF with a SignSeen certificate
     page; (b) the claimed document / sessions exist in the trail;
     (c) the claimed seal equals the stored document.sealed event
-    hash; (d) the audit chain recomputes clean; (e) the uploaded
-    bytes' SHA-256 equals the sealed_file.recorded hash - i.e. the
-    file is byte-identical to the sealed file.
+    hash; (d) every session's audit chain recomputes clean; (e) the
+    uploaded bytes' SHA-256 equals the sealed_file.recorded hash -
+    i.e. the file is byte-identical to the sealed file.
     """
     uploaded = request.FILES.get("file")
     if uploaded is None:
@@ -325,9 +325,12 @@ def verify_document(request):
     if claimed_seal != sealed.hash:
         return _invalid(REASON_SEAL_MISMATCH)
 
-    # (d) The audit chain recomputes clean.
-    if not verify_chain(sealed.session):
-        return _invalid(REASON_CHAIN_BROKEN)
+    # (d) Every audit chain for the document recomputes clean (#225).
+    # Only the sealing session's chain was checked before, so a
+    # tampered earlier signer's chain passed verification.
+    for session in doc.sessions.all():
+        if not verify_chain(session):
+            return _invalid(REASON_CHAIN_BROKEN)
 
     # (e) The uploaded bytes are byte-identical to the sealed file.
     if recorded is None or recorded.payload.get("signed_sha256") != file_sha256:
