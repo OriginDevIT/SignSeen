@@ -101,8 +101,10 @@ export default function Home() {
           Open-source electronic signature with a photographic witness.
           Send a document, your signer scans a QR code and signs on their
           phone in moments - and every signature carries a
-          tamper-evident audit trail. No accounts for signers, no
-          per-envelope fees, no certificates to install.
+          tamper-evident audit trail. Anyone can check a sealed document
+          afterwards on our public verify page, free, with no account -
+          no other major e-signature tool offers one. No accounts for
+          signers, no per-envelope fees, no certificates to install.
         </p>
         <p
           style={{

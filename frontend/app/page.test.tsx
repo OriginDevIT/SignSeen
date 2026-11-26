@@ -24,6 +24,21 @@ describe("Home", () => {
     expect(container.textContent).not.toContain("30 seconds");
   });
 
+  it("leads with the photo witness and the public verify page (#214)", () => {
+    const { container } = render(<Home />);
+    expect(container.textContent).toContain("photographic witness");
+    expect(container.textContent).toContain("public verify page");
+    expect(container.textContent).toContain(
+      "no other major e-signature tool offers one"
+    );
+    // The verify page is prominent: a hero call to action leads to it.
+    expect(
+      screen
+        .getByRole("link", { name: "Validate a signed document" })
+        .getAttribute("href")
+    ).toBe("/verify");
+  });
+
   it("leads with the price in the hero (#203)", () => {
     const { container } = render(<Home />);
     expect(container.textContent).toContain(
