@@ -114,8 +114,17 @@ export default function PrivacyPage() {
       <h2>5. How long we keep it</h2>
       <ul>
         <li>
-          <strong>Free tier:</strong> pending documents are deleted
-          automatically when their 30-day window lapses.
+          <strong>Free tier:</strong> pending documents are marked
+          expired and no longer signable when their 30-day window
+          lapses. They are not deleted - they stay in your account
+          until you delete them or the billing-lifecycle removal
+          applies. A pending document counts against your
+          one-document limit and your storage limit.
+        </li>
+        <li>
+          <strong>Drafts:</strong> drafts are limited to 3 on the free
+          tier and 10 on Premium, and a draft is deleted 30 days
+          after it is created.
         </li>
         <li>
           <strong>Accounts in good standing:</strong> documents and audit
