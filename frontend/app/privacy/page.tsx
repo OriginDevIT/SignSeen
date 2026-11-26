@@ -24,8 +24,12 @@ export default function PrivacyPage() {
       <ul>
         <li>
           <strong>Account information:</strong> your email address and a
-          hashed password. Free-tier senders who never create an account
-          give us only an email address per document.
+          hashed password, and an optional name you can add or change
+          on your profile page. You can also create an account with
+          Google sign-in, in which case Google provides your verified
+          email address and, for a new account, your name. Free-tier
+          senders who never create an account give us only an email
+          address per document.
         </li>
         <li>
           <strong>Documents:</strong> the files you upload, the fields you
@@ -84,7 +88,8 @@ export default function PrivacyPage() {
           <strong>The parties to a signing:</strong> the signed PDF and
           its audit record are delivered to the sender and (where an
           email was provided) the signer. Anyone with a document’s
-          tracking link can see that document’s status.
+          tracking link can see that document’s status, the names and
+          email addresses of its signers, and when each signer signed.
         </li>
         <li>
           <strong>Service providers:</strong> cloud hosting (Google Cloud
@@ -114,8 +119,17 @@ export default function PrivacyPage() {
       <h2>5. How long we keep it</h2>
       <ul>
         <li>
-          <strong>Free tier:</strong> pending documents are deleted
-          automatically when their 30-day window lapses.
+          <strong>Free tier:</strong> pending documents are marked
+          expired and no longer signable when their 30-day window
+          lapses. They are not deleted - they stay in your account
+          until you delete them or the billing-lifecycle removal
+          applies. A pending document counts against your
+          one-document limit and your storage limit.
+        </li>
+        <li>
+          <strong>Drafts:</strong> drafts are limited to 3 on the free
+          tier and 10 on Premium, and a draft is deleted 30 days
+          after it is created.
         </li>
         <li>
           <strong>Accounts in good standing:</strong> documents and audit

@@ -263,12 +263,16 @@ export default function Home() {
           for a photo at all.
         </Faq>
         <Faq q="How long do you keep my documents?">
-          On the free tier, pending documents are deleted after 30 days.
-          Premium documents are kept while the account is in good
-          standing; if an account’s payment fails, documents survive a
-          180-day suspension window and a further 180 days after expiry
-          before they are removed. You can download or delete your
-          documents at any time.
+          On the free tier, pending documents are marked expired and no
+          longer signable after 30 days - they are not deleted, and a
+          pending document counts against your one-document limit and
+          your storage until you delete it or send it. Drafts are
+          deleted after 30 days (3 drafts on the free tier, 10 on
+          Premium). Premium documents are kept while the account is in
+          good standing; if an account’s payment fails, documents
+          survive a 180-day suspension window and a further 180 days
+          after expiry before they are removed. You can download or
+          delete your documents at any time.
         </Faq>
         <Faq q="Can I verify a signed document later?">
           Yes. Every sealed PDF carries its completion certificate, and
