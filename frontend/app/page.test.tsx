@@ -30,4 +30,11 @@ describe("Home", () => {
       "Free to send your first document. Premium is $5/month or $50/year."
     );
   });
+
+  it("states the legality line near the hero (#204)", () => {
+    const { container } = render(<Home />);
+    expect(container.textContent).toContain(
+      "Signatures are legally binding under the ESIGN Act and UETA."
+    );
+  });
 });

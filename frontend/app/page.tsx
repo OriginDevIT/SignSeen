@@ -116,6 +116,17 @@ export default function Home() {
           Free to send your first document. Premium is $5/month or
           $50/year.
         </p>
+        <p
+          style={{
+            maxWidth: "38rem",
+            margin: "0.5rem auto 0",
+            lineHeight: 1.65,
+            opacity: 0.7,
+            fontSize: "0.95rem",
+          }}
+        >
+          Signatures are legally binding under the ESIGN Act and UETA.
+        </p>
         <div
           style={{
             display: "flex",
