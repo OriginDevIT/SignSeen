@@ -61,6 +61,12 @@ _UUID_RE = (
 )
 _SEAL_RE = r"[0-9a-fA-F]{64}"
 
+# Certificate pages are appended at seal time, after the original
+# pages: at most one page per four signers, plus one more when the
+# "Verify" footer spills onto its own page. Extraction never needs
+# to read more than this many pages, however long the document is.
+MAX_CERTIFICATE_PAGES = 6
+
 
 _MAX_IP_LEN = 45  # longest possible textual IP address (IPv6)
 
@@ -109,20 +115,44 @@ def _rate_limited(ip: str) -> str | None:
     return None
 
 
-def _extract_certificate(pdf_bytes: bytes) -> list[dict] | None:
+def _extract_certificate(
+    pdf_bytes: bytes, original_page_count: int | None = None
+) -> list[dict] | None:
     """Pull the certificate sections out of a sealed PDF.
 
+    Only the certificate pages are read: the pages after
+    `original_page_count` when the seal recorded it (certificate
+    pages are always appended last), otherwise the last
+    MAX_CERTIFICATE_PAGES pages - a seal from before the count was
+    recorded still has its certificate pages last, so the same bound
+    applies. A sealed file has at most that many certificate pages
+    (one per four signers, plus a footer spill), so extraction work
+    is bounded no matter how long the document is: the
+    whole-document scan this replaced took 10 seconds on a
+    20,000-page PDF (#222).
+
     Returns a list of {document_id, session_id, audit_seal} dicts -
-    one per signer section - or None when the file has no SignSeen
-    certificate page or no complete section. A section is complete
-    only when it carries all three values; the header check keeps a
-    random PDF that happens to contain matching labels from getting
-    further (the trail is still the authority either way).
+    one per signer section - or None when the scanned pages hold no
+    SignSeen certificate page or no complete section. A section is
+    complete only when it carries all three values; the header check
+    keeps a random PDF that happens to contain matching labels from
+    getting further (the trail is still the authority either way).
     """
     try:
         pdf = pymupdf.open(stream=pdf_bytes, filetype="pdf")
         try:
-            text = "".join(page.get_text() for page in pdf)
+            total = pdf.page_count
+            if (
+                isinstance(original_page_count, int)
+                and original_page_count >= 0
+            ):
+                start = original_page_count
+            else:
+                start = max(0, total - MAX_CERTIFICATE_PAGES)
+            end = min(total, start + MAX_CERTIFICATE_PAGES)
+            if start >= total:
+                return None
+            text = "".join(pdf[i].get_text() for i in range(start, end))
         finally:
             pdf.close()
     except Exception:
@@ -218,34 +248,26 @@ def verify_document(request):
 
     file_sha256 = hashlib.sha256(pdf_bytes).hexdigest()
 
-    # (a) Parseable PDF with a SignSeen certificate page.
+    # (a) Parseable PDF with a SignSeen certificate page. This first
+    # pass only identifies the claimed document: the most recent
+    # certificate in the file is the one appended last, so the last
+    # section names the claim - a file sealed twice carries two
+    # certificates, and only the second one is this file's seal
+    # (#222). The scoped pass below is the authoritative extraction
+    # once the trail is known.
     sections = _extract_certificate(pdf_bytes)
     if not sections:
         return _invalid(REASON_NOT_SIGNSEEN)
-    document_ids = {s["document_id"] for s in sections}
-    seals = {s["audit_seal"] for s in sections}
-    if len(document_ids) != 1:
-        return _invalid(REASON_NOT_SIGNSEEN)
-    document_id = sections[0]["document_id"]
-    if len(seals) != 1:
-        # The certificate disagrees with itself about the seal.
-        return _invalid(REASON_SEAL_MISMATCH)
-    claimed_seal = sections[0]["audit_seal"]
+    document_id = sections[-1]["document_id"]
+    claimed_seal = sections[-1]["audit_seal"]
 
-    # (b) The claimed document / sessions exist in the trail.
+    # (b) The claimed document exists in the trail.
     doc = Document.objects.filter(pk=document_id).first()
     if doc is None:
         return _invalid(REASON_NOT_SIGNSEEN)
-    sessions = {}
-    for section in sections:
-        session = SigningSession.objects.filter(
-            pk=section["session_id"], document_id=doc.id
-        ).first()
-        if session is None:
-            return _invalid(REASON_NOT_SIGNSEEN)
-        sessions[section["session_id"]] = session
 
-    # (c) The claimed seal equals the stored document.sealed hash.
+    # The claimed seal equals the stored document.sealed hash; the
+    # sealed event is also the anchor for the recorded file below.
     sealed = (
         AuditEvent.objects.filter(
             session__document=doc, event_type="document.sealed"
@@ -256,11 +278,13 @@ def verify_document(request):
     if sealed is None or claimed_seal != sealed.hash:
         return _invalid(REASON_SEAL_MISMATCH)
 
-    # (d) The audit chain recomputes clean.
-    if not verify_chain(sealed.session):
-        return _invalid(REASON_CHAIN_BROKEN)
-
-    # (e) The uploaded bytes are byte-identical to the sealed file.
+    # (a2) Scoped re-extraction (#222). The seal records how many
+    # pages the original had, and the certificate pages sit right
+    # after them - so a file sealed twice (an already-sealed PDF
+    # sealed again) is read as the second seal only, never as the
+    # two document IDs the whole file carries. When no count was
+    # recorded (a seal from before this was stored), the first pass
+    # stands: it already reads only the last certificate pages.
     recorded = (
         AuditEvent.objects.filter(
             session=sealed.session, event_type="sealed_file.recorded"
@@ -268,6 +292,44 @@ def verify_document(request):
         .order_by("created_at")
         .first()
     )
+    page_count = recorded.payload.get("original_page_count") if recorded else None
+    if isinstance(page_count, int) and page_count >= 0:
+        scoped = _extract_certificate(pdf_bytes, page_count)
+        if scoped is None:
+            # The trail says the certificate pages sit after page N,
+            # but nothing there parses as a certificate: pages were
+            # inserted or removed before them after sealing.
+            return _invalid(REASON_FILE_ALTERED)
+        scoped_ids = {s["document_id"] for s in scoped}
+        scoped_seals = {s["audit_seal"] for s in scoped}
+        if scoped_ids != {document_id}:
+            # The certificate at the recorded offset names a
+            # different document than the identification pass found.
+            return _invalid(REASON_FILE_ALTERED)
+        if len(scoped_seals) != 1:
+            return _invalid(REASON_SEAL_MISMATCH)
+        sections = scoped
+        claimed_seal = sections[0]["audit_seal"]
+
+    # (b2) The claimed sessions exist in the trail.
+    sessions = {}
+    for section in sections:
+        session = SigningSession.objects.filter(
+            pk=section["session_id"], document_id=doc.id
+        ).first()
+        if session is None:
+            return _invalid(REASON_NOT_SIGNSEEN)
+        sessions[section["session_id"]] = session
+
+    # (c) The scoped seal equals the stored document.sealed hash.
+    if claimed_seal != sealed.hash:
+        return _invalid(REASON_SEAL_MISMATCH)
+
+    # (d) The audit chain recomputes clean.
+    if not verify_chain(sealed.session):
+        return _invalid(REASON_CHAIN_BROKEN)
+
+    # (e) The uploaded bytes are byte-identical to the sealed file.
     if recorded is None or recorded.payload.get("signed_sha256") != file_sha256:
         # The trail carries no sealed-file hash (a seal recorded
         # before that event existed), or the bytes differ: either way
