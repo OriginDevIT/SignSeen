@@ -232,10 +232,11 @@ export default function Home() {
           <div style={card}>
             <p style={cardTitle}>Free - $0</p>
             <p style={cardText}>
-              1 document pending at a time · up to 2 signers per document
-              (parallel only - add yourself as the second signer) · 100 MB
-              storage · documents pending up to 30 days · attribution mark
-              on signed PDFs. No account needed to send your first document.
+              No monthly limit - 1 document pending at a time · up to 2
+              signers per document (parallel only - add yourself as the
+              second signer) · 100 MB storage · documents pending up to 30
+              days · attribution mark on signed PDFs. No account needed to
+              send a document.
             </p>
           </div>
           <div style={card}>

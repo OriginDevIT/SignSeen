@@ -37,4 +37,17 @@ describe("Home", () => {
       "Signatures are legally binding under the ESIGN Act and UETA."
     );
   });
+
+  it("frames the free tier as no monthly limit, one pending at a time (#205)", () => {
+    const { container } = render(<Home />);
+    expect(container.textContent).toContain(
+      "No monthly limit - 1 document pending at a time"
+    );
+    expect(container.textContent).toContain(
+      "No account needed to send a document."
+    );
+    // The free pricing card no longer implies a one-document cap.
+    const freeCard = screen.getByText("Free - $0").closest("div");
+    expect(freeCard?.textContent).not.toContain("first document");
+  });
 });
