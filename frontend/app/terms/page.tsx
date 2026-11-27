@@ -69,8 +69,17 @@ export default function TermsPage() {
           <strong>Free tier:</strong> one document pending signature at a
           time, one signer plus the sender (two signers in total,
           parallel only), a 100 MB total storage limit, a 30-day window
-          for pending documents (pending documents are deleted when the
-          window lapses), and an attribution mark on signed PDFs.
+          for pending documents (pending documents are marked expired
+          and no longer signable when the window lapses - they are not
+          deleted), and an attribution mark on signed PDFs.
+        </li>
+        <li>
+          <strong>Drafts:</strong> a document you start but do not send
+          is a draft. Drafts are limited to 3 on the free tier and 10
+          on Premium, and a draft is deleted 30 days after it is
+          created. A pending document counts against your account
+          limits - the one-pending-document limit on the free tier
+          and the storage limit of your plan.
         </li>
         <li>
           <strong>Premium:</strong> $5/month or $50/year, billed through
