@@ -23,4 +23,11 @@ describe("Home", () => {
     expect(container.textContent).toContain("signs on their phone in moments");
     expect(container.textContent).not.toContain("30 seconds");
   });
+
+  it("leads with the price in the hero (#203)", () => {
+    const { container } = render(<Home />);
+    expect(container.textContent).toContain(
+      "Free to send your first document. Premium is $5/month or $50/year."
+    );
+  });
 });
