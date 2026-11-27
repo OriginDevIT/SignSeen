@@ -907,7 +907,7 @@ export default function SignPage() {
           <h2 style={{ margin: 0 }}>
             {showFieldsSection
               ? "2. Sign the document - draw your signature"
-              : "1. Signed - draw your signature"}
+              : "Sign to seal the document"}
           </h2>
           {signatureUrl ? (
             <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>

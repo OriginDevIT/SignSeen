@@ -68,7 +68,7 @@ test("happy path: send -> sign with photo -> sealed, audit chain valid", async (
 
   await signer.getByRole("button", { name: "Start signing" }).click();
   await expect(signer.locator("canvas")).toBeVisible();
-  await expect(signer.getByText("1. Sign")).toBeVisible();
+  await expect(signer.getByText("Sign to seal the document")).toBeVisible();
   await drawSignature(signer);
   await shot(signer, "03-signature-drawn.png");
   await signer.getByRole("button", { name: /Looks good/ }).click();
