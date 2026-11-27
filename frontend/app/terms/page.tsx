@@ -67,10 +67,10 @@ export default function TermsPage() {
       <ul>
         <li>
           <strong>Free tier:</strong> one document pending signature at a
-          time, one signer per document, a 100 MB total storage limit, a
-          30-day window for pending documents (pending documents are
-          deleted when the window lapses), and an attribution mark on
-          signed PDFs.
+          time, one signer plus the sender (two signers in total,
+          parallel only), a 100 MB total storage limit, a 30-day window
+          for pending documents (pending documents are deleted when the
+          window lapses), and an attribution mark on signed PDFs.
         </li>
         <li>
           <strong>Premium:</strong> $5/month or $50/year, billed through
