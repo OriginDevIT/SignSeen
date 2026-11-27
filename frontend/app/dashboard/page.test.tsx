@@ -81,14 +81,21 @@ const EXPIRED = doc({
   status: "expired",
 });
 
-function loadDashboard(documents: ReturnType<typeof doc>[]) {
+function loadDashboard(
+  documents: ReturnType<typeof doc>[],
+  premium = false,
+) {
   vi.mocked(getAuthToken).mockReturnValue("token-1");
-  vi.mocked(myAccount).mockResolvedValue(FREE_ACCOUNT);
+  vi.mocked(myAccount).mockResolvedValue(
+    premium
+      ? { ...FREE_ACCOUNT, tier: "premium" as const, is_premium: true }
+      : FREE_ACCOUNT,
+  );
   vi.mocked(myDashboard).mockResolvedValue({
-    tier: "free",
-    is_premium: false,
+    tier: premium ? "premium" : "free",
+    is_premium: premium,
     storage_used_bytes: 0,
-    storage_limit_bytes: 100 * 1024 * 1024,
+    storage_limit_bytes: (premium ? 5 * 1024 : 100) * 1024 * 1024,
     documents,
     signed_documents: [],
   });
@@ -284,5 +291,25 @@ describe("DashboardPage site navigation (#164)", () => {
       expect(screen.getByRole("link", { name: "Dashboard" })).toBeTruthy()
     );
     expect(screen.queryByRole("link", { name: "Log in" })).toBeNull();
+  });
+});
+
+describe("DashboardPage signing alerts toggle (#186)", () => {
+  it("is disabled for free accounts, since alerts only send for premium", async () => {
+    loadDashboard([PENDING]);
+
+    const toggle = await screen.findByRole("checkbox", {
+      name: /Signing alerts/,
+    });
+    expect(toggle).toHaveProperty("disabled", true);
+  });
+
+  it("is enabled for premium accounts", async () => {
+    loadDashboard([PENDING], true);
+
+    const toggle = await screen.findByRole("checkbox", {
+      name: /Signing alerts/,
+    });
+    expect(toggle).toHaveProperty("disabled", false);
   });
 });

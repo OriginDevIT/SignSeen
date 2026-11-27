@@ -394,7 +394,7 @@ export default function DashboardPage() {
             <input
               type="checkbox"
               checked={account.alerts_enabled}
-              disabled={busyAlerts}
+              disabled={!dash.is_premium || busyAlerts}
               onChange={(e) => toggleAlerts(e.target.checked)}
               style={{ marginTop: "0.2rem" }}
             />
