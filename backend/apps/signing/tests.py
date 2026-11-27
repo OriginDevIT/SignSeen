@@ -2709,6 +2709,76 @@ def test_verify_broken_chain_is_invalid():
     assert body == {"valid": False, "reason": "chain_broken"}
 
 
+def _verify_stored(client, doc_id, ip):
+    return client.get(f"/api/documents/{doc_id}/verify/", REMOTE_ADDR=ip)
+
+
+@pytest.mark.django_db
+def test_document_verify_stored_sealed_pdf_is_valid():
+    # The document page's button (#212) runs the same checks against
+    # the sealed file on disk - no upload.
+    client = APIClient()
+    doc_id, _token, _response = _seal_document(client, signer_name="Jane")
+    body = _verify_stored(client, doc_id, ip="10.1.0.20").json()
+    assert body["valid"] is True
+    assert body["document_title"] == "Contract"
+    assert body["signed_at"].endswith("Z")
+    assert body["signer_count"] == 1
+    assert "signer_email" not in body
+
+
+@pytest.mark.django_db
+def test_document_verify_stored_tampered_file_is_invalid():
+    client = APIClient()
+    doc_id, _token, _response = _seal_document(client)
+    doc = Document.objects.get(pk=doc_id)
+    # The stored file itself is altered after sealing: the bytes no
+    # longer match the sealed_file.recorded hash. Read the bytes
+    # before opening the file for writing - opening with "wb"
+    # truncates it first.
+    sealed = _sealed_pdf_bytes(doc_id)
+    with open(doc.signed_file.path, "wb") as f:
+        f.write(sealed + b" ")
+    body = _verify_stored(client, doc_id, ip="10.1.0.21").json()
+    assert body == {"valid": False, "reason": "file_altered"}
+
+
+@pytest.mark.django_db
+def test_document_verify_stored_unsealed_document_is_rejected():
+    client = APIClient()
+    sent = upload_document(client).json()
+    doc_id = sent["document"]["id"]
+    response = _verify_stored(client, doc_id, ip="10.1.0.22")
+    assert response.status_code == 400
+    assert response.json() == {"error": "document is not sealed"}
+
+
+@pytest.mark.django_db
+def test_document_verify_stored_unknown_document_is_404():
+    client = APIClient()
+    response = _verify_stored(
+        client, "11111111-1111-1111-1111-111111111111", ip="10.1.0.23"
+    )
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_document_verify_stored_rate_limit_enforced():
+    client = APIClient()
+    doc_id, _token, _response = _seal_document(client)
+    first = _verify_stored(client, doc_id, ip="10.1.0.24")
+    assert first.status_code == 200
+    assert first.json()["valid"] is True
+
+    # Second attempt inside the minute from the same IP: 429, naming
+    # the per-minute window - the same guard as the upload endpoint.
+    second = _verify_stored(client, doc_id, ip="10.1.0.24")
+    assert second.status_code == 429
+    assert second.json() == {
+        "error": "You can only validate one document per minute."
+    }
+
+
 @pytest.mark.django_db
 def test_session_document_shows_completed_fields_in_progress():
     """The session-document PDF stamps earlier signers' completed

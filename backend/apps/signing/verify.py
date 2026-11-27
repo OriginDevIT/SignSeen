@@ -22,6 +22,7 @@ import re
 import pymupdf
 from django.conf import settings
 from django.core.cache import cache
+from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.decorators import (
     api_view,
@@ -152,10 +153,6 @@ def _extract_certificate(pdf_bytes: bytes) -> list[dict] | None:
     return complete or None
 
 
-def _invalid(reason: str) -> Response:
-    return Response({"valid": False, "reason": reason})
-
-
 def _error(message: str, code=status.HTTP_400_BAD_REQUEST) -> Response:
     return Response({"error": message}, status=code)
 
@@ -209,33 +206,49 @@ def verify_document(request):
         # this request from here on.
         uploaded.close()
 
+    return Response(_verify_pdf_bytes(pdf_bytes))
+
+
+def _verify_pdf_bytes(pdf_bytes: bytes) -> dict:
+    """Run the five checks against PDF bytes; return the verdict dict.
+
+    Shared by the upload endpoint and the stored-file endpoint: the
+    checks never look at where the bytes came from, only at the
+    bytes and the audit trail. Checks, in order: (a) parseable PDF
+    with a SignSeen certificate page; (b) the claimed document /
+    sessions exist in the trail; (c) the claimed seal equals the
+    stored document.sealed event hash; (d) the audit chain
+    recomputes clean; (e) the bytes' SHA-256 equals the
+    sealed_file.recorded hash - i.e. the file is byte-identical to
+    the sealed file.
+    """
     file_sha256 = hashlib.sha256(pdf_bytes).hexdigest()
 
     # (a) Parseable PDF with a SignSeen certificate page.
     sections = _extract_certificate(pdf_bytes)
     if not sections:
-        return _invalid(REASON_NOT_SIGNSEEN)
+        return {"valid": False, "reason": REASON_NOT_SIGNSEEN}
     document_ids = {s["document_id"] for s in sections}
     seals = {s["audit_seal"] for s in sections}
     if len(document_ids) != 1:
-        return _invalid(REASON_NOT_SIGNSEEN)
+        return {"valid": False, "reason": REASON_NOT_SIGNSEEN}
     document_id = sections[0]["document_id"]
     if len(seals) != 1:
         # The certificate disagrees with itself about the seal.
-        return _invalid(REASON_SEAL_MISMATCH)
+        return {"valid": False, "reason": REASON_SEAL_MISMATCH}
     claimed_seal = sections[0]["audit_seal"]
 
     # (b) The claimed document / sessions exist in the trail.
     doc = Document.objects.filter(pk=document_id).first()
     if doc is None:
-        return _invalid(REASON_NOT_SIGNSEEN)
+        return {"valid": False, "reason": REASON_NOT_SIGNSEEN}
     sessions = {}
     for section in sections:
         session = SigningSession.objects.filter(
             pk=section["session_id"], document_id=doc.id
         ).first()
         if session is None:
-            return _invalid(REASON_NOT_SIGNSEEN)
+            return {"valid": False, "reason": REASON_NOT_SIGNSEEN}
         sessions[section["session_id"]] = session
 
     # (c) The claimed seal equals the stored document.sealed hash.
@@ -247,13 +260,13 @@ def verify_document(request):
         .first()
     )
     if sealed is None or claimed_seal != sealed.hash:
-        return _invalid(REASON_SEAL_MISMATCH)
+        return {"valid": False, "reason": REASON_SEAL_MISMATCH}
 
     # (d) The audit chain recomputes clean.
     if not verify_chain(sealed.session):
-        return _invalid(REASON_CHAIN_BROKEN)
+        return {"valid": False, "reason": REASON_CHAIN_BROKEN}
 
-    # (e) The uploaded bytes are byte-identical to the sealed file.
+    # (e) The bytes are byte-identical to the sealed file.
     recorded = (
         AuditEvent.objects.filter(
             session=sealed.session, event_type="sealed_file.recorded"
@@ -265,13 +278,54 @@ def verify_document(request):
         # The trail carries no sealed-file hash (a seal recorded
         # before that event existed), or the bytes differ: either way
         # byte-identity cannot be established, so fail closed.
-        return _invalid(REASON_FILE_ALTERED)
+        return {"valid": False, "reason": REASON_FILE_ALTERED}
 
-    return Response(
-        {
-            "valid": True,
-            "document_title": doc.title,
-            "signed_at": _utc_timestamp(sealed.created_at),
-            "signer_count": len(sections),
-        }
-    )
+    return {
+        "valid": True,
+        "document_title": doc.title,
+        "signed_at": _utc_timestamp(sealed.created_at),
+        "signer_count": len(sections),
+    }
+
+
+@api_view(["GET"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def verify_stored_document(request, doc_id):
+    """Verify the stored sealed file for a document (public, no auth).
+
+    The same five checks as the upload endpoint, run against the
+    sealed file already on disk instead of an upload. Only a sealed
+    document has anything to check. The document UUID is already
+    the public tracking key, so this exposes nothing the tracking
+    page does not already show; the per-IP rate limits apply here
+    exactly as on the upload endpoint.
+    """
+    doc = get_object_or_404(Document, pk=doc_id)
+    if doc.status != Document.Status.SIGNED or not doc.signed_file:
+        return _error("document is not sealed")
+
+    limited_window = _rate_limited(_client_ip(request))
+    if limited_window == "minute":
+        return _error(
+            "You can only validate one document per minute.",
+            code=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+    if limited_window == "hour":
+        # The message names the cap, so it reads it from the
+        # constant rather than repeating the number.
+        return _error(
+            f"You can only validate {RATE_LIMIT_HOUR} documents per hour - try again later.",
+            code=status.HTTP_429_TOO_MANY_REQUESTS,
+        )
+
+    try:
+        pdf_bytes = doc.signed_file.read()
+    except OSError:
+        # The trail says the document was sealed but the file is
+        # gone from disk: fail with a server error, never a verdict.
+        return _error(
+            "sealed file is unavailable",
+            code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+    return Response(_verify_pdf_bytes(pdf_bytes))

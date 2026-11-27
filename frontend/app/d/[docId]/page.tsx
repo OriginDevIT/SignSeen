@@ -3,7 +3,14 @@
 import { use, useEffect, useState } from "react";
 import HomeHeader from "../../../components/HomeHeader";
 import SigningLinkPanel from "../../../components/SigningLinkPanel";
-import { getDocument, mediaUrl, type DocumentInfo } from "../../../lib/api";
+import {
+  getDocument,
+  mediaUrl,
+  VERIFY_REASON_TEXT,
+  verifyStoredDocument,
+  type DocumentInfo,
+  type VerifyVerdict,
+} from "../../../lib/api";
 
 const page: React.CSSProperties = {
   maxWidth: "40rem",
@@ -40,12 +47,30 @@ export default function TrackDocumentPage({
   const { docId } = use(params);
   const [doc, setDoc] = useState<DocumentInfo | null>(null);
   const [error, setError] = useState("");
+  const [verdict, setVerdict] = useState<VerifyVerdict | null>(null);
+  const [verifying, setVerifying] = useState(false);
+  const [verifyError, setVerifyError] = useState("");
 
   useEffect(() => {
     getDocument(docId)
       .then(setDoc)
       .catch((err) => setError(err instanceof Error ? err.message : "Not found"));
   }, [docId]);
+
+  async function handleVerify() {
+    setVerifyError("");
+    setVerdict(null);
+    setVerifying(true);
+    try {
+      setVerdict(await verifyStoredDocument(docId));
+    } catch (err) {
+      setVerifyError(
+        err instanceof Error ? err.message : "Verification failed"
+      );
+    } finally {
+      setVerifying(false);
+    }
+  }
 
   if (error) {
     return (
@@ -90,13 +115,85 @@ export default function TrackDocumentPage({
           <SigningLinkPanel signingUrl={doc.signing_url} />
         )}
         {doc.status === "signed" && signedUrl && (
-          <a
-            href={signedUrl}
-            download
-            style={{ ...button, marginTop: "1.25rem" }}
-          >
-            Download signed PDF
-          </a>
+          <>
+            <div
+              style={{
+                display: "flex",
+                gap: "0.75rem",
+                flexWrap: "wrap",
+                marginTop: "1.25rem",
+              }}
+            >
+              <a href={signedUrl} download style={button}>
+                Download signed PDF
+              </a>
+              <button
+                type="button"
+                onClick={handleVerify}
+                disabled={verifying}
+                style={{
+                  ...button,
+                  background: "#fff",
+                  color: "#1f2937",
+                  border: "1px solid #d1d5db",
+                }}
+              >
+                {verifying ? "Verifying…" : "Verify this document"}
+              </button>
+            </div>
+            {verdict && verdict.valid && (
+              <div
+                style={{
+                  marginTop: "1rem",
+                  border: "1px solid #16a34a",
+                  background: "#f0fdf4",
+                  borderRadius: "0.5rem",
+                  padding: "0.75rem 1rem",
+                }}
+              >
+                <div style={{ fontWeight: 600 }}>
+                  Valid - this is a genuine document sealed by SignSeen.
+                </div>
+                <div style={{ fontSize: "0.9rem", opacity: 0.8 }}>
+                  Signed{" "}
+                  {verdict.signed_at
+                    ? new Date(verdict.signed_at).toLocaleString()
+                    : ""}
+                  {verdict.signer_count
+                    ? ` · ${verdict.signer_count} signer${
+                        verdict.signer_count === 1 ? "" : "s"
+                      }`
+                    : ""}
+                </div>
+              </div>
+            )}
+            {verdict && !verdict.valid && (
+              <div
+                style={{
+                  marginTop: "1rem",
+                  border: "1px solid #b91c1c",
+                  background: "#fef2f2",
+                  borderRadius: "0.5rem",
+                  padding: "0.75rem 1rem",
+                }}
+              >
+                <div style={{ fontWeight: 600 }}>
+                  Invalid - this file could not be verified as a document
+                  sealed by SignSeen.
+                </div>
+                <div style={{ fontSize: "0.9rem" }}>
+                  {verdict.reason
+                    ? VERIFY_REASON_TEXT[verdict.reason]
+                    : "This file could not be verified."}
+                </div>
+              </div>
+            )}
+            {verifyError && (
+              <p role="alert" style={{ margin: "1rem 0 0" }}>
+                {verifyError}
+              </p>
+            )}
+          </>
         )}
       </div>
       {doc.sessions && doc.sessions.length > 0 && (

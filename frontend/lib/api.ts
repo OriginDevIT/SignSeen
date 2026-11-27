@@ -907,3 +907,16 @@ export function verifyDocument(file: File): Promise<VerifyVerdict> {
     { auth: false },
   );
 }
+
+/** Verify the stored sealed file for a document, from its page.
+
+Public endpoint, same verdict shape as the upload check: no file
+leaves the server, the checks run against the sealed file on disk.
+*/
+export function verifyStoredDocument(docId: string): Promise<VerifyVerdict> {
+  return req<VerifyVerdict>(
+    `/api/documents/${docId}/verify/`,
+    undefined,
+    { auth: false },
+  );
+}

@@ -1,20 +1,26 @@
 // @vitest-environment jsdom
 import { Suspense } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import TrackDocumentPage from "./page";
-import { getDocument, type DocumentInfo } from "../../../lib/api";
+import {
+  getDocument,
+  verifyStoredDocument,
+  type DocumentInfo,
+} from "../../../lib/api";
 
 vi.mock("../../../lib/api", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../../lib/api")>();
   return {
     ...actual,
     getDocument: vi.fn(),
+    verifyStoredDocument: vi.fn(),
   };
 });
 
 const mockedGetDocument = vi.mocked(getDocument);
+const mockedVerifyStoredDocument = vi.mocked(verifyStoredDocument);
 
 const PENDING_DOC: DocumentInfo = {
   id: "doc-1",
@@ -37,6 +43,14 @@ const PENDING_DOC: DocumentInfo = {
   ],
   created_at: "2026-11-21T13:00:00Z",
   updated_at: "2026-11-21T13:00:00Z",
+};
+
+const SIGNED_DOC: DocumentInfo = {
+  ...PENDING_DOC,
+  status: "signed",
+  signed_file: "/media/signed.pdf",
+  signing_url: null,
+  sessions: [{ ...PENDING_DOC.sessions![0], status: "signed" }],
 };
 
 function renderPage() {
@@ -233,5 +247,84 @@ describe("TrackDocumentPage navigation", () => {
     expect(link.getAttribute("href")).toContain("/media/signed.pdf");
     expect(link.hasAttribute("download")).toBe(true);
     expect(link.getAttribute("target")).toBeNull();
+  });
+});
+
+describe("TrackDocumentPage verify button (#212)", () => {
+  it("hides the button on a pending document", async () => {
+    mockedGetDocument.mockResolvedValue(PENDING_DOC);
+    renderPage();
+
+    await waitFor(() =>
+      expect(
+        screen.getByRole("link", { name: "View in dashboard" })
+      ).toBeTruthy()
+    );
+    expect(
+      screen.queryByRole("button", { name: "Verify this document" })
+    ).toBeNull();
+  });
+
+  it("shows a valid verdict for a sealed document", async () => {
+    mockedGetDocument.mockResolvedValue(SIGNED_DOC);
+    mockedVerifyStoredDocument.mockResolvedValue({
+      valid: true,
+      document_title: "Test document",
+      signed_at: "2026-11-21T13:24:14Z",
+      signer_count: 1,
+    });
+    renderPage();
+
+    const button = await screen.findByRole("button", {
+      name: "Verify this document",
+    });
+    fireEvent.click(button);
+
+    await waitFor(() =>
+      expect(document.body.textContent).toContain(
+        "Valid - this is a genuine document sealed by SignSeen."
+      )
+    );
+    expect(mockedVerifyStoredDocument).toHaveBeenCalledWith("doc-1");
+  });
+
+  it("shows the reason text for an invalid verdict", async () => {
+    mockedGetDocument.mockResolvedValue(SIGNED_DOC);
+    mockedVerifyStoredDocument.mockResolvedValue({
+      valid: false,
+      reason: "file_altered",
+    });
+    renderPage();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Verify this document" })
+    );
+
+    await waitFor(() =>
+      expect(document.body.textContent).toContain(
+        "Invalid - this file could not be verified as a document sealed by SignSeen."
+      )
+    );
+    expect(document.body.textContent).toContain(
+      "This file was changed after it was sealed."
+    );
+  });
+
+  it("shows the error when the check fails", async () => {
+    mockedGetDocument.mockResolvedValue(SIGNED_DOC);
+    mockedVerifyStoredDocument.mockRejectedValue(
+      new Error("You can only validate one document per minute.")
+    );
+    renderPage();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Verify this document" })
+    );
+
+    await waitFor(() =>
+      expect(document.body.textContent).toContain(
+        "You can only validate one document per minute."
+      )
+    );
   });
 });
