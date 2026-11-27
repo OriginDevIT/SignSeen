@@ -4,7 +4,14 @@
 
 {$STAGING_DOMAIN} {
 	handle /api/* {
-		reverse_proxy api:8000
+		# Rebuild X-Forwarded-For from CF-Connecting-IP (Cloudflare
+		# overwrites it with the real client IP). Proxies only append
+		# the peer IP to X-Forwarded-For, so a client-seeded chain
+		# starts with whatever the client claimed and must never
+		# reach the app.
+		reverse_proxy api:8000 {
+			header_up X-Forwarded-For {http.request.header.CF-Connecting-IP}
+		}
 	}
 
 	handle_path /media/* {

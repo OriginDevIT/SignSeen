@@ -63,17 +63,24 @@ _UUID_RE = (
 _SEAL_RE = r"[0-9a-fA-F]{64}"
 
 
-def _client_ip(request) -> str:
-    """Best-effort client IP for rate limiting.
+_MAX_IP_LEN = 45  # longest possible textual IP address (IPv6)
 
-    The API sits behind a reverse proxy (Caddy, plus Cloudflare in
-    front of it), which sets X-Forwarded-For; direct connections fall
-    back to REMOTE_ADDR.
+
+def _client_ip(request) -> str:
+    """Client IP for rate limiting.
+
+    Never trust X-Forwarded-For: proxies append the peer IP, so the
+    first entry is whatever the client claimed, and a spoofed value
+    buys a fresh rate-limit bucket. Cloudflare overwrites
+    CF-Connecting-IP with the real client IP, so prefer it; direct
+    connections fall back to the peer IP (REMOTE_ADDR). The value is
+    capped at the longest possible textual IP so a forged header
+    cannot make an unbounded cache key.
     """
-    forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
-    if forwarded:
-        return forwarded.split(",")[0].strip()
-    return request.META.get("REMOTE_ADDR", "")
+    connecting = request.META.get("HTTP_CF_CONNECTING_IP", "").strip()
+    if connecting:
+        return connecting[:_MAX_IP_LEN]
+    return request.META.get("REMOTE_ADDR", "")[:_MAX_IP_LEN]
 
 
 def _rate_limited(ip: str) -> str | None:

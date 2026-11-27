@@ -2474,13 +2474,17 @@ def test_drawn_box_stamping_fits_inside():
 # ---------------------------------------------------------------------------
 
 
-def _verify(client, pdf_bytes, ip="10.1.0.1", name="signed.pdf"):
+def _verify(client, pdf_bytes, ip="10.1.0.1", name="signed.pdf", **meta):
     """POST a PDF to /api/verify/ from one client IP."""
     uploaded = SimpleUploadedFile(
         name, pdf_bytes, content_type="application/pdf"
     )
     return client.post(
-        "/api/verify/", {"file": uploaded}, format="multipart", REMOTE_ADDR=ip
+        "/api/verify/",
+        {"file": uploaded},
+        format="multipart",
+        REMOTE_ADDR=ip,
+        **meta,
     )
 
 
@@ -2684,6 +2688,76 @@ def test_verify_rate_limit_hour_message():
     assert response.json() == {
         "error": "You can only validate 20 documents per hour - try again later."
     }
+
+
+@pytest.mark.django_db
+def test_verify_rate_limit_ignores_spoofed_x_forwarded_for():
+    client = APIClient()
+    doc_id, _token, _response = _seal_document(client)
+    signed = _sealed_pdf_bytes(doc_id)
+
+    first = _verify(
+        client, signed, ip="10.1.0.21", HTTP_X_FORWARDED_FOR="10.201.0.99"
+    )
+    assert first.status_code == 200
+
+    # The same peer IP with a different spoofed X-Forwarded-For is
+    # the same bucket: a forged first entry no longer buys a fresh
+    # allowance.
+    second = _verify(
+        client, signed, ip="10.1.0.21", HTTP_X_FORWARDED_FOR="10.202.0.77"
+    )
+    assert second.status_code == 429
+    assert second.json() == {
+        "error": "You can only validate one document per minute."
+    }
+
+
+@pytest.mark.django_db
+def test_verify_rate_limit_uses_cf_connecting_ip():
+    client = APIClient()
+    doc_id, _token, _response = _seal_document(client)
+    signed = _sealed_pdf_bytes(doc_id)
+
+    # Cloudflare's header names the real client: the same header
+    # value is the same bucket, and a different one is unaffected.
+    first = _verify(
+        client, signed, ip="10.1.0.22", HTTP_CF_CONNECTING_IP="203.0.113.5"
+    )
+    assert first.status_code == 200
+    second = _verify(
+        client, signed, ip="10.1.0.22", HTTP_CF_CONNECTING_IP="203.0.113.5"
+    )
+    assert second.status_code == 429
+    third = _verify(
+        client, signed, ip="10.1.0.22", HTTP_CF_CONNECTING_IP="203.0.113.9"
+    )
+    assert third.status_code == 200
+
+
+@pytest.mark.django_db
+def test_verify_rate_limit_key_is_capped():
+    client = APIClient()
+    doc_id, _token, _response = _seal_document(client)
+    signed = _sealed_pdf_bytes(doc_id)
+
+    # An unbounded header must not make an unbounded cache key: two
+    # overlong values sharing the first 45 characters land in the
+    # same bucket.
+    first = _verify(
+        client,
+        signed,
+        ip="10.1.0.23",
+        HTTP_CF_CONNECTING_IP="203.0.113." + "1" * 100,
+    )
+    assert first.status_code == 200
+    second = _verify(
+        client,
+        signed,
+        ip="10.1.0.23",
+        HTTP_CF_CONNECTING_IP="203.0.113." + "1" * 99 + "2",
+    )
+    assert second.status_code == 429
 
 
 @pytest.mark.django_db
