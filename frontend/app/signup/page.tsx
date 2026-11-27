@@ -16,6 +16,14 @@ const card: React.CSSProperties = {
   gap: "0.9rem",
 };
 
+// The shared header needs a wide container: inside the 24rem form
+// card its navigation wraps to two lines (#200).
+const headerWrap: React.CSSProperties = {
+  maxWidth: "62rem",
+  margin: "0 auto",
+  padding: "0 1.25rem",
+};
+
 const input: React.CSSProperties = {
   padding: "0.7rem",
   fontSize: "1rem",
@@ -80,8 +88,11 @@ export default function SignupPage() {
   };
 
   return (
-    <main style={card}>
-      <HomeHeader />
+    <>
+      <div style={headerWrap}>
+        <HomeHeader />
+      </div>
+      <main style={card}>
       <h1 style={{ margin: 0 }}>Create an account</h1>
       <p style={{ opacity: 0.6, margin: 0 }}>
         Keep a library of your documents with their status. Same free limits
@@ -174,5 +185,6 @@ export default function SignupPage() {
         Already have one? <a href="/login">Log in</a>
       </p>
     </main>
+  </>
   );
 }

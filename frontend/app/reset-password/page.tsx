@@ -15,6 +15,14 @@ const card: React.CSSProperties = {
   gap: "0.9rem",
 };
 
+// The shared header needs a wide container: inside the 24rem form
+// card its navigation wraps to two lines (#200).
+const headerWrap: React.CSSProperties = {
+  maxWidth: "62rem",
+  margin: "0 auto",
+  padding: "0 1.25rem",
+};
+
 const input: React.CSSProperties = {
   padding: "0.7rem",
   fontSize: "1rem",
@@ -78,8 +86,11 @@ export default function ResetPasswordPage() {
   };
 
   return (
-    <main style={card}>
-      <HomeHeader />
+    <>
+      <div style={headerWrap}>
+        <HomeHeader />
+      </div>
+      <main style={card}>
       <h1 style={{ margin: 0 }}>Reset password</h1>
       {uid && token ? (
         <form onSubmit={confirm} style={{ display: "flex", flexDirection: "column", gap: "0.9rem" }}>
@@ -117,5 +128,6 @@ export default function ResetPasswordPage() {
         </form>
       )}
     </main>
+  </>
   );
 }

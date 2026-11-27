@@ -13,6 +13,14 @@ const card: React.CSSProperties = {
   gap: "0.9rem",
 };
 
+// The shared header needs a wide container: inside the 24rem form
+// card its navigation wraps to two lines (#200).
+const headerWrap: React.CSSProperties = {
+  maxWidth: "62rem",
+  margin: "0 auto",
+  padding: "0 1.25rem",
+};
+
 const input: React.CSSProperties = {
   padding: "0.7rem",
   fontSize: "1rem",
@@ -75,8 +83,11 @@ export default function ProfilePage() {
   };
 
   return (
-    <main style={card}>
-      <HomeHeader />
+    <>
+      <div style={headerWrap}>
+        <HomeHeader />
+      </div>
+      <main style={card}>
       <h1 style={{ margin: 0 }}>Account</h1>
       {loading ? (
         <p style={{ opacity: 0.6, margin: 0 }}>Loading…</p>
@@ -120,5 +131,6 @@ export default function ProfilePage() {
         <a href="/dashboard">Back to dashboard</a>
       </p>
     </main>
+  </>
   );
 }
