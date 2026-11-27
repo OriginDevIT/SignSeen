@@ -155,7 +155,9 @@ export default function SignupPage() {
               checked={plan === "annual"}
               onChange={() => setPlan("annual")}
             />
-            Premium - $50/yr - no watermark, higher limits, more signers
+            Premium - $50/yr - 20 signers per document, 5 GB storage,
+            sequential signing, photo-required, custom branding, signing
+            alerts
           </label>
           <label style={{ display: "flex", gap: "0.5rem", cursor: "pointer" }}>
             <input
@@ -164,7 +166,9 @@ export default function SignupPage() {
               checked={plan === "monthly"}
               onChange={() => setPlan("monthly")}
             />
-            Premium - $5/mo - no watermark, higher limits, more signers
+            Premium - $5/mo - 20 signers per document, 5 GB storage,
+            sequential signing, photo-required, custom branding, signing
+            alerts
           </label>
         </fieldset>
         <button type="submit" disabled={busy} style={button}>
