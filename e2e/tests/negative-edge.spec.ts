@@ -44,7 +44,7 @@ test("bad file: a .txt upload is rejected with a clear error", async ({
   });
   // Step 1 is where the upload is validated: a bad file is rejected
   // at draft creation, before any field or send step.
-  await page.getByRole("button", { name: "Create draft" }).click();
+  await page.getByRole("button", { name: "Continue to place fields" }).click();
   await expect(
     page.getByText("file must be a PDF, DOC, or DOCX"),
   ).toBeVisible();
@@ -159,7 +159,7 @@ test("second pending doc, account: the limit is keyed on email, not account", as
   await page.getByPlaceholder("e.g. Contractor Agreement").fill(`E2E Limit Acct ${id}`);
   await page.getByPlaceholder("jane@example.com").fill(`e2e-limit-acct-signer-${id}@example.com`);
   await page.locator('input[type="file"]').setInputFiles(samplePdf());
-  await page.getByRole("button", { name: "Create draft" }).click();
+  await page.getByRole("button", { name: "Continue to place fields" }).click();
   await expect(page.getByText(/Step 2 of 3/)).toBeVisible();
   await page
     .getByRole("button", { name: "Skip - no fields needed, continue to review" })

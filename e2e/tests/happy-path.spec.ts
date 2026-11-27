@@ -28,7 +28,7 @@ test("happy path: send -> sign with photo -> sealed, audit chain valid", async (
   // Email-first delivery: the signer email is required at send.
   await page.getByPlaceholder("jane@example.com").fill(signerEmail);
   await page.locator('input[type="file"]').setInputFiles(samplePdf());
-  await page.getByRole("button", { name: "Create draft" }).click();
+  await page.getByRole("button", { name: "Continue to place fields" }).click();
   await expect(page.getByText(/Step 2 of 3/)).toBeVisible();
   await page
     .getByRole("button", { name: "Skip - no fields needed, continue to review" })

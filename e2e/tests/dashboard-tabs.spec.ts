@@ -23,7 +23,7 @@ test("dashboard tabs: draft row downloads and deletes from the Draft tab", async
   await page.getByPlaceholder("you@example.com").first().fill("e2e-premium@example.com");
   await page.getByPlaceholder("jane@example.com").fill(`e2e-tabs-signer-${id}@example.com`);
   await page.locator('input[type="file"]').setInputFiles(samplePdf());
-  await page.getByRole("button", { name: "Create draft" }).click();
+  await page.getByRole("button", { name: "Continue to place fields" }).click();
   await expect(page.getByText(/Step 2 of 3/)).toBeVisible();
   const draftId = new URL(page.url()).searchParams.get("draft");
   expect(draftId).toBeTruthy();

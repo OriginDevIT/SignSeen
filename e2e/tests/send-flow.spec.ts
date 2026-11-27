@@ -27,7 +27,7 @@ test("send flow: anonymous upload -> place a field -> review -> send, no email b
   await page.getByPlaceholder("you@example.com").first().fill(senderEmail);
   await page.getByPlaceholder("jane@example.com").fill(signerEmail);
   await page.locator('input[type="file"]').setInputFiles(samplePdf());
-  await page.getByRole("button", { name: "Create draft" }).click();
+  await page.getByRole("button", { name: "Continue to place fields" }).click();
   await expect(page.getByText(/Step 2 of 3/)).toBeVisible();
 
   const draftId = new URL(page.url()).searchParams.get("draft");
@@ -123,7 +123,7 @@ test("send flow: draft shows in the dashboard and can be deleted", async ({
     .getByPlaceholder("jane@example.com")
     .fill(`e2e-flow-dash-signer-${id}@example.com`);
   await page.locator('input[type="file"]').setInputFiles(samplePdf());
-  await page.getByRole("button", { name: "Create draft" }).click();
+  await page.getByRole("button", { name: "Continue to place fields" }).click();
   await expect(page.getByText(/Step 2 of 3/)).toBeVisible();
 
   await page.goto("/dashboard");
