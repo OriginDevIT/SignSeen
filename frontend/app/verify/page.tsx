@@ -119,6 +119,10 @@ export default function VerifyPage() {
         proves the file is a genuine document sealed by SignSeen - not
         that it is the only or original copy.
       </p>
+      <p style={{ margin: 0, lineHeight: 1.6, opacity: 0.75 }}>
+        To keep the check free for everyone, each address can validate
+        one document per minute and up to 20 documents per hour.
+      </p>
 
       <div
         role="button"

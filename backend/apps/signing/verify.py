@@ -48,13 +48,13 @@ REASON_SEAL_MISMATCH = "seal_mismatch"
 REASON_CHAIN_BROKEN = "chain_broken"
 REASON_FILE_ALTERED = "file_altered"
 
-# Abuse guards: 1 verification per minute, 7 per hour, per client IP.
+# Abuse guards: 1 verification per minute, 20 per hour, per client IP.
 # Fixed windows in the cache (the default local-memory cache: per
 # process, which is the whole API on the current single-process
 # deployment - a shared cache would be needed if the API ever ran
 # multi-process).
 RATE_LIMIT_MINUTE = 1
-RATE_LIMIT_HOUR = 7
+RATE_LIMIT_HOUR = 20
 
 _UUID_RE = (
     r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
@@ -197,7 +197,7 @@ def verify_document(request):
         )
     if limited_window == "hour":
         return _error(
-            "You can only validate 7 documents per hour - try again later.",
+            "You can only validate 20 documents per hour - try again later.",
             code=status.HTTP_429_TOO_MANY_REQUESTS,
         )
 
