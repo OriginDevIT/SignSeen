@@ -65,6 +65,19 @@ cron on the host (times are examples):
 45 3 * * * cd /path/to/SignSeen && docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.prod exec -T api python manage.py enforce_billing_lifecycle
 ```
 
+### Announcing a terms change
+
+The Terms promise account holders are emailed at least 14 days before
+material changes take effect. When new terms are posted, run this once
+from the host (not on a schedule) with the new version — the "last
+updated" date — and the date the new terms take effect, at least 14
+days out. The notice is recorded, so re-running it for the same version
+never re-sends:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml --env-file .env.prod exec -T api python manage.py send_terms_notice --terms-version 2026-11-25 --effective-date 2026-12-09
+```
+
 ## 5. Backups
 
 Two things matter: the database and the media volume (uploaded
