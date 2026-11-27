@@ -530,7 +530,8 @@ export default function PlaceFieldsPage() {
         belongs to, then drag on the page to draw a box where the field goes
         - or click to place a default-size field. Drag a placed box to move
         it; click a box to select it, then delete it with the ×. Each signer
-        only ever sees their own fields.
+        only completes their own fields - in sequential signing, later
+        signers see earlier completed fields for reference.
       </p>
 
       {error && (
