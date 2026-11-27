@@ -47,6 +47,18 @@ def _apply_free_tier_watermark(doc: pymupdf.Document) -> None:
         )
 
 
+def _single_line(value) -> str:
+    """Render-time guard: control characters (including newlines)
+    collapse to a space, so a value that reached storage with a
+    newline in it can never inject extra lines into the certificate.
+    Input validation rejects these, but values stored before that
+    fix still render through here."""
+    return "".join(
+        ch if ord(ch) >= 32 and ord(ch) != 127 else " "
+        for ch in str(value or "")
+    )
+
+
 def _signer_lines(signer: dict) -> list[str]:
     # Plain "-" fallback: the certificate renders in Helvetica, whose
     # encoding turns an em dash into a stray middle dot.
@@ -54,8 +66,8 @@ def _signer_lines(signer: dict) -> list[str]:
     if signer.get("is_originator"):
         lines.append("Document Originator")
     lines += [
-        f"Signer: {signer.get('signer_name') or '-'}",
-        f"Email: {signer.get('signer_email') or '-'}",
+        f"Signer: {_single_line(signer.get('signer_name')) or '-'}",
+        f"Email: {_single_line(signer.get('signer_email')) or '-'}",
         f"Signed at (UTC): {signer.get('signed_at')}",
         f"Document ID: {signer.get('document_id')}",
         f"Session ID: {signer.get('session_id')}",
@@ -122,6 +134,9 @@ def _render_header(page: pymupdf.Page, brand_name: str = "") -> int:
     )
     # Sender branding (premium): the owner's brand takes the product
     # line's place in the header; SignSeen stays named as the platform.
+    # The brand is flattened to one line so a stored newline can
+    # never split the header into extra lines.
+    brand_name = _single_line(brand_name)
     product_line = (
         f"Signed via {brand_name} with SignSeen - Signed. Seen. Sealed."
         if brand_name

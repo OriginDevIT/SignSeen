@@ -209,6 +209,24 @@ def test_branding_patch_rejects_invalid_color():
     account.refresh_from_db()
     assert account.brand_color == ""
 
+
+@pytest.mark.django_db
+def test_branding_patch_rejects_newline_in_name():
+    client, account = _account_client("pro3@example.com", tier=Account.Tier.PREMIUM)
+    response = client.patch(
+        "/api/auth/branding/", {"brand_name": "Acme\nFake"}, format="json"
+    )
+    assert response.status_code == 400
+    assert "newline" in response.json()["error"]
+    account.refresh_from_db()
+    assert account.brand_name == ""
+    # A trailing newline is stripped, not an injection.
+    response = client.patch(
+        "/api/auth/branding/", {"brand_name": "Acme\n"}, format="json"
+    )
+    assert response.status_code == 200
+    assert response.json()["brand_name"] == "Acme"
+
 @pytest.mark.django_db
 def test_signup_accepts_optional_name_and_returns_it():
     client = APIClient()

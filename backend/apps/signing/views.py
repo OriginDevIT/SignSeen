@@ -53,7 +53,9 @@ from .limits import (
     check_draft_limit,
     check_pending_limit,
     check_storage_limit,
+    clean_signer_email,
     clean_signer_list,
+    clean_signer_name,
     storage_limit_bytes,
     storage_used_bytes,
     wants_watermark,
@@ -882,13 +884,21 @@ def create_session(request, doc_id):
             "signing link and the document to sign"
         )
     try:
+        # Same validation as the step-1 signer list: a newline in
+        # the email breaks invite delivery, a newline in the name
+        # reaches the certificate.
+        signer_email = clean_signer_email(signer_email)
+        signer_name = clean_signer_name(request.data.get("signer_name"))
+    except ValueError as exc:
+        return _error(str(exc))
+    try:
         check_can_create_session(doc, signer_email)
     except LimitExceeded as exc:
         return _error(str(exc), 409)
 
     session = SigningSession.objects.create(
         document=doc,
-        signer_name=(request.data.get("signer_name") or "").strip(),
+        signer_name=signer_name,
         signer_email=signer_email,
         order=doc.sessions.count(),
     )
