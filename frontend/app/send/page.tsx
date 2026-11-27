@@ -546,7 +546,7 @@ export default function SendPage() {
             }}
           >
             <legend style={{ fontWeight: 600, padding: "0 0.35rem" }}>
-              Signers, in order
+              Signers
             </legend>
             {signers.map((signer, i) => (
               <div
@@ -575,63 +575,71 @@ export default function SendPage() {
                     gap: "0.5rem",
                   }}
                 >
-                  <span
-                    data-testid={`reorder-handle-${i}`}
-                    aria-label={`Drag to reorder signer ${i + 1}`}
-                    title="Drag to reorder"
-                    onPointerDown={(e) => onReorderPointerDown(e, i)}
-                    onPointerMove={onReorderPointerMove}
-                    onPointerUp={onReorderPointerUp}
-                    onPointerCancel={onReorderPointerCancel}
-                    style={{
-                      touchAction: "none",
-                      cursor: "grab",
-                      padding: "0.2rem 0.4rem",
-                      fontSize: "1.1rem",
-                      lineHeight: 1,
-                      userSelect: "none",
-                    }}
-                  >
-                    ⠿
-                  </span>
+                  {signingMode === "sequential" && (
+                    <span
+                      data-testid={`reorder-handle-${i}`}
+                      aria-label={`Drag to reorder signer ${i + 1}`}
+                      title="Drag to reorder"
+                      onPointerDown={(e) => onReorderPointerDown(e, i)}
+                      onPointerMove={onReorderPointerMove}
+                      onPointerUp={onReorderPointerUp}
+                      onPointerCancel={onReorderPointerCancel}
+                      style={{
+                        touchAction: "none",
+                        cursor: "grab",
+                        padding: "0.2rem 0.4rem",
+                        fontSize: "1.1rem",
+                        lineHeight: 1,
+                        userSelect: "none",
+                      }}
+                    >
+                      ⠿
+                    </span>
+                  )}
                   <span
                     style={{ fontWeight: 600, fontSize: "0.95rem", flex: 1 }}
                   >
                     Signer {i + 1}
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => moveSigner(i, i - 1)}
-                    disabled={i === 0}
-                    aria-label={`Move signer ${i + 1} up`}
-                    style={{
-                      padding: "0.3rem 0.6rem",
-                      borderRadius: 8,
-                      border: "1px solid #d1d5db",
-                      background: "#fff",
-                      cursor: i === 0 ? "not-allowed" : "pointer",
-                      opacity: i === 0 ? 0.45 : 1,
-                    }}
-                  >
-                    ↑
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => moveSigner(i, i + 1)}
-                    disabled={i === signers.length - 1}
-                    aria-label={`Move signer ${i + 1} down`}
-                    style={{
-                      padding: "0.3rem 0.6rem",
-                      borderRadius: 8,
-                      border: "1px solid #d1d5db",
-                      background: "#fff",
-                      cursor:
-                        i === signers.length - 1 ? "not-allowed" : "pointer",
-                      opacity: i === signers.length - 1 ? 0.45 : 1,
-                    }}
-                  >
-                    ↓
-                  </button>
+                  {signingMode === "sequential" && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => moveSigner(i, i - 1)}
+                        disabled={i === 0}
+                        aria-label={`Move signer ${i + 1} up`}
+                        style={{
+                          padding: "0.3rem 0.6rem",
+                          borderRadius: 8,
+                          border: "1px solid #d1d5db",
+                          background: "#fff",
+                          cursor: i === 0 ? "not-allowed" : "pointer",
+                          opacity: i === 0 ? 0.45 : 1,
+                        }}
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => moveSigner(i, i + 1)}
+                        disabled={i === signers.length - 1}
+                        aria-label={`Move signer ${i + 1} down`}
+                        style={{
+                          padding: "0.3rem 0.6rem",
+                          borderRadius: 8,
+                          border: "1px solid #d1d5db",
+                          background: "#fff",
+                          cursor:
+                            i === signers.length - 1
+                              ? "not-allowed"
+                              : "pointer",
+                          opacity: i === signers.length - 1 ? 0.45 : 1,
+                        }}
+                      >
+                        ↓
+                      </button>
+                    </>
+                  )}
                 </div>
                 <label style={{ display: "grid", gap: "0.35rem" }}>
                   Signer name <span style={{ opacity: 0.6 }}>(optional)</span>
