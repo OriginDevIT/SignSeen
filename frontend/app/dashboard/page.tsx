@@ -61,19 +61,19 @@ const ghost: React.CSSProperties = {
   color: "#111",
 };
 
-type DocTab = "in-progress" | "draft" | "complete";
+type DocTab = "in-progress" | "draft" | "complete" | "expired";
 
 const TABS: { id: DocTab; label: string }[] = [
   { id: "in-progress", label: "In Progress" },
   { id: "draft", label: "Draft" },
   { id: "complete", label: "Complete" },
+  { id: "expired", label: "Expired" },
 ];
 
 function tabDocuments(documents: DocumentInfo[], tab: DocTab): DocumentInfo[] {
   if (tab === "draft") return documents.filter((d) => d.status === "draft");
-  if (tab === "complete") {
-    return documents.filter((d) => d.status === "signed" || d.status === "expired");
-  }
+  if (tab === "complete") return documents.filter((d) => d.status === "signed");
+  if (tab === "expired") return documents.filter((d) => d.status === "expired");
   return documents.filter((d) => d.status === "pending");
 }
 
@@ -525,7 +525,9 @@ export default function DashboardPage() {
                 ? "No documents in progress."
                 : activeTab === "draft"
                   ? "No drafts."
-                  : "No completed documents."}
+                  : activeTab === "expired"
+                    ? "No expired documents."
+                    : "No completed documents."}
             </p>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>

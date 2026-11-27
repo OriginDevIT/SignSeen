@@ -109,12 +109,13 @@ afterEach(() => {
 });
 
 describe("DashboardPage document tabs (#104)", () => {
-  it("groups documents into In Progress, Draft, and Complete tabs with counts", async () => {
+  it("groups documents into In Progress, Draft, Complete, and Expired tabs with counts", async () => {
     loadDashboard([PENDING, DRAFT, SIGNED, EXPIRED]);
 
     expect(await screen.findByRole("tab", { name: "In Progress (1)" })).toBeTruthy();
     expect(screen.getByRole("tab", { name: "Draft (1)" })).toBeTruthy();
-    expect(screen.getByRole("tab", { name: "Complete (2)" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Complete (1)" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Expired (1)" })).toBeTruthy();
 
     // In Progress is the default tab: only the pending document shows.
     expect(screen.getByText("Pending contract")).toBeTruthy();
@@ -125,17 +126,26 @@ describe("DashboardPage document tabs (#104)", () => {
     expect(screen.getByText("Draft contract")).toBeTruthy();
     expect(screen.queryByText("Pending contract")).toBeNull();
 
-    fireEvent.click(screen.getByRole("tab", { name: "Complete (2)" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Complete (1)" }));
     expect(screen.getByText("Signed contract")).toBeTruthy();
-    expect(screen.getByText("Expired contract")).toBeTruthy();
+    expect(screen.queryByText("Expired contract")).toBeNull();
     expect(screen.queryByText("Pending contract")).toBeNull();
-  });
+
+    // Expired documents get their own tab (#197): an expired unsigned
+    // document is not complete.
+    fireEvent.click(screen.getByRole("tab", { name: "Expired (1)" }));
+    expect(screen.getByText("Expired contract")).toBeTruthy();
+    expect(screen.queryByText("Signed contract")).toBeNull();
+  }, 10000);
 
   it("shows an empty message for a tab with no documents", async () => {
     loadDashboard([PENDING]);
 
     fireEvent.click(await screen.findByRole("tab", { name: "Draft (0)" }));
     expect(screen.getByText("No drafts.")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Expired (0)" }));
+    expect(screen.getByText("No expired documents.")).toBeTruthy();
   });
 
   it("shows a 'Documents you've sent' header above the tabs (#154)", async () => {
