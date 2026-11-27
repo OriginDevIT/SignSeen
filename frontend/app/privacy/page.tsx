@@ -84,7 +84,8 @@ export default function PrivacyPage() {
           <strong>The parties to a signing:</strong> the signed PDF and
           its audit record are delivered to the sender and (where an
           email was provided) the signer. Anyone with a document’s
-          tracking link can see that document’s status.
+          tracking link can see that document’s status, the names and
+          email addresses of its signers, and when each signer signed.
         </li>
         <li>
           <strong>Service providers:</strong> cloud hosting (Google Cloud
