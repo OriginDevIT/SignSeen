@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { myAccount, updateAccountName } from "../../lib/api";
+import { useRouter } from "next/navigation";
+import { deleteAccount, myAccount, updateAccountName } from "../../lib/api";
 import HomeHeader from "../../components/HomeHeader";
 
 const card: React.CSSProperties = {
@@ -40,6 +41,18 @@ const button: React.CSSProperties = {
   cursor: "pointer",
 };
 
+const dangerButton: React.CSSProperties = {
+  ...button,
+  background: "#b91c1c",
+};
+
+const ghostButton: React.CSSProperties = {
+  ...button,
+  background: "#fff",
+  color: "#111",
+  border: "1px solid #ccc",
+};
+
 const label: React.CSSProperties = {
   fontSize: "0.9rem",
   fontWeight: 600,
@@ -47,12 +60,16 @@ const label: React.CSSProperties = {
 };
 
 export default function ProfilePage() {
+  const router = useRouter();
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [confirmClose, setConfirmClose] = useState(false);
+  const [closing, setClosing] = useState(false);
+  const [closeError, setCloseError] = useState("");
 
   useEffect(() => {
     myAccount()
@@ -79,6 +96,20 @@ export default function ProfilePage() {
       setError(err instanceof Error ? err.message : "Could not save your name");
     } finally {
       setBusy(false);
+    }
+  };
+
+  const closeAccount = async () => {
+    setCloseError("");
+    setClosing(true);
+    try {
+      await deleteAccount();
+      router.push("/");
+    } catch (err) {
+      setCloseError(
+        err instanceof Error ? err.message : "Could not close your account"
+      );
+      setClosing(false);
     }
   };
 
@@ -126,6 +157,58 @@ export default function ProfilePage() {
             {busy ? "Saving…" : "Save name"}
           </button>
         </form>
+      )}
+      {!loading && email && (
+        <div
+          style={{
+            borderTop: "1px solid #e5e5e5",
+            paddingTop: "1rem",
+            display: "flex",
+            flexDirection: "column",
+            gap: "0.9rem",
+          }}
+        >
+          <h2 style={{ margin: 0, fontSize: "1.1rem" }}>Close account</h2>
+          <p style={{ opacity: 0.6, margin: 0, fontSize: "0.9rem" }}>
+            Closing your account permanently removes your account, your
+            documents, and their files. This cannot be undone.
+          </p>
+          {confirmClose ? (
+            <>
+              <p style={{ margin: 0, fontSize: "0.9rem" }}>
+                Close your account? Your documents and files will be
+                permanently removed.
+              </p>
+              <button
+                type="button"
+                onClick={closeAccount}
+                disabled={closing}
+                style={dangerButton}
+              >
+                {closing ? "Closing…" : "Confirm close account"}
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmClose(false)}
+                disabled={closing}
+                style={ghostButton}
+              >
+                Cancel
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setConfirmClose(true)}
+              style={dangerButton}
+            >
+              Close account
+            </button>
+          )}
+          {closeError && (
+            <p style={{ color: "#b91c1c", margin: 0 }}>{closeError}</p>
+          )}
+        </div>
       )}
       <p style={{ fontSize: "0.9rem", opacity: 0.7, margin: 0 }}>
         <a href="/dashboard">Back to dashboard</a>
