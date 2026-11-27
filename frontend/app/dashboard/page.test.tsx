@@ -323,3 +323,19 @@ describe("DashboardPage signing alerts toggle (#186)", () => {
     expect(toggle).toHaveProperty("disabled", false);
   });
 });
+
+describe("DashboardPage premium buttons (#198)", () => {
+  it("the annual button says it saves $10/yr against monthly billing", async () => {
+    loadDashboard([PENDING]);
+
+    await screen.findByText("Pending contract");
+    expect(
+      screen.getByRole("button", {
+        name: "Premium - $50/yr - Save $10/yr",
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Premium - $5/mo" }),
+    ).toBeTruthy();
+  });
+});

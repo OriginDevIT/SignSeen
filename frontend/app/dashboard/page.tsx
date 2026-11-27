@@ -330,7 +330,7 @@ export default function DashboardPage() {
                 disabled={busyBilling}
                 style={button}
               >
-                {busyBilling ? "…" : "Premium - $50/yr"}
+                {busyBilling ? "…" : "Premium - $50/yr - Save $10/yr"}
               </button>
               <button
                 onClick={() => upgrade("monthly")}
